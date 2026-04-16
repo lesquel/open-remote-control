@@ -5,7 +5,6 @@ import { loadMessages } from './messages.js'
 import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from './multi-view.js'
 import { handlePermissionRequested, handlePermissionResolved } from './permissions.js'
 
-const BASE = `${location.protocol}//${location.host}`
 let eventSource = null
 let reconnectTimer = null
 
@@ -21,13 +20,14 @@ const SSE_EVENTS = [
 ]
 
 export function connect() {
-  const { token } = getState()
+  const { token, serverUrl } = getState()
   if (!token) return
 
   if (eventSource) eventSource.close()
 
   const dot = document.getElementById('conn-dot')
-  const url = `${BASE}/events?token=${encodeURIComponent(token)}`
+  const base = serverUrl || ''
+  const url = `${base}/events?token=${encodeURIComponent(token)}`
   eventSource = new EventSource(url)
 
   eventSource.onopen = () => {

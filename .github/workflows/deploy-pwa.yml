@@ -1,0 +1,44 @@
+name: Deploy PWA to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/server/dashboard/**'
+      - '.github/workflows/deploy-pwa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare dist
+        run: |
+          mkdir -p dist
+          cp -r src/server/dashboard/. dist/
+          echo "Dashboard files:"
+          ls -la dist/
+          echo "Icons:"
+          ls -la dist/icons/ 2>/dev/null || echo "(no icons dir)"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

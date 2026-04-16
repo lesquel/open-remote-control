@@ -3,6 +3,7 @@ const listeners = new Map() // key → Set<callback>
 
 const state = {
   token: null,
+  serverUrl: "",     // empty = same-origin (embedded); set to tunnel URL in standalone mode
   sessions: {},      // id → session object
   statuses: {},      // id → status string
   activeSession: null,

@@ -53,17 +53,13 @@ export async function serveDashboard({ deps }: RouteContext): Promise<Response> 
 }
 
 /**
- * Serve static files from the dashboard/ directory.
- * Path: /dashboard/<file>  →  src/server/dashboard/<file>
- * This handler is registered for GET /dashboard/*.
+ * Serve a static dashboard file given a relative path within DASHBOARD_DIR.
  */
-export async function serveDashboardStatic({
-  url,
-  deps,
-}: RouteContext): Promise<Response> {
-  // Strip the /dashboard prefix to get the relative file path
-  const relativePath = url.pathname.replace(/^\/dashboard\//, "")
-
+async function serveDashboardFile(
+  relativePath: string,
+  pathname: string,
+  deps: RouteContext["deps"],
+): Promise<Response> {
   // Prevent path traversal
   if (relativePath.includes("..")) {
     return jsonError("FORBIDDEN", "Forbidden", 403, CORS_HEADERS)
@@ -79,7 +75,7 @@ export async function serveDashboardStatic({
   try {
     content = readFileSync(filePath, "utf-8")
   } catch {
-    deps.audit.log("error", { path: url.pathname, error: "Failed to read file" })
+    deps.audit.log("error", { path: pathname, error: "Failed to read file" })
     return jsonError("INTERNAL_ERROR", "Failed to read file", 500, CORS_HEADERS)
   }
 
@@ -89,6 +85,33 @@ export async function serveDashboardStatic({
   return new Response(content, {
     headers: { "Content-Type": mime, ...CORS_HEADERS },
   })
+}
+
+/**
+ * Serve static files from the dashboard/ directory.
+ * Path: /dashboard/<file>  →  src/server/dashboard/<file>
+ * This handler is registered for GET /dashboard/*.
+ */
+export async function serveDashboardStatic({
+  url,
+  deps,
+}: RouteContext): Promise<Response> {
+  const relativePath = url.pathname.replace(/^\/dashboard\//, "")
+  return serveDashboardFile(relativePath, url.pathname, deps)
+}
+
+/**
+ * Serve dashboard static files from the root path.
+ * Path: /<file>  →  src/server/dashboard/<file>
+ * This allows relative imports from index.html to resolve correctly
+ * (e.g. ./styles.css, ./main.js, ./sw.js, ./manifest.json, ./icons/*).
+ */
+export async function serveDashboardRootStatic({
+  url,
+  deps,
+}: RouteContext): Promise<Response> {
+  const relativePath = url.pathname.replace(/^\//, "")
+  return serveDashboardFile(relativePath, url.pathname, deps)
 }
 
 export async function getStatus({ deps }: RouteContext): Promise<Response> {

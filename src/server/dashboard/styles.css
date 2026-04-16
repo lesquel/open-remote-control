@@ -179,6 +179,26 @@ header h1 { font-size: .95rem; font-weight: 700; letter-spacing: .02em; flex-shr
 .picker-item:hover { background: var(--surface2); }
 .picker-item:last-child { border-bottom: none; }
 
+/* Connect Screen (standalone PWA mode) */
+.connect-screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 200; overflow-y: auto; }
+.connect-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 32px 28px; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 20px; }
+.connect-logo { display: flex; align-items: center; gap: 14px; }
+.connect-logo h1 { font-size: 1.3rem; color: var(--accent); font-weight: 700; }
+.connect-logo img { border-radius: 12px; }
+.connect-subtitle { color: var(--text-dim); font-size: .9rem; margin-top: -8px; }
+#connect-form { display: flex; flex-direction: column; gap: 14px; }
+.connect-label { display: flex; flex-direction: column; gap: 6px; font-size: .82rem; color: var(--text-dim); font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+.connect-input { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: var(--radius); padding: 11px 14px; font-size: .9rem; font-family: var(--ui); outline: none; transition: border-color .15s; }
+.connect-input:focus { border-color: var(--accent); }
+.connect-submit { margin-top: 4px; padding: 12px; font-size: .95rem; width: 100%; }
+.connect-help { border-top: 1px solid var(--border); padding-top: 16px; font-size: .82rem; color: var(--text-dim); }
+.connect-help summary { cursor: pointer; color: var(--text-dim); font-weight: 600; user-select: none; margin-bottom: 10px; }
+.connect-help summary:hover { color: var(--accent); }
+.connect-help ol { margin: 8px 0 0 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; }
+.connect-help a { color: var(--accent); text-decoration: none; }
+.connect-help a:hover { text-decoration: underline; }
+.connect-help code { background: var(--surface2); padding: 1px 5px; border-radius: 3px; font-family: var(--mono); font-size: .8em; }
+
 /* Scrollbars */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }

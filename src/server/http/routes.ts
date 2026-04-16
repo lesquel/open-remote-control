@@ -41,6 +41,7 @@ export interface Route {
 import {
   serveDashboard,
   serveDashboardStatic,
+  serveDashboardRootStatic,
   getStatus,
   listSessions,
   createSession,
@@ -63,7 +64,25 @@ import {
 export const routes: Route[] = [
   { method: "GET", pattern: /^\/$/, auth: "none", handler: serveDashboard },
   // Static assets for the split dashboard (src/server/dashboard/)
+  // /dashboard/* — legacy path kept for backward compat
   { method: "GET", pattern: /^\/dashboard\//, auth: "none", handler: serveDashboardStatic },
+  // Root-level static assets: JS, CSS, JSON, SVG, PNG, ICO — served from dashboard dir
+  // This allows ./relative imports in index.html to resolve correctly.
+  // Must come before API routes so /manifest.json etc. are served, but the regex
+  // only matches known extensions so it won't shadow API paths.
+  {
+    method: "GET",
+    pattern: /^\/[^/]+\.(js|css|json|svg|png|ico|woff2?|ttf)$/,
+    auth: "none",
+    handler: serveDashboardRootStatic,
+  },
+  // Sub-directory static assets (e.g. /icons/icon.svg)
+  {
+    method: "GET",
+    pattern: /^\/(?:icons|assets)\/[^/]+\.(js|css|json|svg|png|ico|woff2?|ttf)$/,
+    auth: "none",
+    handler: serveDashboardRootStatic,
+  },
   { method: "GET", pattern: /^\/status$/, auth: "required", handler: getStatus },
   { method: "GET", pattern: /^\/sessions$/, auth: "required", handler: listSessions },
   { method: "POST", pattern: /^\/sessions$/, auth: "required", handler: createSession },

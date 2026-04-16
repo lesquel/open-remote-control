@@ -2,10 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>OpenCode Pilot</title>
+
+<!-- PWA -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#00d9ff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OpenCode Pilot">
+<link rel="apple-touch-icon" href="./icons/icon.svg">
+<link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/[email protected]/styles/github-dark.min.css">
-<link rel="stylesheet" href="/dashboard/styles.css">
+<link rel="stylesheet" href="./styles.css">
 </head>
 <body>
 
@@ -139,6 +149,6 @@
 <script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/json.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/bash.min.js"></script>
 
-<script type="module" src="/dashboard/main.js"></script>
+<script type="module" src="./main.js"></script>
 </body>
 </html>
