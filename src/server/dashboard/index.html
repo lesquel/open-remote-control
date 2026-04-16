@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenCode Pilot</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/[email protected]/styles/github-dark.min.css">
+<link rel="stylesheet" href="/dashboard/styles.css">
+</head>
+<body>
+
+<div id="token-gate">
+  <h2>OpenCode Pilot</h2>
+  <p>Enter your access token to connect to the remote control dashboard.</p>
+  <input id="token-input" type="password" placeholder="Bearer token…" autocomplete="off">
+  <button class="btn btn-primary" id="token-submit" style="width:100%;max-width:360px;padding:12px;font-size:.95rem">Connect</button>
+</div>
+
+<div id="app" style="display:none;flex-direction:column;flex:1;overflow:hidden;height:100dvh">
+
+  <header>
+    <h1>Pilot</h1>
+    <div class="header-session" id="header-session">
+      <span class="header-session-name" id="header-session-label">No session selected</span>
+      <span class="badge badge-idle" id="header-status-badge" style="display:none"></span>
+    </div>
+    <div class="dot" id="conn-dot" title="SSE connection status"></div>
+    <button class="btn btn-icon" id="multiview-btn" title="Multi-view (split screen)">⊞</button>
+    <button class="btn btn-icon" id="settings-btn" title="Settings">⚙</button>
+    <button class="btn btn-primary" id="header-new-btn" style="flex-shrink:0">+ New</button>
+  </header>
+
+  <div id="perm-banner">
+    <div class="perm-item">
+      <div class="perm-title">Permission Request</div>
+      <div class="perm-desc" id="perm-desc"></div>
+      <div class="perm-actions">
+        <button class="btn btn-allow" id="btn-allow">Allow</button>
+        <button class="btn btn-deny"  id="btn-deny">Deny</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="layout">
+    <div id="sessions-panel">
+      <div id="sessions-header">Sessions</div>
+      <button id="new-session-big">+ New Session</button>
+      <div id="sessions-list"></div>
+    </div>
+
+    <div id="main-panel">
+      <!-- Single session view -->
+      <div id="single-view" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+        <div id="session-info-bar" class="hidden">
+          <span class="info-title" id="info-title"></span>
+          <span class="badge badge-idle" id="info-status-badge"></span>
+          <span class="info-id" id="info-id" title="Click to copy"></span>
+          <button class="btn btn-danger" id="abort-btn" style="font-size:.78rem;padding:4px 10px;min-height:28px">Abort</button>
+        </div>
+
+        <div class="tabs" id="session-tabs" style="display:none">
+          <div class="tab active" data-tab="messages-tab">Messages</div>
+          <div class="tab" data-tab="diff-tab">Diff</div>
+        </div>
+
+        <div id="messages-tab" class="tab-panel active">
+          <div id="messages">
+            <div id="no-session-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:16px;color:var(--text-dim);text-align:center;padding:40px 24px">
+              <h3 style="font-size:1.1rem;color:var(--text)">No session selected</h3>
+              <p style="font-size:.9rem;max-width:300px;line-height:1.5">Pick a session from the left panel or create a new one to get started.</p>
+              <button class="btn btn-primary" id="no-session-new-btn" style="margin-top:4px">+ New Session</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="diff-tab" class="tab-panel">
+          <div id="diff-panel">
+            <div style="color:var(--text-dim);font-size:.85rem;padding:12px">Select a session to view diff.</div>
+          </div>
+        </div>
+
+        <div id="input-bar">
+          <textarea id="prompt-input" placeholder="Select a session to start…" rows="1" disabled></textarea>
+          <button class="btn btn-send" id="send-btn">↑</button>
+        </div>
+      </div>
+
+      <!-- Multi-view grid -->
+      <div id="multiview-grid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div id="settings-modal">
+  <div class="settings-box">
+    <h3>Settings</h3>
+    <div class="setting-row">
+      <label>Sound notifications</label>
+      <label class="toggle"><input type="checkbox" id="s-sound"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <label>Browser notifications</label>
+      <label class="toggle"><input type="checkbox" id="s-notif"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <label>Light theme</label>
+      <label class="toggle"><input type="checkbox" id="s-theme"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <label>Show tool calls</label>
+      <label class="toggle"><input type="checkbox" id="s-tools" checked><span class="toggle-slider"></span></label>
+    </div>
+    <div style="font-size:.75rem;color:var(--text-dim);border-top:1px solid var(--border);padding-top:10px">
+      Shortcuts: <b>Ctrl+K</b> session picker &nbsp;·&nbsp; <b>Ctrl+N</b> new session &nbsp;·&nbsp; <b>Ctrl+Enter</b> send &nbsp;·&nbsp; <b>Esc</b> close
+    </div>
+    <button class="btn btn-ghost" id="settings-close" style="margin-top:4px">Close</button>
+  </div>
+</div>
+
+<!-- Session picker (Ctrl+K) -->
+<div id="session-picker">
+  <div class="picker-box">
+    <input id="picker-input" placeholder="Search sessions…" autocomplete="off" spellcheck="false">
+    <div id="picker-list"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- CDN libs (must load before ES modules that reference them) -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/typescript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/go.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/rust.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/json.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/[email protected]/lib/languages/bash.min.js"></script>
+
+<script type="module" src="/dashboard/main.js"></script>
+</body>
+</html>

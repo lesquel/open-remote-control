@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.local
+pilot-state.json
+pilot-audit.log
+pilot-banner.txt
+.opencode/pilot-*
