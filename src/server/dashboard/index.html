@@ -7,42 +7,62 @@
 
 <!-- PWA -->
 <link rel="manifest" href="./manifest.json">
-<meta name="theme-color" content="#00d9ff">
+<meta name="theme-color" content="#1e1b2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="OpenCode Pilot">
 <link rel="apple-touch-icon" href="./icons/icon.svg">
 <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/[email protected]/styles/github-dark.min.css">
+<!-- Syntax highlighting theme -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/[email protected]/styles/base16/monokai.min.css">
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
 
-<div id="token-gate">
-  <h2>OpenCode Pilot</h2>
-  <p>Enter your access token to connect to the remote control dashboard.</p>
-  <input id="token-input" type="password" placeholder="Bearer token…" autocomplete="off">
-  <button class="btn btn-primary" id="token-submit" style="width:100%;max-width:360px;padding:12px;font-size:.95rem">Connect</button>
-</div>
+<!-- Token gate — populated dynamically from auth.js -->
+<div id="token-gate" style="display:none"></div>
 
+<!-- App shell -->
 <div id="app" style="display:none;flex-direction:column;flex:1;overflow:hidden;height:100dvh">
 
-  <header>
-    <h1>Pilot</h1>
-    <div class="header-session" id="header-session">
-      <span class="header-session-name" id="header-session-label">No session selected</span>
+  <!-- ── TUI Header bar ─────────────────────────────────────────────────── -->
+  <div id="tui-header">
+    <!-- Traffic lights (decorative) -->
+    <div class="tl-dots" aria-hidden="true">
+      <div class="tl-dot red"></div>
+      <div class="tl-dot yellow"></div>
+      <div class="tl-dot green"></div>
+    </div>
+
+    <span class="header-sep">│</span>
+
+    <!-- Breadcrumb: OC | <session title> -->
+    <div class="header-breadcrumb" id="header-breadcrumb">
+      <span class="bc-app">OC</span>
+      <span class="bc-sep">│</span>
+      <span class="bc-session" id="header-session-label">No session</span>
       <span class="badge badge-idle" id="header-status-badge" style="display:none"></span>
     </div>
-    <div class="dot" id="conn-dot" title="SSE connection status"></div>
-    <button class="btn btn-icon" id="multiview-btn" title="Multi-view (split screen)">⊞</button>
-    <button class="btn btn-icon" id="settings-btn" title="Settings">⚙</button>
-    <button class="btn btn-primary" id="header-new-btn" style="flex-shrink:0">+ New</button>
-  </header>
 
+    <!-- SSE connection indicator -->
+    <div class="conn-indicator" id="conn-indicator">
+      <div class="conn-dot" id="conn-dot" title="SSE connection status"></div>
+      <span class="conn-label" id="conn-label"></span>
+    </div>
+
+    <!-- Header actions -->
+    <div class="header-actions">
+      <button class="btn btn-icon" id="sidebar-toggle-btn" title="Toggle sidebar (alt+b)">☰</button>
+      <button class="btn btn-icon" id="settings-btn" title="Settings">⚙</button>
+      <button class="btn btn-primary" id="header-new-btn" style="flex-shrink:0">+ New</button>
+    </div>
+  </div>
+
+  <!-- ── Permission Banner ──────────────────────────────────────────────── -->
   <div id="perm-banner">
     <div class="perm-item">
-      <div class="perm-title">Permission Request</div>
+      <div class="perm-title">⚠ Permission Request</div>
       <div class="perm-desc" id="perm-desc"></div>
       <div class="perm-actions">
         <button class="btn btn-allow" id="btn-allow">Allow</button>
@@ -51,55 +71,159 @@
     </div>
   </div>
 
+  <!-- ── Main Layout ────────────────────────────────────────────────────── -->
   <div id="layout">
+
+    <!-- Sessions sidebar -->
     <div id="sessions-panel">
-      <div id="sessions-header">Sessions</div>
+      <div id="sessions-header">
+        <span>Sessions</span>
+        <button class="btn btn-icon" id="multiview-btn" title="Multi-view" style="font-size:10px;padding:1px 5px;min-height:18px;border-radius:2px">⊞</button>
+      </div>
       <button id="new-session-big">+ New Session</button>
+      <div class="sessions-filter">
+        <label for="agent-filter">Agent:</label>
+        <select id="agent-filter">
+          <option value="">All</option>
+        </select>
+      </div>
       <div id="sessions-list"></div>
+      <!-- Files changed panel — injected by files-changed.js -->
+      <div id="files-changed-panel" class="files-changed-panel" style="display:none"></div>
     </div>
 
+    <!-- Main content area -->
     <div id="main-panel">
+
       <!-- Single session view -->
       <div id="single-view" style="display:flex;flex-direction:column;flex:1;overflow:hidden">
+
+        <!-- Session info bar -->
         <div id="session-info-bar" class="hidden">
-          <span class="info-title" id="info-title"></span>
-          <span class="badge badge-idle" id="info-status-badge"></span>
-          <span class="info-id" id="info-id" title="Click to copy"></span>
-          <button class="btn btn-danger" id="abort-btn" style="font-size:.78rem;padding:4px 10px;min-height:28px">Abort</button>
+          <div class="info-main">
+            <div class="info-top-row">
+              <span class="info-title" id="info-title"></span>
+              <span class="badge badge-idle" id="info-status-badge"></span>
+              <span class="agent-badge agent-badge--custom" id="info-agent-badge" style="display:none"></span>
+              <button class="btn btn-danger" id="abort-btn" style="font-size:10px;padding:2px 8px;min-height:22px">Abort</button>
+            </div>
+            <div class="info-id-row">
+              <code class="info-id" id="info-id" title="Click to copy session ID"></code>
+              <button class="info-id-copy" id="info-id-copy" title="Copy session ID">
+                <span aria-hidden="true">⊕</span>
+                <span class="info-id-copy-label">Copy</span>
+              </button>
+              <span class="info-id-hint" id="info-id-hint"></span>
+            </div>
+          </div>
         </div>
 
+        <!-- Subagents panel -->
+        <div id="subagents-panel" class="subagents-panel" style="display:none"></div>
+
+        <!-- Tabs -->
         <div class="tabs" id="session-tabs" style="display:none">
           <div class="tab active" data-tab="messages-tab">Messages</div>
           <div class="tab" data-tab="diff-tab">Diff</div>
         </div>
 
+        <!-- Messages tab -->
         <div id="messages-tab" class="tab-panel active">
+          <!-- Todo dock — mounted by todo-dock.js -->
+          <div id="todo-dock-mount"></div>
           <div id="messages">
-            <div id="no-session-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:16px;color:var(--text-dim);text-align:center;padding:40px 24px">
-              <h3 style="font-size:1.1rem;color:var(--text)">No session selected</h3>
-              <p style="font-size:.9rem;max-width:300px;line-height:1.5">Pick a session from the left panel or create a new one to get started.</p>
-              <button class="btn btn-primary" id="no-session-new-btn" style="margin-top:4px">+ New Session</button>
+            <div id="no-session-state">
+              <h3>No session selected</h3>
+              <p>Pick a session from the sidebar or press <kbd>alt+p</kbd> to open the command palette.</p>
+              <button class="btn btn-primary" id="no-session-new-btn" style="margin-top:8px">+ New Session</button>
             </div>
           </div>
         </div>
 
+        <!-- Diff tab -->
         <div id="diff-tab" class="tab-panel">
           <div id="diff-panel">
-            <div style="color:var(--text-dim);font-size:.85rem;padding:12px">Select a session to view diff.</div>
+            <div style="color:var(--text-muted);font-size:11px;padding:10px">Select a session to view diff.</div>
           </div>
         </div>
 
+        <!-- Prompt composer -->
         <div id="input-bar">
-          <textarea id="prompt-input" placeholder="Select a session to start…" rows="1" disabled></textarea>
-          <button class="btn btn-send" id="send-btn">↑</button>
+          <div class="input-row">
+            <textarea id="prompt-input" placeholder="Select a session to start…" rows="1" disabled></textarea>
+            <button class="btn-send" id="send-btn" title="Send (Enter)">↑</button>
+          </div>
+          <div class="input-label-strip" id="input-label-strip">
+            <span class="lbl-agent" id="lbl-agent">Build</span>
+            <span class="lbl-sep">·</span>
+            <span class="lbl-model" id="lbl-model">Claude Opus 4.5</span>
+            <span class="lbl-sep">·</span>
+            <span class="lbl-provider" id="lbl-provider">OpenCode</span>
+          </div>
         </div>
       </div>
 
       <!-- Multi-view grid -->
       <div id="multiview-grid"></div>
     </div>
+
+    <!-- Right info panel (TUI-style) — mounted by right-panel.js -->
+    <aside id="right-panel" class="right-panel" aria-label="Session info"></aside>
   </div>
-</div>
+
+  <!-- ── TUI Footer bar ────────────────────────────────────────────────── -->
+  <div id="tui-footer">
+    <!-- Left: label strip (agent  model  provider) -->
+    <div class="footer-left footer-label-strip" id="footer-label-strip">
+      <span class="flbl-agent" id="footer-lbl-agent">—</span>
+      <span class="flbl-sep">  </span>
+      <span class="flbl-model" id="footer-lbl-model">—</span>
+      <span class="flbl-sep">  </span>
+      <span class="flbl-provider" id="footer-lbl-provider">—</span>
+    </div>
+
+    <!-- Right: compact usage + alt+p commands + info toggle + ? -->
+    <div class="footer-right">
+      <span class="footer-usage-compact" id="footer-usage-compact"></span>
+      <span class="footer-sep">│</span>
+      <div class="footer-shortcut footer-shortcut--btn" data-action="palette" title="Open command palette (alt+p)">
+        <kbd>alt+p</kbd>
+        <span class="fsc-label">commands</span>
+      </div>
+      <span class="footer-sep">│</span>
+      <div class="footer-shortcut footer-shortcut--btn" data-action="info" title="Toggle info panel (alt+i)">
+        <kbd>alt+i</kbd>
+        <span class="fsc-label">info</span>
+      </div>
+      <span class="footer-sep">│</span>
+      <button class="footer-help-btn" id="footer-help-btn" title="Keyboard shortcuts">?</button>
+    </div>
+    <!-- Mobile: tap to expand footer -->
+    <div class="footer-mobile-toggle" id="footer-mobile-toggle">
+      <span>shortcuts</span>
+      <span>▲</span>
+    </div>
+  </div>
+
+  <!-- Keymap modal -->
+  <div id="keymap-modal">
+    <div class="keymap-box">
+      <h3>Keyboard Shortcuts</h3>
+      <div class="keymap-grid">
+        <kbd>alt+p</kbd><span>Command palette</span>
+        <kbd>alt+n</kbd><span>New session</span>
+        <kbd>alt+b</kbd><span>Toggle sidebar</span>
+        <kbd>alt+i</kbd><span>Toggle info panel</span>
+        <kbd>alt+t</kbd><span>Toggle theme</span>
+        <kbd>tab</kbd><span>Cycle agents</span>
+        <kbd>ctrl+enter</kbd><span>Send prompt</span>
+        <kbd>esc</kbd><span>Interrupt / close</span>
+      </div>
+      <button class="btn btn-ghost" id="keymap-close" style="margin-top:8px;font-size:11px">Close</button>
+    </div>
+  </div>
+
+</div><!-- /#app -->
 
 <!-- Settings modal -->
 <div id="settings-modal">
@@ -113,6 +237,13 @@
       <label>Browser notifications</label>
       <label class="toggle"><input type="checkbox" id="s-notif"><span class="toggle-slider"></span></label>
     </div>
+    <div class="setting-row" id="push-notif-setting-row">
+      <label>Push notifications for permissions</label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <label class="toggle"><input type="checkbox" id="s-push-notif"><span class="toggle-slider"></span></label>
+        <button class="btn btn-ghost" id="push-notif-test-btn" style="font-size:10px;padding:2px 8px;min-height:22px;display:none">Test</button>
+      </div>
+    </div>
     <div class="setting-row">
       <label>Light theme</label>
       <label class="toggle"><input type="checkbox" id="s-theme"><span class="toggle-slider"></span></label>
@@ -121,18 +252,39 @@
       <label>Show tool calls</label>
       <label class="toggle"><input type="checkbox" id="s-tools" checked><span class="toggle-slider"></span></label>
     </div>
-    <div style="font-size:.75rem;color:var(--text-dim);border-top:1px solid var(--border);padding-top:10px">
-      Shortcuts: <b>Ctrl+K</b> session picker &nbsp;·&nbsp; <b>Ctrl+N</b> new session &nbsp;·&nbsp; <b>Ctrl+Enter</b> send &nbsp;·&nbsp; <b>Esc</b> close
+    <div class="setting-row">
+      <label>Show reasoning by default</label>
+      <label class="toggle"><input type="checkbox" id="s-reasoning"><span class="toggle-slider"></span></label>
     </div>
-    <button class="btn btn-ghost" id="settings-close" style="margin-top:4px">Close</button>
+    <div style="font-size:10px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:10px;line-height:1.8">
+      <b style="color:var(--text-dim)">Alt+P</b> command palette &nbsp;·&nbsp;
+      <b style="color:var(--text-dim)">Alt+N</b> new session &nbsp;·&nbsp;
+      <b style="color:var(--text-dim)">Ctrl+Enter</b> send &nbsp;·&nbsp;
+      <b style="color:var(--text-dim)">Esc</b> close &nbsp;·&nbsp;
+      <b style="color:var(--text-dim)">Alt+B</b> sidebar &nbsp;·&nbsp;
+      <b style="color:var(--text-dim)">Alt+T</b> theme
+    </div>
+    <button class="btn btn-ghost" id="settings-close" style="margin-top:2px;font-size:11px">Close</button>
   </div>
 </div>
 
-<!-- Session picker (Ctrl+K) -->
+<!-- Session picker (Ctrl+K legacy — superseded by command palette) -->
 <div id="session-picker">
   <div class="picker-box">
     <input id="picker-input" placeholder="Search sessions…" autocomplete="off" spellcheck="false">
     <div id="picker-list"></div>
+  </div>
+</div>
+
+<!-- Command Palette (Ctrl+P) -->
+<div id="command-palette">
+  <div class="palette-box">
+    <div class="palette-search">
+      <span class="palette-search-icon">▶</span>
+      <input id="palette-input" placeholder="Search sessions and commands…" autocomplete="off" spellcheck="false">
+      <span class="palette-hint"><kbd>↑↓</kbd> navigate &nbsp;<kbd>↵</kbd> select &nbsp;<kbd>esc</kbd> close</span>
+    </div>
+    <div id="palette-list"></div>
   </div>
 </div>
 

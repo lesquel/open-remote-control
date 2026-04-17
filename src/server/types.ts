@@ -33,8 +33,29 @@ export type PilotEvent =
       type: "pilot.tool.completed"
       properties: { tool: string; sessionID: string; callID: string; title: string }
     }
+  | {
+      type: "pilot.subagent.spawned"
+      properties: {
+        sessionID: string
+        callID: string
+        tool: string
+        description?: string
+      }
+    }
   | { type: "pilot.client.connected"; properties: { ip: string; timestamp: number } }
   | { type: "pilot.client.disconnected"; properties: { timestamp: number } }
+  | {
+      type: "pilot.token.rotated"
+      properties: { timestamp: number; connectUrl?: string }
+    }
+  | {
+      type: "pilot.error"
+      properties: {
+        kind: "uncaughtException" | "unhandledRejection"
+        message: string
+        timestamp: number
+      }
+    }
 
 /** SDK events or any untyped passthrough */
 export interface SdkEvent {

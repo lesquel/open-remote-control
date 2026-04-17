@@ -1,5 +1,5 @@
 // sw.js — Service Worker: app shell caching, never caches API calls
-const CACHE_NAME = "pilot-v1"
+const CACHE_NAME = "pilot-v8"
 const PRECACHE = [
   "./",
   "./index.html",
@@ -19,6 +19,20 @@ const PRECACHE = [
   "./shortcuts.js",
   "./toast.js",
   "./connect.js",
+  "./command-palette.js",
+  "./subagents.js",
+  "./files-changed.js",
+  "./files-changed-bridge.js",
+  "./references.js",
+  "./label-strip.js",
+  "./usage-indicator.js",
+  "./agent-panel.js",
+  "./right-panel.js",
+  "./debug-modal.js",
+  "./todo-dock.js",
+  "./push-notifications.js",
+  "./command-history.js",
+  "./file-browser.js",
   "./manifest.json",
   "./icons/icon.svg",
 ]
@@ -61,7 +75,6 @@ self.addEventListener("fetch", (event) => {
 
       return fetch(event.request)
         .then((res) => {
-          // Cache successful same-origin or CDN responses for static assets
           if (res.ok) {
             const clone = res.clone()
             caches.open(CACHE_NAME).then((c) => c.put(event.request, clone))
@@ -69,7 +82,6 @@ self.addEventListener("fetch", (event) => {
           return res
         })
         .catch(() => {
-          // Offline fallback: return index.html for navigations
           if (event.request.mode === "navigate") {
             return caches.match("./index.html")
           }

@@ -1,5 +1,16 @@
 import type { TelegramConfig } from "../config"
 import type { PermissionQueue } from "./permission-queue"
+import { createCircuitBreaker } from "../util/circuit-breaker"
+
+/** Default fetch timeout for all Telegram API calls. */
+const DEFAULT_FETCH_TIMEOUT_MS = 10_000
+
+function getTelegramFetchTimeoutMs(): number {
+  const raw = process.env.PILOT_FETCH_TIMEOUT_MS
+  if (!raw) return DEFAULT_FETCH_TIMEOUT_MS
+  const n = parseInt(raw, 10)
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_FETCH_TIMEOUT_MS
+}
 
 export interface TelegramBot {
   enabled: boolean
@@ -37,20 +48,41 @@ export function createTelegramBot(
   let polling = true
   let offset = 0
 
-  async function api<T = unknown>(
+  // Circuit breaker: open after 5 consecutive failures, retry after 60s
+  const breaker = createCircuitBreaker({ maxFailures: 5, resetMs: 60_000 })
+
+  async function rawFetch<T = unknown>(
     method: string,
     body: Record<string, unknown>,
-  ): Promise<T | null> {
+  ): Promise<T> {
+    const controller = new AbortController()
+    const timer = setTimeout(
+      () => controller.abort(),
+      getTelegramFetchTimeoutMs(),
+    )
     try {
       const res = await fetch(`${base}/${method}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        signal: controller.signal,
       })
       const json = (await res.json()) as { ok: boolean; result: T; description?: string }
-      if (!json.ok) return null
+      if (!json.ok) throw new Error(`Telegram API error: ${json.description ?? "unknown"}`)
       return json.result
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  async function api<T = unknown>(
+    method: string,
+    body: Record<string, unknown>,
+  ): Promise<T | null> {
+    try {
+      return await breaker.run(() => rawFetch<T>(method, body))
     } catch {
+      // Circuit open or fetch error — silent fail, caller decides
       return null
     }
   }

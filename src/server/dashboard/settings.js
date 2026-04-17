@@ -17,11 +17,13 @@ export function saveSettings() {
 }
 
 export function applySettings() {
-  const { sound, notif, theme, tools } = getState().settings
+  const { sound, notif, theme, tools, showReasoning } = getState().settings
   document.getElementById('s-sound').checked = sound
   document.getElementById('s-notif').checked = notif
   document.getElementById('s-theme').checked = theme
   document.getElementById('s-tools').checked = tools
+  const reasoningEl = document.getElementById('s-reasoning')
+  if (reasoningEl) reasoningEl.checked = showReasoning ?? false
   document.body.classList.toggle('theme-light', theme)
   document.querySelectorAll('.tool-block').forEach(el => {
     el.classList.toggle('hidden-tools', !tools)
@@ -95,4 +97,14 @@ export function initSettings() {
       el.classList.toggle('hidden-tools', !settings.tools)
     })
   })
+
+  // Feature C: show reasoning by default toggle
+  const reasoningEl = document.getElementById('s-reasoning')
+  if (reasoningEl) {
+    reasoningEl.addEventListener('change', e => {
+      const settings = { ...getState().settings, showReasoning: e.target.checked }
+      setState({ settings })
+      saveSettings()
+    })
+  }
 }

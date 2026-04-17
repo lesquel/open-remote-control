@@ -24,14 +24,23 @@ export function renderDiff(diffText) {
  */
 export async function loadDiff(sessionId) {
   const panel = document.getElementById('diff-panel')
-  panel.innerHTML = '<div style="color:var(--text-dim);font-size:.82rem;padding:12px">Loading diff…</div>'
+  panel.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:10px">Loading diff…</div>'
   try {
     const data = await fetchDiff(sessionId)
     const diffText = typeof data === 'string'
       ? data
       : (data.diff ?? data.content ?? JSON.stringify(data, null, 2))
-    panel.innerHTML = renderDiff(diffText)
+    try {
+      panel.innerHTML = renderDiff(diffText)
+    } catch (err) {
+      console.error('[panel-error] diff-panel:', err)
+      panel.innerHTML = `<div class="panel-error">
+        <span>⚠ Diff panel failed to render (check console)</span>
+        <button class="panel-error-retry" id="diff-retry">Retry</button>
+      </div>`
+      document.getElementById('diff-retry')?.addEventListener('click', () => loadDiff(sessionId))
+    }
   } catch (_) {
-    panel.innerHTML = '<div style="color:var(--text-dim);padding:12px;font-size:.85rem">No diff available for this session.</div>'
+    panel.innerHTML = '<div style="color:var(--text-muted);padding:10px;font-size:11px">No diff available for this session.</div>'
   }
 }

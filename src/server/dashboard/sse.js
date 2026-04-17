@@ -1,12 +1,23 @@
-// sse.js — SSE connection, reconnect logic, and event dispatch
-import { getState, setState } from './state.js'
+// sse.js — SSE connection with exponential backoff reconnect
+import { getState, setState, appendPartDelta, clearStreamingMessage } from './state.js'
 import { loadSessions, renderSessions, updateHeaderSession, updateInfoBar } from './sessions.js'
-import { loadMessages } from './messages.js'
+import { loadMessages, applyStreamingDelta, removeStreamingCursor } from './messages.js'
 import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from './multi-view.js'
 import { handlePermissionRequested, handlePermissionResolved } from './permissions.js'
+import { onSubagentSpawned } from './subagents.js'
+import { isFileEditingToolEvent } from './files-changed.js'
+import { debouncedRefreshFilesChanged } from './files-changed-bridge.js'
 
 let eventSource = null
 let reconnectTimer = null
+// Backoff state: starts at 1s, doubles to max 30s, resets on successful open
+let backoffMs = 1000
+const BACKOFF_MIN = 1000
+const BACKOFF_MAX = 30000
+
+// Tooltip metadata for the SSE dot
+let _lastConnectTime = null
+let _reconnectAttempts = 0
 
 const SSE_EVENTS = [
   'session.updated',
@@ -14,33 +25,74 @@ const SSE_EVENTS = [
   'session.deleted',
   'message.created',
   'message.updated',
+  'message.part.updated',
   'permission.requested',
   'permission.resolved',
   'status.changed',
+  'todo.updated',
 ]
+
+/**
+ * Update the connection indicator in the header.
+ * status: 'connected' | 'reconnecting' | 'disconnected'
+ */
+function setConnectionStatus(status) {
+  const dot = document.getElementById('conn-dot')
+  const label = document.getElementById('conn-label')
+  if (!dot) return
+
+  dot.className = 'conn-dot ' + status
+
+  if (label) {
+    if (status === 'connected') {
+      label.textContent = ''
+      label.className = 'conn-label'
+    } else if (status === 'reconnecting') {
+      label.textContent = 'reconnecting…'
+      label.className = 'conn-label reconnecting'
+    } else {
+      label.textContent = 'offline'
+      label.className = 'conn-label'
+    }
+  }
+
+  // Update tooltip with last connect time + reconnect attempt count
+  const timeStr = _lastConnectTime
+    ? `Last connected: ${new Date(_lastConnectTime).toLocaleTimeString()}`
+    : 'Never connected'
+  const attemptsStr = _reconnectAttempts > 0
+    ? ` · Reconnect attempts: ${_reconnectAttempts}`
+    : ''
+  dot.title = `SSE: ${status} · ${timeStr}${attemptsStr}`
+}
 
 export function connect() {
   const { token, serverUrl } = getState()
   if (!token) return
 
-  if (eventSource) eventSource.close()
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+  }
 
-  const dot = document.getElementById('conn-dot')
   const base = serverUrl || ''
   const url = `${base}/events?token=${encodeURIComponent(token)}`
   eventSource = new EventSource(url)
 
   eventSource.onopen = () => {
-    dot.className = 'dot connected'
-    dot.title = 'Connected'
+    backoffMs = BACKOFF_MIN          // reset backoff on successful connection
+    _lastConnectTime = Date.now()
+    _reconnectAttempts = 0
+    setConnectionStatus('connected')
     setState({ sse: { connected: true } })
     loadSessions(true)
   }
 
   eventSource.onerror = () => {
-    dot.className = 'dot error'
-    dot.title = 'Disconnected'
+    setConnectionStatus('reconnecting')
     setState({ sse: { connected: false } })
+    eventSource.close()
+    eventSource = null
     scheduleReconnect()
   }
 
@@ -58,36 +110,101 @@ export function connect() {
 
 function scheduleReconnect() {
   if (reconnectTimer) return
+  _reconnectAttempts++
+  setConnectionStatus('reconnecting')  // update tooltip with new attempt count
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     connect()
-  }, 3000)
+    // Double the backoff for next failure, capped at BACKOFF_MAX
+    backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX)
+  }, backoffMs)
 }
 
 async function handleEvent(ev) {
   const t = ev.type ?? ''
   const d = ev.data ?? ev
+  // Track last event for debug modal (B6/B7)
+  window.__debugSseLastEvent = { type: t, ts: new Date().toISOString() }
   const { activeSession, multiviewActive, mvPanels, sessions } = getState()
 
   if (t.startsWith('session')) {
     loadSessions()
   }
 
+  // ── Feature B: streaming delta for text parts ──────────────────────────
+  if (t === 'message.part.updated') {
+    // ev.data has { part, delta? } — delta is the incremental text chunk
+    const part = d?.part ?? ev.properties?.part
+    const delta = d?.delta ?? ev.properties?.delta
+    const sessionId = part?.sessionID
+    const messageId = part?.messageID
+    const partId = part?.id
+
+    if (part?.type === 'text' && typeof delta === 'string' && delta.length > 0) {
+      // Accumulate delta in state
+      appendPartDelta(sessionId, messageId, partId, delta)
+      // Update DOM directly if this session is the active one
+      if (sessionId === activeSession && !multiviewActive) {
+        applyStreamingDelta(partId, delta)
+      }
+    }
+    // Fallback: if no delta field, do nothing here — message.updated will re-render
+    return
+  }
+
   if (t === 'message.created' || t === 'message.updated') {
+    // On message.updated: clear streaming state for this message (it's complete)
+    if (t === 'message.updated') {
+      const sessionId = d?.sessionId ?? ev.properties?.sessionID
+      const messageId = d?.id ?? d?.messageId ?? ev.properties?.id
+      if (sessionId && messageId) {
+        clearStreamingMessage(sessionId, messageId)
+        // Remove blinking cursor if present
+        if (sessionId === activeSession) {
+          removeStreamingCursor(messageId)
+        }
+      }
+    }
+
     if (activeSession && !multiviewActive) {
       loadMessages(activeSession)
     }
     if (d?.sessionId && mvPanels.has(d.sessionId)) {
       loadMVMessages(d.sessionId)
     }
+    // Refresh label strip and usage indicator on message events
+    if (d?.sessionId === activeSession || !d?.sessionId) {
+      window.__refreshLabelStrip?.()
+      window.__refreshUsageIndicator?.()
+      window.__agentPanel?.refresh?.()
+    }
   }
 
   if (t === 'permission.requested') {
     handlePermissionRequested(d)
+    // Dispatch for push-notifications module
+    window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: d }))
   }
 
   if (t === 'permission.resolved') {
     handlePermissionResolved(d)
+  }
+
+  if (t === 'todo.updated') {
+    window.dispatchEvent(new CustomEvent('pilot:todo:updated', { detail: d }))
+  }
+
+  if (t === 'pilot.subagent.spawned') {
+    // Pilot events carry payload under .properties (not .data)
+    onSubagentSpawned(ev.properties ?? d)
+  }
+
+  // Debounced diff refresh when a file-editing tool completes
+  if ((t === 'pilot.tool.completed' || t === 'tool.completed') && activeSession) {
+    const payload = ev.properties ?? d
+    if (isFileEditingToolEvent(payload)) {
+      debouncedRefreshFilesChanged(activeSession)
+    }
   }
 
   if (t === 'status.changed' && d.sessionId && d.status) {
@@ -98,8 +215,19 @@ async function handleEvent(ev) {
       const s = sessions[d.sessionId]
       const title = s?.title || d.sessionId.slice(0, 8)
       updateHeaderSession(title, d.status)
-      updateInfoBar(d.sessionId, title, d.status)
+      updateInfoBar(d.sessionId, title, d.status, s)
     }
     updateMVPanelStatus(d.sessionId, d.status)
+  }
+
+  if (t === 'vcs.branch.updated') {
+    window.__rightPanelSetBranch?.(ev.properties?.branch ?? ev.branch ?? d?.branch ?? null)
+  }
+
+  if (t === 'lsp.updated') {
+    // Refresh references (which re-fetches /lsp/status) then re-render the right panel
+    window.__refreshReferences?.().then(() => {
+      window.__refreshRightPanel?.()
+    }).catch(() => {})
   }
 }

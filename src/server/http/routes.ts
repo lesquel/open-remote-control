@@ -3,6 +3,8 @@ import type { Config } from "../config"
 import type { AuditLog } from "../services/audit"
 import type { EventBus } from "../services/event-bus"
 import type { PermissionQueue } from "../services/permission-queue"
+import type { TelegramBot } from "../services/telegram"
+import type { Logger } from "../util/logger"
 
 /** Auth requirements for a route. */
 export type AuthRequirement = "required" | "optional" | "none"
@@ -18,9 +20,21 @@ export interface RouteDeps {
   worktree: PluginInput["worktree"]
   config: Config
   token: string
+  /**
+   * Replace the active token. Called by POST /auth/rotate.
+   * The server validates future requests against whatever deps.token holds
+   * at the time, so this must also update the value the server reads.
+   * The mutable container pattern is handled in index.ts: deps.token is
+   * updated by writing through this callback.
+   */
+  rotateToken: (newToken: string) => void
+  /** Public URL from the tunnel (if active), used in notifications. */
+  tunnelUrl: string | null
   audit: AuditLog
   eventBus: EventBus
   permissionQueue: PermissionQueue
+  telegram: TelegramBot
+  logger: Logger
 }
 
 export interface RouteContext {
@@ -48,6 +62,7 @@ import {
   getSession,
   getSessionMessages,
   getSessionDiff,
+  getSessionChildren,
   postSessionPrompt,
   abortSession,
   listPermissions,
@@ -55,6 +70,16 @@ import {
   streamEvents,
   listTools,
   getProject,
+  getHealth,
+  rotateAuthToken,
+  listAgents,
+  listProviders,
+  getMcpStatus,
+  listProjects,
+  getCurrentProject,
+  getLspStatus,
+  listFileTree,
+  readFileContent,
 } from "./handlers"
 
 /**
@@ -99,6 +124,12 @@ export const routes: Route[] = [
     handler: getSessionDiff,
   },
   {
+    method: "GET",
+    pattern: /^\/sessions\/(?<id>[^/]+)\/children$/,
+    auth: "required",
+    handler: getSessionChildren,
+  },
+  {
     method: "POST",
     pattern: /^\/sessions\/(?<id>[^/]+)\/prompt$/,
     auth: "required",
@@ -132,6 +163,20 @@ export const routes: Route[] = [
   { method: "GET", pattern: /^\/events$/, auth: "optional", handler: streamEvents },
   { method: "GET", pattern: /^\/tools$/, auth: "required", handler: listTools },
   { method: "GET", pattern: /^\/project$/, auth: "required", handler: getProject },
+  // Health check — no auth required (monitoring systems, load balancers)
+  { method: "GET", pattern: /^\/health$/, auth: "none", handler: getHealth },
+  // Token rotation — auth required with the CURRENT token
+  { method: "POST", pattern: /^\/auth\/rotate$/, auth: "required", handler: rotateAuthToken },
+  // SDK proxy endpoints — dashboard data
+  { method: "GET", pattern: /^\/agents$/, auth: "required", handler: listAgents },
+  { method: "GET", pattern: /^\/providers$/, auth: "required", handler: listProviders },
+  { method: "GET", pattern: /^\/mcp\/status$/, auth: "required", handler: getMcpStatus },
+  { method: "GET", pattern: /^\/projects$/, auth: "required", handler: listProjects },
+  { method: "GET", pattern: /^\/project\/current$/, auth: "required", handler: getCurrentProject },
+  { method: "GET", pattern: /^\/lsp\/status$/, auth: "required", handler: getLspStatus },
+  // File browser endpoints — auth required
+  { method: "GET", pattern: /^\/file\/list$/, auth: "required", handler: listFileTree },
+  { method: "GET", pattern: /^\/file\/content$/, auth: "required", handler: readFileContent },
 ]
 
 /** Match the first route whose method and pattern match. */

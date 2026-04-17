@@ -21,14 +21,23 @@ export function showNextPerm() {
     return
   }
 
-  const p = pendingPerms[0]
-  document.getElementById('perm-desc').textContent =
-    p.description ?? p.command ?? p.tool ?? JSON.stringify(p)
-  banner.classList.add('visible')
+  try {
+    const p = pendingPerms[0]
+    document.getElementById('perm-desc').textContent =
+      p.description ?? p.command ?? p.tool ?? JSON.stringify(p)
+    banner.classList.add('visible')
 
-  if (settings.sound) playBeep()
-  if (settings.notif && Notification.permission === 'granted') {
-    new Notification('Permission requested', { body: p.description ?? p.tool ?? '' })
+    if (settings.sound) playBeep()
+    if (settings.notif && Notification.permission === 'granted') {
+      new Notification('Permission requested', { body: p.description ?? p.tool ?? '' })
+    }
+  } catch (err) {
+    console.error('[panel-error] perm-banner:', err)
+    if (banner) {
+      banner.classList.add('visible')
+      const desc = document.getElementById('perm-desc')
+      if (desc) desc.textContent = '⚠ Permission request failed to render (check console)'
+    }
   }
 }
 

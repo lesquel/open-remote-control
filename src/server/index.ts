@@ -11,6 +11,7 @@ import { writeBanner } from "./services/banner"
 import { createNotificationService } from "./services/notifications"
 import { createRemoteServer } from "./http/server"
 import { createEventHook, createPermissionAskHook, createToolHooks } from "./hooks"
+import { createLogger } from "./util/logger"
 
 export default {
   id: "opencode-pilot",
@@ -21,7 +22,9 @@ export default {
         .catch(() => {})
     })
 
-    const token = generateToken()
+    const logger = createLogger(ctx.client, "opencode-pilot")
+
+    let currentToken = generateToken()
     const audit = createAuditLog(ctx)
     const eventBus = createEventBus()
     const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
@@ -29,22 +32,34 @@ export default {
 
     const notifications = createNotificationService(eventBus, telegram, audit)
 
-    const server = createRemoteServer({
+    // ─── RouteDeps object — mutable so token rotation works ───────────────
+    // rotateToken mutates deps.token in-place; the server reads deps.token on
+    // each request so the update is immediately visible without restarting.
+    const deps = {
       client: ctx.client,
       project: ctx.project,
       directory: ctx.directory,
       worktree: ctx.worktree,
       config,
-      token,
+      token: currentToken,
+      rotateToken(newToken: string): void {
+        deps.token = newToken
+        currentToken = newToken
+      },
+      tunnelUrl: null as string | null,
       audit,
       eventBus,
       permissionQueue,
-    })
+      telegram,
+      logger,
+    }
+
+    const server = createRemoteServer(deps)
 
     server.start()
 
     writeState(ctx.directory, {
-      token,
+      token: currentToken,
       port: config.port,
       host: config.host,
       startedAt: Date.now(),
@@ -55,6 +70,33 @@ export default {
     const tunnel = await startTunnel({
       provider: config.tunnel,
       port: config.port,
+    })
+
+    // Make tunnel URL available to handlers (e.g. /health, /auth/rotate)
+    deps.tunnelUrl = tunnel.publicUrl
+
+    // ─── R2: Global error traps ──────────────────────────────────────────
+    // Never write to stdout/stderr — the OpenCode TUI renders those as red
+    // noise. Write to audit log + logger only.
+    process.on("uncaughtException", (err: Error) => {
+      audit.log("process.uncaughtException", { error: err.message, stack: err.stack })
+      logger.error("Uncaught exception", { error: err.message })
+      eventBus.emit({
+        type: "pilot.error",
+        properties: { kind: "uncaughtException", message: err.message, timestamp: Date.now() },
+      })
+      // Do NOT exit — let the process continue
+    })
+
+    process.on("unhandledRejection", (reason: unknown) => {
+      const message = reason instanceof Error ? reason.message : String(reason)
+      audit.log("process.unhandledRejection", { error: message })
+      logger.error("Unhandled rejection", { error: message })
+      eventBus.emit({
+        type: "pilot.error",
+        properties: { kind: "unhandledRejection", message, timestamp: Date.now() },
+      })
+      // Do NOT exit
     })
 
     // ─── Graceful shutdown ───────────────────────────────────────────────
@@ -83,7 +125,7 @@ export default {
         service: "opencode-pilot",
         level: "info",
         message: `Remote control active on ${config.host}:${config.port}`,
-        extra: { token },
+        extra: { token: currentToken },
       },
     })
 
@@ -112,12 +154,12 @@ export default {
     await writeBanner({
       localUrl,
       publicUrl: tunnel.publicUrl,
-      token,
+      token: currentToken,
       directory: ctx.directory,
     })
 
     // Send Telegram startup notification (fire and forget)
-    const dashboardUrl = `${tunnel.publicUrl ?? localUrl}/?token=${token}`
+    const dashboardUrl = `${tunnel.publicUrl ?? localUrl}/?token=${currentToken}`
     telegram.sendStartup(dashboardUrl).catch(() => {})
 
     // Notify TUI that the server is up
@@ -150,9 +192,15 @@ export default {
     return {
       event: eventHook,
       "permission.ask": permissionAskHook,
-      "tool.execute.before": async (input) => toolHooks.handleToolBefore(input),
+      "tool.execute.before": async (input, output) =>
+        toolHooks.handleToolBefore(input, {
+          args: (output?.args ?? {}) as Record<string, unknown>,
+        }),
       "tool.execute.after": async (input, output) =>
-        toolHooks.handleToolAfter(input, output),
+        toolHooks.handleToolAfter(
+          { ...input, args: input.args as Record<string, unknown> | undefined },
+          output,
+        ),
     }
   }) satisfies Plugin,
 }

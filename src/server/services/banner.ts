@@ -46,33 +46,31 @@ export async function writeBanner(opts: BannerOptions): Promise<string> {
   const localhostNote =
     !publicUrl &&
     (localUrl.includes("127.0.0.1") || localUrl.includes("localhost"))
-      ? `\n   NOTE: Server bound to localhost — QR won't work from other devices.\n         Set PILOT_HOST=0.0.0.0 to bind to all interfaces.\n`
+      ? `NOTE: Server bound to localhost — QR won't work from other devices.\n      Set PILOT_HOST=0.0.0.0 to bind to LAN, or PILOT_TUNNEL=cloudflared to expose publicly.`
       : ""
 
-  const publicLine = publicUrl ? `   Public: ${publicUrl}\n` : ""
-  const pwaLine = pwaLink ? `   PWA:    ${pwaLink}\n` : ""
-
-  const qrLabel = pwaLink
-    ? `   Scan QR to open in PWA (${resolvedPwaUrl}):`
-    : `   Scan QR to open dashboard on mobile:`
+  // The primary link the user will actually open. PWA link if tunnel is up
+  // (installable, hosted on GitHub Pages); otherwise the direct dashboard link.
+  const primaryLink = pwaLink ?? dashboardUrl
 
   const banner = [
     ``,
     `OpenCode Pilot — Remote Control`,
     `================================`,
     ``,
-    `   Local:  ${localUrl}`,
-    publicLine.trimEnd(),
-    pwaLine.trimEnd(),
-    `   Token:  ${token}`,
+    `Open this link on your phone (or scan the QR):`,
     ``,
-    `   curl -H "Authorization: Bearer ${token}" ${localUrl}/status`,
-    localhostNote,
-    qrLabel,
+    primaryLink,
     ``,
     qr,
-    `   Direct link: ${dashboardUrl}`,
     ``,
+    `Details:`,
+    `  Local:   ${localUrl}`,
+    publicUrl ? `  Public:  ${publicUrl}` : ``,
+    pwaLink ? `  PWA:     ${resolvedPwaUrl}` : ``,
+    `  Direct:  ${dashboardUrl}`,
+    ``,
+    localhostNote,
   ]
     .filter((line) => line !== "")
     .join("\n")

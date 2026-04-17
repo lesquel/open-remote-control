@@ -9,15 +9,9 @@
 
 ## Quick Start
 
-**1. Install the plugin**
-
-```json
-{
-  "plugin": ["opencode-pilot"]
-}
-```
-
-**2. Start OpenCode** — the plugin starts automatically and prints a QR code
+1. Install the plugin (see [Installation](#installation) — npm coming soon; clone from GitHub today).
+2. Run `opencode` — the plugin auto-starts and prints a banner with the URL, token, and a QR code.
+3. Scan the QR code (or open the URL and paste the token) to reach the dashboard.
 
 ```
 🎮 OpenCode Pilot — Remote Control
@@ -26,7 +20,52 @@
    📱 Scan QR to open dashboard on mobile
 ```
 
-**3. Open the dashboard** — scan the QR code, or paste the URL + token in your browser
+---
+
+## Installation
+
+### Option 1 — npm (coming soon)
+
+> **Not available yet.** The package is not published to npm at the moment. Once published, install will be as simple as adding the plugin name to your `opencode.jsonc`:
+
+```jsonc
+{
+  "plugin": ["opencode-pilot"]
+}
+```
+
+Until then, use Option 2 or Option 3 below.
+
+### Option 2 — From GitHub (recommended today)
+
+Clone the repo and install its dependencies:
+
+```bash
+git clone https://github.com/lesquel/open-remote-control.git ~/opencode-pilot
+cd ~/opencode-pilot
+bun install
+```
+
+Then register the plugin in your `opencode.jsonc` (or `.opencode/opencode.jsonc`) using an **absolute path**:
+
+```jsonc
+{
+  "plugin": ["/absolute/path/to/opencode-pilot"]
+}
+```
+
+### Option 3 — Local development (monorepo / workspace)
+
+If the plugin lives inside your project (for example, a workspace package or a git submodule), you can reference it with a relative path:
+
+```jsonc
+{
+  "plugin": ["./relative/path/to/opencode-pilot"]
+}
+```
+
+> [!WARNING]
+> **Path resolution gotcha:** if your config lives at `.opencode/opencode.jsonc`, a relative path like `"../opencode-pilot"` is resolved relative to `.opencode/`, NOT your project root. Use **absolute paths** to avoid silent failures — the plugin will not start and no error will be printed.
 
 ---
 
@@ -200,6 +239,47 @@ bun test
 # Hot-reload dashboard HTML (no restart needed):
 PILOT_DEV=true opencode
 ```
+
+---
+
+## Troubleshooting
+
+### Plugin doesn't start (no banner, no QR)
+
+Almost always a wrong path in your OpenCode config. Remember: relative paths inside `.opencode/opencode.jsonc` are resolved relative to `.opencode/`, not your project root. The plugin fails silently when the path is wrong — no error is printed.
+
+- Double-check whether your config lives at `opencode.jsonc` (project root) or `.opencode/opencode.jsonc` — they resolve relative paths differently.
+- When in doubt, use an **absolute path** in the `plugin` array.
+
+### Port 4097 already in use
+
+Another process — or a previous OpenCode session — is holding the port. Either pick a different port or kill the offender:
+
+```bash
+# Use a different port
+PILOT_PORT=5000 opencode
+
+# Or find and kill whatever is using 4097
+lsof -i :4097
+```
+
+### Tunnel doesn't start
+
+The `cloudflared` or `ngrok` binary is not installed (or not on `PATH`). The plugin keeps working on LAN, but nothing is exposed publicly. Install the binary you need — see [Remote Access via Tunnel](#remote-access-via-tunnel) — and restart OpenCode.
+
+### Telegram notifications don't arrive
+
+The plugin silently disables Telegram if `PILOT_TELEGRAM_TOKEN` or `PILOT_TELEGRAM_CHAT_ID` is missing or invalid. Verify both env vars are set, then confirm the bot token is valid:
+
+```bash
+curl https://api.telegram.org/bot<TOKEN>/getMe
+```
+
+A valid token returns `{"ok":true, ...}`. If you get `401 Unauthorized`, the token is wrong.
+
+### SSE connection drops every 10 seconds
+
+This was a historical bug caused by `Bun.serve`'s default `idleTimeout: 10`. It is fixed in current versions (`idleTimeout: 255` + a keepalive ping every 25s). If you still see it, make sure you are on **Bun >= 1.1** — older versions may not honor the `idleTimeout` option.
 
 ---
 

@@ -5,6 +5,32 @@ import type { RouteContext } from "./routes"
 import { json, jsonError } from "./json"
 import { CORS_HEADERS } from "./cors"
 import { validateToken } from "./auth"
+import { validateBody } from "./validation"
+import { generateToken } from "../util/auth"
+import { updateStateToken } from "../services/state"
+import { PILOT_VERSION } from "../constants"
+import type {
+  Agent,
+  LspStatus,
+  McpStatus,
+  Project,
+} from "@opencode-ai/sdk"
+
+// ─── Directory param helper ──────────────────────────────────────────────────
+
+const MAX_DIRECTORY_LENGTH = 512
+
+/**
+ * Extract and validate the optional `?directory=<path>` query param.
+ * Returns `{ directory }` if present and valid, or `{}` if absent.
+ * Returns `null` if the value is malformed (caller should return 400).
+ */
+function extractDirectory(url: URL): { directory: string } | {} | null {
+  const dir = url.searchParams.get("directory")
+  if (!dir) return {}
+  if (dir.includes("..") || dir.length > MAX_DIRECTORY_LENGTH) return null
+  return { directory: dir }
+}
 
 // ─── Dashboard path ─────────────────────────────────────────────────────────
 // The dashboard has been split into src/server/dashboard/.
@@ -131,9 +157,12 @@ export async function getStatus({ deps }: RouteContext): Promise<Response> {
   )
 }
 
-export async function listSessions({ deps }: RouteContext): Promise<Response> {
-  const result = await deps.client.session.list()
-  const statuses = await deps.client.session.status()
+export async function listSessions({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  const result = await deps.client.session.list({ query: { ...dirParam } })
+  const statuses = await deps.client.session.status({ query: { ...dirParam } })
   return json(
     { sessions: result.data ?? [], statuses: statuses.data ?? {} },
     200,
@@ -141,27 +170,56 @@ export async function listSessions({ deps }: RouteContext): Promise<Response> {
   )
 }
 
-export async function createSession({ deps }: RouteContext): Promise<Response> {
-  const result = await deps.client.session.create()
+export async function createSession({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  const result = await deps.client.session.create({ query: { ...dirParam } })
   deps.audit.log("session.created", { sessionID: result.data?.id ?? null })
   return json(result.data ?? null, result.error ? 500 : 201, CORS_HEADERS)
 }
 
-export async function getSession({ params, deps }: RouteContext): Promise<Response> {
-  const result = await deps.client.session.get({ path: { id: params.id } })
+export async function getSession({ url, params, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  const result = await deps.client.session.get({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? null, result.error ? 404 : 200, CORS_HEADERS)
 }
 
 export async function getSessionMessages({
+  url,
   params,
   deps,
 }: RouteContext): Promise<Response> {
-  const result = await deps.client.session.messages({ path: { id: params.id } })
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  const result = await deps.client.session.messages({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
 
-export async function getSessionDiff({ params, deps }: RouteContext): Promise<Response> {
-  const result = await deps.client.session.diff({ path: { id: params.id } })
+export async function getSessionDiff({ url, params, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  const result = await deps.client.session.diff({ path: { id: params.id }, query: { ...dirParam } })
+  return json(result.data ?? [], 200, CORS_HEADERS)
+}
+
+/**
+ * List child (subagent) sessions for a given parent session.
+ * Maps to the SDK's session.children endpoint.
+ */
+export async function getSessionChildren({
+  url,
+  params,
+  deps,
+}: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  const result = await deps.client.session.children({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
 
@@ -174,10 +232,26 @@ interface PromptBody {
 
 export async function postSessionPrompt({
   req,
+  url,
   params,
   deps,
 }: RouteContext): Promise<Response> {
-  const body = (await req.json()) as PromptBody
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  let rawBody: unknown
+  try {
+    rawBody = await req.json()
+  } catch {
+    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+  }
+
+  // Validate that body is an object (message or parts required — checked below)
+  if (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return jsonError("INVALID_BODY", "Request body must be a JSON object", 400, CORS_HEADERS)
+  }
+
+  const body = rawBody as PromptBody
 
   if (!body.message && (!body.parts || body.parts.length === 0)) {
     return jsonError("MISSING_BODY", "message or parts is required", 400, CORS_HEADERS)
@@ -204,14 +278,18 @@ export async function postSessionPrompt({
 
   const result = await deps.client.session.prompt({
     path: { id: sessionID },
+    query: { ...dirParam },
     body: promptBody,
   })
   return json(result.data ?? null, result.error ? 500 : 200, CORS_HEADERS)
 }
 
-export async function abortSession({ params, deps }: RouteContext): Promise<Response> {
+export async function abortSession({ url, params, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
   deps.audit.log("session.aborted", { sessionID: params.id })
-  const result = await deps.client.session.abort({ path: { id: params.id } })
+  const result = await deps.client.session.abort({ path: { id: params.id }, query: { ...dirParam } })
   return json({ ok: true }, result.error ? 500 : 200, CORS_HEADERS)
 }
 
@@ -261,8 +339,11 @@ export async function streamEvents({ req, url, deps }: RouteContext): Promise<Re
   return deps.eventBus.createSSEResponse(CORS_HEADERS)
 }
 
-export async function listTools({ deps }: RouteContext): Promise<Response> {
-  const result = await deps.client.tool.ids()
+export async function listTools({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  const result = await deps.client.tool.ids({ query: { ...dirParam } })
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
 
@@ -276,6 +357,239 @@ export async function getProject({ deps }: RouteContext): Promise<Response> {
     200,
     CORS_HEADERS,
   )
+}
+
+// ─── Health ─────────────────────────────────────────────────────────────────
+
+export async function getHealth({ deps }: RouteContext): Promise<Response> {
+  // SDK liveness: try a lightweight call
+  let sdkStatus: "up" | "down" = "down"
+  try {
+    await deps.client.session.list()
+    sdkStatus = "up"
+  } catch {
+    sdkStatus = "down"
+  }
+
+  // Tunnel status
+  const tunnelStatus: "up" | "down" | "disabled" =
+    deps.config.tunnel === "off"
+      ? "disabled"
+      : deps.tunnelUrl !== null
+        ? "up"
+        : "down"
+
+  // Telegram status — "down" if bot is configured but not enabled (no config)
+  const telegramStatus: "up" | "down" | "disabled" =
+    deps.config.telegram === null
+      ? "disabled"
+      : deps.telegram.enabled
+        ? "up"
+        : "down"
+
+  const anyDegraded =
+    sdkStatus === "down" ||
+    tunnelStatus === "down" ||
+    telegramStatus === "down"
+
+  return json(
+    {
+      status: anyDegraded ? "degraded" : "ok",
+      uptimeMs: Math.round(process.uptime() * 1000),
+      version: PILOT_VERSION,
+      services: {
+        tunnel: tunnelStatus,
+        telegram: telegramStatus,
+        sdk: sdkStatus,
+      },
+    },
+    200,
+    CORS_HEADERS,
+  )
+}
+
+// ─── Token rotation ─────────────────────────────────────────────────────────
+
+export async function rotateAuthToken({ deps }: RouteContext): Promise<Response> {
+  const newToken = generateToken()
+
+  // Update runtime token. deps is a shared object reference, so this mutation
+  // is immediately visible to the server's auth check on subsequent requests.
+  deps.rotateToken(newToken)
+
+  // Persist to state file so the TUI slash command still works after rotation.
+  updateStateToken(deps.directory, newToken)
+
+  deps.audit.log("auth.token.rotated", {})
+
+  // Emit SSE so the dashboard can show a toast / refresh its token.
+  const baseUrlForEvent = deps.tunnelUrl ?? `http://${deps.config.host}:${deps.config.port}`
+  deps.eventBus.emit({
+    type: "pilot.token.rotated",
+    properties: {
+      timestamp: Date.now(),
+      connectUrl: `${baseUrlForEvent}/?token=${newToken}`,
+    },
+  })
+
+  // Telegram notification — include connect URL if we have a base URL.
+  if (deps.telegram.enabled) {
+    const baseUrl = deps.tunnelUrl ?? `http://${deps.config.host}:${deps.config.port}`
+    const connectUrl = `${baseUrl}/?token=${newToken}`
+    deps.telegram
+      .sendMessage(
+        `🔑 <b>Token Rotated</b>\n\nNew connect URL:\n<a href="${connectUrl}">${connectUrl}</a>`,
+      )
+      .catch(() => {})
+  }
+
+  return json(
+    {
+      token: newToken,
+      expiresAt: null,
+    },
+    200,
+    CORS_HEADERS,
+  )
+}
+
+// ─── SDK proxy handlers ──────────────────────────────────────────────────────
+
+export async function listAgents({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  try {
+    const result = await deps.client.app.agents({ query: { ...dirParam } })
+    const agents: Array<Agent> = result.data ?? []
+    return json({ agents }, 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: app.agents", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+export async function listProviders({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  try {
+    const result = await deps.client.provider.list({ query: { ...dirParam } })
+    return json(result.data ?? {}, 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: provider.list", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+export async function getMcpStatus({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  try {
+    const result = await deps.client.mcp.status({ query: { ...dirParam } })
+    const servers: Record<string, McpStatus> = result.data ?? {}
+    return json({ servers }, 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: mcp.status", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+export async function listProjects({ deps }: RouteContext): Promise<Response> {
+  try {
+    const result = await deps.client.project.list()
+    const projects: Array<Project> = result.data ?? []
+    return json({ projects }, 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: project.list", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+export async function getCurrentProject({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  try {
+    const result = await deps.client.project.current({ query: { ...dirParam } })
+    return json({ project: result.data ?? null }, 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: project.current", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+// ─── File browser ────────────────────────────────────────────────────────────
+
+export async function listFileTree({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+
+  const path = url.searchParams.get("path")
+  if (!path) return jsonError("MISSING_PATH", "path is required", 400, CORS_HEADERS)
+
+  // Block directory traversal in path param
+  if (path.includes(".."))
+    return jsonError("FORBIDDEN", "Path traversal not allowed", 403, CORS_HEADERS)
+
+  try {
+    const result = await deps.client.file.list({
+      query: { path, ...dirParam },
+    })
+    return json(result.data ?? [], 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: file.list", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+export async function readFileContent({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+
+  const path = url.searchParams.get("path")
+  if (!path) return jsonError("MISSING_PATH", "path is required", 400, CORS_HEADERS)
+
+  // Block directory traversal
+  if (path.includes(".."))
+    return jsonError("FORBIDDEN", "Path traversal not allowed", 403, CORS_HEADERS)
+
+  try {
+    const result = await deps.client.file.read({
+      query: { path, ...dirParam },
+    })
+    return json(result.data ?? null, result.data ? 200 : 404, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: file.read", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+// ─── LSP status ──────────────────────────────────────────────────────────────
+
+export async function getLspStatus({ url, deps }: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+  try {
+    const result = await deps.client.lsp.status({ query: { ...dirParam } })
+    const clients: Array<LspStatus> = result.data ?? []
+    return json({ clients }, 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: lsp.status", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

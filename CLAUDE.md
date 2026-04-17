@@ -63,6 +63,7 @@ src/tui/
 - `PILOT_TUNNEL` (default: off) — `cloudflared` or `ngrok` to expose via public tunnel
 - `PILOT_TELEGRAM_TOKEN` + `PILOT_TELEGRAM_CHAT_ID` — optional Telegram bot
 - `PILOT_DEV` (default: false) — when true, dashboard HTML is re-read on each request
+- `PILOT_FETCH_TIMEOUT_MS` (default: 10000) — timeout for external HTTP calls (Telegram API)
 
 ## Event Types (PilotEvent discriminated union)
 - `pilot.connected` — SSE client connected
@@ -70,7 +71,10 @@ src/tui/
 - `pilot.permission.resolved` — permission resolved
 - `pilot.tool.started` — tool execution started
 - `pilot.tool.completed` — tool execution finished
+- `pilot.subagent.spawned` — Task tool spawned a child session
 - `pilot.client.connected` / `pilot.client.disconnected` — client lifecycle
+- `pilot.token.rotated` — auth token rotated (payload includes new connect URL)
+- `pilot.error` — global uncaughtException / unhandledRejection (non-fatal)
 
 ## Route Table
 | Method | Path | Auth |
@@ -90,3 +94,14 @@ src/tui/
 | GET | /events | optional (Bearer or ?token=) |
 | GET | /tools | required |
 | GET | /project | required |
+| GET | /sessions/:id/children | required |
+| GET | /health | none |
+| POST | /auth/rotate | required |
+| GET | /agents | required |
+| GET | /providers | required |
+| GET | /mcp/status | required |
+| GET | /projects | required |
+| GET | /project/current | required |
+| GET | /lsp/status | required |
+
+**Multi-project routing**: per-project endpoints (`/sessions*`, `/agents`, `/providers`, `/mcp/status`, `/project/current`, `/lsp/status`, `/tools`) accept an optional `?directory=<path>` query param that OpenCode uses to auto-boot an instance context for that worktree. Path traversal (`..`) and overlong paths (>512 chars) return 400.
