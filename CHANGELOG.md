@@ -4,6 +4,68 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.5.0] — 2026-04-17
+
+### Fixed
+
+- **`/remote` command noise polluted the TUI** — browser launch used `stdout: "inherit"` / `stderr: "inherit"`, so Chromium's `canberra-gtk-module` warning and `CanCreateUserNamespace() EPERM` sandbox message were written directly on top of the OpenCode TUI. Now `/dev/null`'d with `proc.unref()` and a 1.5s fuse so a stuck spawn never blocks the command.
+- **Multi-view grid still didn't load chats** — the inline renderer in `loadMVMessages` only handled `p.type === 'text'` parts and ignored reasoning + tool-invocation parts. Messages with only tool calls (common for assistant turns) rendered as empty panes. Now delegates to a shared `renderMessageIntoPanel()` helper exported from `messages.js` that reuses the single-session renderer (text, reasoning, tool calls, agent badge). Cross-project panes also now pass each session's own `directory` to `fetchMessages` instead of the global `activeDirectory`.
+- **Live usage/context/cost updates** — tokens, context %, and cumulative cost now refresh live on every `message.updated` / `message.part.updated` SSE event. Previously required leaving the session and coming back. Root cause: `right-panel.js` and `usage-indicator.js` subscribed only to `activeSession` changes and re-rendered with cached zeros on directory change instead of calling `refresh()`.
+- **Files changed panel stale on project switch** — `command-palette.js::applyProjectChoice` now calls `refreshFilesChanged(null)` after clearing sessions state, and `sse.js` `tool.completed` refreshes any multi-view panel whose session matches the event's `sessionID`.
+- **Sessions grid / multi-view rendered empty** — `multi-view.js::loadMVMessages` was reading `m.role` / `m.parts` directly on raw SDK messages, but the SDK returns `{ info: Message, parts: Part[] }` (wrapped). Now runs `normalizeMessage()` before rendering.
+- **Multi-project SSE didn't reconnect on directory switch** — `sse.js::connect` now builds the URL with `?directory=` and a new `activeDirectory` subscription closes and reopens the `EventSource` when the directory changes. Events from the new project context now reach the dashboard without a manual reload.
+
+### Added — Web Push (end-to-end)
+
+Full VAPID-based Web Push implementation. Previous releases announced the feature but only implemented the browser Notification API (local-only toasts).
+
+- **Backend**: `src/server/services/push.ts` — factory with in-memory subscription store, circuit-breaker-wrapped `sendNotification`, auto-prune dead subs on 404/410. Endpoints `GET /push/public-key`, `POST /push/subscribe`, `POST /push/unsubscribe`, `POST /push/test` (all auth-required). Triggered from `notifyPermissionPending` so every permission request fires a push to every subscribed device.
+- **Config**: `PILOT_VAPID_PUBLIC_KEY`, `PILOT_VAPID_PRIVATE_KEY`, `PILOT_VAPID_SUBJECT` (default `mailto:admin@opencode-pilot.local`). Push is disabled when either key is missing; `/push/public-key` returns 503 with a clear message so the dashboard can guide the user.
+- **Frontend**: `push-notifications.js` now subscribes via `pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`, sends the subscription JSON to the backend, and re-subscribes silently on next load if previously enabled.
+- **Service worker**: added `push` event handler (`showNotification` with Open/Dismiss actions, `requireInteraction: true`) and `notificationclick` handler that focuses an existing dashboard tab or opens `data.url`. Cache bumped to `pilot-v9`.
+- **Dev-friendly**: `main.js` SW registration now allows `localhost` / `127.0.0.1` hostnames in addition to HTTPS, per browser PWA spec.
+
+### Added — Glob file opener
+
+Open arbitrary files from the dashboard via glob patterns, opt-in for safety.
+
+- **Config flag**: `PILOT_ENABLE_GLOB_OPENER=true` (default `false`). Endpoints return 403 `GLOB_DISABLED` when off.
+- **Endpoints**: `GET /fs/glob?pattern=&cwd=&limit=` uses `new Bun.Glob(pattern).scan()` with mtime-desc sort, default 1000 / max 5000 results. `GET /fs/read?path=` reads UTF-8 content with a 2 MB cap (413 on overflow).
+- **Security**: paths are `realpathSync`'d and must resolve under the project directory OR `process.env.HOME`. Non-absolute paths, symlink escapes, missing files, and directories all rejected. Every access audited (`glob.search`, `fs.read`).
+- **Frontend**: `file-browser.js` adds a glob search row above the file tree (Enter/Esc keybinds, clear button). Results render as a flat list; clicking opens the file in the existing preview modal.
+
+### Added — `/remote` slash command in OpenCode TUI
+
+Type `/remote` (or `/dashboard`) inside the OpenCode TUI and the web dashboard opens in the default browser with the current pilot token pre-applied. Cross-platform: `open` on macOS, `xdg-open` on Linux, `cmd /c start "" <url>` on Windows (empty title arg protects against special chars in the token). On spawn failure, falls back to a long-duration toast containing the URL for manual copy.
+
+### Added — Session delete (single + bulk)
+
+- `DELETE /sessions/:id` endpoint proxies `client.session.delete({ path: { id }, query: { directory } })`, audits `session.deleted`, handles 404 gracefully. `DELETE` added to `Route.method` union and CORS allow-methods.
+- Per-row `×` button on each session item (opacity-0 by default, revealed on hover; `stopPropagation` so click doesn't activate).
+- Command-palette actions: "Delete Session" (danger variant, `window.confirm` guard) and "Delete old sessions (>30 days)" (bulk, sequential with progress toast every 5 deletions + final summary).
+- `api.js::deleteSession(id, { directory })` helper; `sessions.js::deleteSessionById` cleans up `sessions`, `statuses`, `mvPanels`, `activeSession`, and re-renders the grid.
+
+### Added — Production readiness documentation
+
+- `docs/PRODUCTION_READINESS.md` — honest deploy-mode verdicts (LAN ready, tunnel not ready without rate limit, SaaS not compatible with in-process architecture), 12 prioritized recommendations (rate limiting + token refresh on the MUST list), a cloud-relay pairing architecture sketch, and 5 high-value features to ship next that work with real SDK data (cost tracking, shareable read-only links, offline prompt queue, WebAuthn passkeys, cross-session pinned TODOs).
+
+### Added — TUI parity features
+
+- **Agent badge on sessions list** — colored pill to the left of status, matching the dynamic `hsl()` badge style used in messages. Reused from `agentColorFromName`.
+- **Agent badge on subagents panel** — same consistent style, so child sessions from `Task` tool spawn render with their agent identity at a glance.
+- **Multi-view pane mini label-strip** — each pane in the sessions grid now shows `agent · model · provider` pulled from the last assistant message, matching the footer label strip.
+- **Session rename via command palette** — new "Rename Session" action (icon ✎). Optimistically patches local state, then calls the new `PATCH /sessions/:id` endpoint that proxies `client.session.update({ body: { title } })`. `session.updated` SSE event reconciles any out-of-band renames.
+
+### Changed — Telegram hardening
+
+- **Startup verification** — `telegram.testConnection()` calls `getMe` once on init and logs the result (info/warn). Previously, failures surfaced only when the first permission notification fired.
+- **Exponential backoff** — polling loop replaced fixed 5s retry with `[5s, 10s, 30s, 60s]` step list; advances on failure, resets to 0 on success.
+- **Audited send failures** — `.catch(() => {})` replaced in `services/notifications.ts` and `http/handlers.ts` (token-rotation path) with `audit.log('telegram.send_failed', { error, kind })`. Silent Telegram failures no longer leave the user guessing.
+
+### Dependencies
+
+- Added `web-push@^3.6.7` (runtime) and `@types/web-push@^3.6.4` (dev). `web-push` is lazy-imported inside `push.ts` so the plugin boots cleanly even before `bun install` has run.
+
 ## [1.4.0] — 2026-04-17
 
 ### Fixed — CRITICAL root-cause bugs

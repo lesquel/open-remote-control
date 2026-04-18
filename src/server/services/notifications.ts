@@ -2,6 +2,7 @@ import type { PluginInput } from "@opencode-ai/plugin"
 import type { BusEvent, PilotEvent } from "../types"
 import type { EventBus } from "./event-bus"
 import type { TelegramBot } from "./telegram"
+import type { PushService } from "./push"
 import type { AuditLog } from "./audit"
 
 export interface NotificationService {
@@ -35,6 +36,7 @@ export function createNotificationService(
   eventBus: EventBus,
   telegram: TelegramBot,
   audit: AuditLog,
+  push: PushService,
 ): NotificationService {
   function emit(event: BusEvent): void {
     eventBus.emit(event)
@@ -53,7 +55,24 @@ export function createNotificationService(
     pattern?: string | string[],
     metadata: Record<string, unknown> = {},
   ): Promise<void> {
-    telegram.sendPermissionRequest(permissionID, title, sessionID).catch(() => {})
+    telegram
+      .sendPermissionRequest(permissionID, title, sessionID)
+      .catch((err) => audit.log("telegram.send_failed", { error: String(err) }))
+
+    if (push.isEnabled()) {
+      push
+        .broadcast({
+          title: "Permission request",
+          body: title,
+          data: {
+            kind: "permission",
+            id: permissionID,
+            sessionID,
+            url: "/",
+          },
+        })
+        .catch((err) => audit.log("push.send_failed", { error: String(err) }))
+    }
 
     if (!eventBus.hasClients()) return
 
@@ -82,7 +101,9 @@ export function createNotificationService(
       const title =
         ((session.data as Record<string, unknown>)?.title as string) ?? "Untitled"
       await telegram.sendSessionIdle(sessionID, title)
-    } catch {}
+    } catch (err) {
+      audit.log("telegram.send_failed", { error: String(err), kind: "session_idle" })
+    }
   }
 
   async function notifySessionError(
@@ -95,7 +116,9 @@ export function createNotificationService(
       const title =
         ((session.data as Record<string, unknown>)?.title as string) ?? "Untitled"
       await telegram.sendSessionError(sessionID, title, error)
-    } catch {}
+    } catch (err) {
+      audit.log("telegram.send_failed", { error: String(err), kind: "session_error" })
+    }
   }
 
   return { emit, emitPilot, notifyPermissionPending, notifySessionIdle, notifySessionError }

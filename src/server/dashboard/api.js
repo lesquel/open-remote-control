@@ -25,14 +25,21 @@ const DIRECTORY_EXEMPT = [
   '/projects',
 ]
 
+// Exported so sse.js can build the /events URL with ?directory= appended
+export function buildApiUrl(path) {
+  return buildUrl(path)
+}
+
 function isDirectoryExempt(path) {
   // Also exempt /permissions/* paths
   if (path.startsWith('/permissions')) return true
   return DIRECTORY_EXEMPT.some(p => path === p || path.startsWith(p + '?'))
 }
 
-function buildUrl(path) {
-  const dir = getActiveDirectory()
+function buildUrl(path, overrideDir) {
+  // If an explicit directory is provided (non-null / non-undefined), use it.
+  // Passing `null` explicitly forces default-instance behaviour (no ?directory=).
+  const dir = overrideDir !== undefined ? overrideDir : getActiveDirectory()
   if (!dir || isDirectoryExempt(path)) {
     return baseUrl() + path
   }
@@ -43,15 +50,17 @@ function buildUrl(path) {
   return baseUrl() + pathname + '?' + params.toString()
 }
 
-async function request(method, path, body) {
-  const opts = { method, headers: authHeaders() }
-  if (body) opts.body = JSON.stringify(body)
-  const url = buildUrl(path)
-  const r = await fetch(url, opts)
+async function request(method, path, body, opts = {}) {
+  const fetchOpts = { method, headers: authHeaders() }
+  if (body) fetchOpts.body = JSON.stringify(body)
+  const url = buildUrl(path, opts.directory)
+  const r = await fetch(url, fetchOpts)
   const data = r.ok ? await r.json() : null
   if (!r.ok) {
     console.debug('[pilot:data] request %s %s → %d', method, url, r.status)
-    throw new Error(`${r.status}`)
+    const err = new Error(`${r.status}`)
+    err.status = r.status
+    throw err
   }
   // Log shape summary for debugging (array length or top-level keys)
   if (Array.isArray(data)) {
@@ -70,8 +79,16 @@ export async function createSession() {
   return request('POST', '/sessions')
 }
 
-export async function fetchMessages(sessionId) {
-  return request('GET', `/sessions/${sessionId}/messages`)
+export async function fetchMessages(sessionId, opts = {}) {
+  return request('GET', `/sessions/${sessionId}/messages`, null, opts)
+}
+
+export async function updateSessionTitle(sessionId, title) {
+  return request('PATCH', `/sessions/${sessionId}`, { title })
+}
+
+export async function deleteSession(sessionId, opts = {}) {
+  return request('DELETE', `/sessions/${sessionId}`, null, opts)
 }
 
 export async function sendPrompt(sessionId, message) {
@@ -187,4 +204,93 @@ export async function fetchFileList(path) {
  */
 export async function fetchFileContent(path) {
   return request('GET', `/file/content?path=${encodeURIComponent(path)}`)
+}
+
+// ── Glob file opener ──────────────────────────────────────────────────────
+
+/**
+ * Search for files matching a glob pattern. Requires PILOT_ENABLE_GLOB_OPENER=true on server.
+ * Throws an error with code='GLOB_DISABLED' when the feature is off.
+ * @param {string} pattern - glob pattern (e.g. "**\/*.ts")
+ * @param {{ cwd?: string, limit?: number }} [opts]
+ * @returns {Promise<{pattern:string,cwd:string,count:number,files:Array<{path:string,absolute:string,mtime:number,size:number}>}>}
+ */
+export async function fetchGlobFiles(pattern, opts = {}) {
+  const params = new URLSearchParams()
+  params.set('pattern', pattern)
+  if (opts.cwd) params.set('cwd', opts.cwd)
+  if (opts.limit) params.set('limit', String(opts.limit))
+  const url = baseUrl() + '/fs/glob?' + params.toString()
+  const r = await fetch(url, { headers: authHeaders() })
+  if (r.status === 403) {
+    const err = new Error('GLOB_DISABLED')
+    err.code = 'GLOB_DISABLED'
+    err.status = 403
+    throw err
+  }
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+/**
+ * Read a file by absolute path via /fs/read. Requires glob opener flag.
+ * @param {string} path - absolute path
+ * @returns {Promise<{path:string,content:string,size:number}>}
+ */
+export async function readAbsFile(path) {
+  const url = baseUrl() + '/fs/read?path=' + encodeURIComponent(path)
+  const r = await fetch(url, { headers: authHeaders() })
+  if (r.status === 403) {
+    const err = new Error('GLOB_DISABLED')
+    err.code = 'GLOB_DISABLED'
+    err.status = 403
+    throw err
+  }
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+// ── Web Push ──────────────────────────────────────────────────────────────
+
+/** Fetch the VAPID public key. Returns null if push is not configured on the server. */
+export async function pushPublicKey() {
+  const url = baseUrl() + '/push/public-key'
+  const r = await fetch(url, { headers: authHeaders() })
+  if (r.status === 503) return null
+  if (!r.ok) throw new Error(`${r.status}`)
+  const data = await r.json()
+  return data?.publicKey ?? null
+}
+
+export async function pushSubscribe(sub) {
+  const url = baseUrl() + '/push/subscribe'
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(sub),
+  })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function pushUnsubscribe(endpoint) {
+  const url = baseUrl() + '/push/unsubscribe'
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ endpoint }),
+  })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
+}
+
+export async function pushTest(endpoint) {
+  const url = baseUrl() + '/push/test'
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(endpoint ? { endpoint } : {}),
+  })
+  if (!r.ok) throw new Error(`${r.status}`)
+  return r.json()
 }

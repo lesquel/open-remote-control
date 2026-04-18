@@ -52,4 +52,39 @@ describe("loadConfig", () => {
     const cfg = loadConfig({ PILOT_DEV: "true" })
     expect(cfg.dev).toBe(true)
   })
+
+  test("vapid is null when either key is missing", () => {
+    expect(loadConfig({}).vapid).toBeNull()
+    expect(loadConfig({ PILOT_VAPID_PUBLIC_KEY: "pub" }).vapid).toBeNull()
+    expect(loadConfig({ PILOT_VAPID_PRIVATE_KEY: "priv" }).vapid).toBeNull()
+  })
+
+  test("vapid is populated when both keys are present", () => {
+    const cfg = loadConfig({
+      PILOT_VAPID_PUBLIC_KEY: "pub",
+      PILOT_VAPID_PRIVATE_KEY: "priv",
+    })
+    expect(cfg.vapid).toEqual({
+      publicKey: "pub",
+      privateKey: "priv",
+      subject: "mailto:admin@opencode-pilot.local",
+    })
+  })
+
+  test("vapid subject is overridable", () => {
+    const cfg = loadConfig({
+      PILOT_VAPID_PUBLIC_KEY: "pub",
+      PILOT_VAPID_PRIVATE_KEY: "priv",
+      PILOT_VAPID_SUBJECT: "mailto:me@example.com",
+    })
+    expect(cfg.vapid?.subject).toBe("mailto:me@example.com")
+  })
+
+  test("enableGlobOpener defaults to false", () => {
+    expect(loadConfig({}).enableGlobOpener).toBe(false)
+  })
+
+  test("enableGlobOpener is true when flag is set", () => {
+    expect(loadConfig({ PILOT_ENABLE_GLOB_OPENER: "true" }).enableGlobOpener).toBe(true)
+  })
 })

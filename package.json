@@ -1,6 +1,6 @@
 {
   "name": "opencode-pilot",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Remote control plugin for OpenCode — monitor sessions, send prompts, approve permissions, and get Telegram notifications from anywhere",
   "type": "module",
   "exports": {
@@ -46,10 +46,12 @@
   ],
   "dependencies": {
     "@opencode-ai/plugin": "latest",
-    "qrcode-terminal": "^0.12.0"
+    "qrcode-terminal": "^0.12.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "typescript": "^5.8.0",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/web-push": "^3.6.4"
   }
 }

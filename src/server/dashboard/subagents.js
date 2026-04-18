@@ -2,6 +2,7 @@
 import { getState } from './state.js'
 import { getSessionChildren } from './api.js'
 import { toast } from './toast.js'
+import { renderCompactAgentBadge } from './sessions.js'
 
 const PANEL_ID = 'subagents-panel'
 const COLLAPSED_KEY = 'pilot_subagents_collapsed'
@@ -50,13 +51,14 @@ function renderPanel(parentId, children) {
   const items = children.map((c) => {
     const id = c?.id ?? ''
     const title = esc(childTitle(c))
-    const agent = esc(childAgent(c))
+    const agent = childAgent(c)
+    const agentBadge = agent && agent !== 'agent' ? renderCompactAgentBadge(agent) : `<span class="agent-badge agent-badge--custom">${esc(agent)}</span>`
     return `
       <div class="subagent-item" data-id="${esc(id)}">
         <div class="subagent-item-main">
           <div class="subagent-item-top">
             <span class="subagent-item-title">${title}</span>
-            <span class="agent-badge agent-badge--custom">${agent}</span>
+            ${agentBadge}
           </div>
           <code class="subagent-item-id" title="Click to copy">${esc(id)}</code>
         </div>

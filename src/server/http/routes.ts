@@ -4,6 +4,7 @@ import type { AuditLog } from "../services/audit"
 import type { EventBus } from "../services/event-bus"
 import type { PermissionQueue } from "../services/permission-queue"
 import type { TelegramBot } from "../services/telegram"
+import type { PushService } from "../services/push"
 import type { Logger } from "../util/logger"
 
 /** Auth requirements for a route. */
@@ -34,6 +35,7 @@ export interface RouteDeps {
   eventBus: EventBus
   permissionQueue: PermissionQueue
   telegram: TelegramBot
+  push: PushService
   logger: Logger
 }
 
@@ -45,7 +47,7 @@ export interface RouteContext {
 }
 
 export interface Route {
-  method: "GET" | "POST" | "DELETE" | "PUT"
+  method: "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
   pattern: RegExp
   auth: AuthRequirement
   handler: (ctx: RouteContext) => Promise<Response>
@@ -60,6 +62,8 @@ import {
   listSessions,
   createSession,
   getSession,
+  updateSession,
+  deleteSession,
   getSessionMessages,
   getSessionDiff,
   getSessionChildren,
@@ -80,6 +84,12 @@ import {
   getLspStatus,
   listFileTree,
   readFileContent,
+  getPushPublicKey,
+  subscribePush,
+  unsubscribePush,
+  testPush,
+  globFiles,
+  readFileAbs,
 } from "./handlers"
 
 /**
@@ -148,6 +158,18 @@ export const routes: Route[] = [
     handler: getSession,
   },
   {
+    method: "PATCH",
+    pattern: /^\/sessions\/(?<id>[^/]+)$/,
+    auth: "required",
+    handler: updateSession,
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/sessions\/(?<id>[^/]+)$/,
+    auth: "required",
+    handler: deleteSession,
+  },
+  {
     method: "GET",
     pattern: /^\/permissions$/,
     auth: "required",
@@ -177,6 +199,14 @@ export const routes: Route[] = [
   // File browser endpoints — auth required
   { method: "GET", pattern: /^\/file\/list$/, auth: "required", handler: listFileTree },
   { method: "GET", pattern: /^\/file\/content$/, auth: "required", handler: readFileContent },
+  // Web Push — auth required on all, subscribe body is a PushSubscriptionJSON
+  { method: "GET", pattern: /^\/push\/public-key$/, auth: "required", handler: getPushPublicKey },
+  { method: "POST", pattern: /^\/push\/subscribe$/, auth: "required", handler: subscribePush },
+  { method: "POST", pattern: /^\/push\/unsubscribe$/, auth: "required", handler: unsubscribePush },
+  { method: "POST", pattern: /^\/push\/test$/, auth: "required", handler: testPush },
+  // Glob file opener — gated by config.enableGlobOpener
+  { method: "GET", pattern: /^\/fs\/glob$/, auth: "required", handler: globFiles },
+  { method: "GET", pattern: /^\/fs\/read$/, auth: "required", handler: readFileAbs },
 ]
 
 /** Match the first route whose method and pattern match. */

@@ -118,6 +118,76 @@ const commands = [
       })
     },
   },
+  {
+    title: "Open Dashboard",
+    value: "remote",
+    description: "Open the OpenCode Pilot dashboard in the default browser",
+    category: "Pilot",
+    suggested: true,
+    slash: { name: "remote", aliases: ["dashboard"] },
+    onSelect: async (api: TuiPluginApi) => {
+      const dir = process.cwd()
+      const state = readPilotState(dir)
+
+      if (!state) {
+        api.ui.toast({
+          title: "OpenCode Pilot — Dashboard",
+          message: "Remote control server not running or token not yet available",
+          variant: "error",
+          duration: 5000,
+        })
+        return
+      }
+
+      const url = `http://${state.host}:${state.port}/?token=${state.token}`
+
+      // Platform-specific open command
+      let cmd: string[]
+      if (process.platform === "darwin") {
+        cmd = ["open", url]
+      } else if (process.platform === "win32") {
+        // `start` needs an empty title arg to handle URLs with special chars safely
+        cmd = ["cmd", "/c", "start", "", url]
+      } else {
+        cmd = ["xdg-open", url]
+      }
+
+      try {
+        const proc = Bun.spawn({
+          cmd,
+          stdin: "ignore",
+          stdout: "ignore",
+          stderr: "ignore",
+        })
+        proc.unref()
+        const exitCode = await Promise.race([
+          proc.exited,
+          new Promise<number>((resolve) => setTimeout(() => resolve(0), 1500)),
+        ])
+        if (exitCode !== 0) {
+          throw new Error(`exit code ${exitCode}`)
+        }
+
+        api.ui.toast({
+          title: "OpenCode Pilot — Dashboard",
+          message: "Dashboard opened in browser",
+          variant: "success",
+          duration: 4000,
+        })
+      } catch {
+        api.ui.toast({
+          title: "OpenCode Pilot — Dashboard",
+          message: [
+            `Could not launch browser. Open this URL manually:`,
+            ``,
+            url,
+          ].join("\n"),
+          variant: "warning",
+          duration: 15000,
+        })
+      }
+    },
+  },
 ]
 
 // ─── Event type for pilot events coming over the TUI event bus ───────────────

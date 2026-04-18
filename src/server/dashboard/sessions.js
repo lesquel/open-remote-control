@@ -1,11 +1,12 @@
 // sessions.js — Sessions list, single-session panel, send prompt, abort
 import { getState, setState } from './state.js'
-import { fetchSessions, createSession as apiCreateSession, sendPromptWithOpts, abortSession as apiAbortSession } from './api.js'
+import { fetchSessions, createSession as apiCreateSession, sendPromptWithOpts, abortSession as apiAbortSession, updateSessionTitle, deleteSession as apiDeleteSession } from './api.js'
 import { loadMessages } from './messages.js'
 import { loadDiff } from './diff.js'
 import { toast } from './toast.js'
 import { loadSubagents } from './subagents.js'
 import { refreshFilesChanged } from './files-changed-bridge.js'
+import { getAgent, agentColorFromName } from './references.js'
 
 // Dynamic import to break circular dependency with multi-view.js
 async function addToMultiview(id) {
@@ -212,11 +213,12 @@ export function renderSessions() {
       const ago = timeAgo(s?.time?.updated)
       const inMV = mvPanels.has(id) ? ' style="border-left-color:var(--warning)"' : ''
       const agent = sessionAgent(s)
-      const agentBadge = agent
-        ? `<span class="agent-badge agent-badge--compact ${agentBadgeClass(agent)}" title="${esc(agent)}">${esc(truncateAgent(agent))}</span>`
-        : ''
+      const agentBadge = agent ? renderCompactAgentBadge(agent) : ''
       return `<div class="session-item ${cls}" data-id="${id}"${inMV}>
-        <div class="session-title">${esc(title)}</div>
+        <div class="session-title">
+          <span class="session-title-text">${esc(title)}</span>
+          <button class="session-delete-btn" data-del-id="${id}" title="Delete session" aria-label="Delete session">✕</button>
+        </div>
         <div class="session-meta">
           ${agentBadge}
           <span class="badge badge-${statusClass(status)}">${status}</span>
@@ -257,13 +259,29 @@ export function renderSessions() {
 
   // Wire session clicks
   list.querySelectorAll('.session-item').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
+      // If the click came from the delete button, don't activate.
+      if (e.target && e.target.closest?.('.session-delete-btn')) return
       const { multiviewActive } = getState()
       if (multiviewActive) {
         addToMultiview(el.dataset.id)
       } else {
         selectSession(el.dataset.id)
       }
+    })
+  })
+
+  // Wire per-row delete buttons
+  list.querySelectorAll('.session-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation()
+      e.preventDefault()
+      const id = btn.dataset.delId
+      if (!id) return
+      const { sessions: currentSessions } = getState()
+      const title = currentSessions[id]?.title || id.slice(0, 8)
+      if (!window.confirm(`Delete session "${title}"? This cannot be undone.`)) return
+      await deleteSessionById(id)
     })
   })
 }
@@ -387,6 +405,19 @@ function truncateAgent(name, max = 12) {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name
 }
 
+/**
+ * Render a compact, dynamically-coloured agent badge for list items.
+ * Uses the agent's color from references when available; otherwise derives
+ * a deterministic colour from the name hash (matches renderAgentBadge in
+ * references.js for visual consistency across the app).
+ */
+export function renderCompactAgentBadge(agentName) {
+  if (!agentName) return ''
+  const color = getAgent(agentName)?.color || agentColorFromName(agentName)
+  const label = truncateAgent(agentName)
+  return `<span class="agent-badge agent-badge--compact agent-badge--dynamic" style="--agent-color:${color};border-color:${color}40;color:${color}" title="${esc(agentName)}">${esc(label)}</span>`
+}
+
 export function updateInfoBar(id, title, status, session) {
   const bar = document.getElementById('session-info-bar')
   bar.classList.remove('hidden')
@@ -428,6 +459,86 @@ export function updateInfoBar(id, title, status, session) {
   const abortBtn = document.getElementById('abort-btn')
   if (status === 'busy' || status === 'running') abortBtn.classList.add('visible')
   else abortBtn.classList.remove('visible')
+}
+
+// ── Delete session ─────────────────────────────────────────────────────────
+
+/**
+ * Delete a session by ID with full state/UI cleanup.
+ * Caller is responsible for user confirmation.
+ * Pass directory when the session belongs to a different project than the
+ * current activeDirectory (cross-project lists).
+ */
+export async function deleteSessionById(id, opts = {}) {
+  if (!id) return false
+  const { sessions: before, statuses: beforeStatuses, activeSession, mvPanels } = getState()
+  const session = before[id]
+  // Use session's own directory so cross-project deletes hit the right instance
+  const directory = opts.directory ?? session?.directory
+  try {
+    await apiDeleteSession(id, directory ? { directory } : {})
+  } catch (err) {
+    if (err?.status === 404) {
+      // Already gone — fall through to local cleanup
+      toast('Session was already gone — cleaning up')
+    } else {
+      toast(`Delete failed: ${err?.message ?? 'unknown error'}`)
+      return false
+    }
+  }
+
+  // Remove from sessions / statuses
+  const nextSessions = { ...before }
+  delete nextSessions[id]
+  const nextStatuses = { ...beforeStatuses }
+  delete nextStatuses[id]
+
+  const patch = { sessions: nextSessions, statuses: nextStatuses }
+  if (activeSession === id) patch.activeSession = null
+
+  // Remove from mv-panels if present
+  if (mvPanels?.has?.(id)) {
+    const nextPanels = new Set(mvPanels)
+    nextPanels.delete(id)
+    patch.mvPanels = nextPanels
+  }
+
+  setState(patch)
+
+  // Persist mv changes and re-render the grid if needed
+  if (patch.mvPanels) {
+    try {
+      const mv = await import('./multi-view.js')
+      mv.saveMVState()
+      const { multiviewActive } = getState()
+      if (multiviewActive) mv.renderMultiviewGrid()
+    } catch (_) {}
+  }
+
+  // If it was the active session, clear the single-session pane
+  if (activeSession === id) {
+    const label = document.getElementById('header-session-label')
+    const badge = document.getElementById('header-status-badge')
+    if (label) label.textContent = 'No session'
+    if (badge) badge.style.display = 'none'
+    const bar = document.getElementById('session-info-bar')
+    if (bar) bar.classList.add('hidden')
+    const tabs = document.getElementById('session-tabs')
+    if (tabs) tabs.style.display = 'none'
+    const box = document.getElementById('messages')
+    if (box) box.innerHTML = ''
+    const input = document.getElementById('prompt-input')
+    if (input) {
+      input.disabled = true
+      input.value = ''
+      input.placeholder = 'Select or create a session…'
+    }
+  }
+
+  updateAgentFilterOptions()
+  renderSessions()
+  toast('Session deleted')
+  return true
 }
 
 // ── Create session ─────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 // file-browser.js — File tree browser panel for the left sidebar
 // Factory: createFileBrowser({ container }) — mounts a collapsible file tree
 // below the sessions list.  Lazy-loads children on folder expand.
-import { fetchFileList, fetchFileContent } from './api.js'
+import { fetchFileList, fetchFileContent, fetchGlobFiles, readAbsFile } from './api.js'
 import { getActiveDirectory } from './state.js'
 
 const MAX_CHILDREN = 500
@@ -140,6 +140,10 @@ export function createFileBrowser({ container }) {
           <input type="checkbox" id="fb-show-ignored"> ignored
         </label>
       </div>
+      <div class="file-browser-glob" id="fb-glob-row">
+        <input type="text" id="fb-glob-input" class="file-browser-glob-input" placeholder="glob: **/*.ts" aria-label="Glob search">
+        <button type="button" id="fb-glob-clear" class="file-browser-glob-clear" title="Clear glob results" style="display:none">✕</button>
+      </div>
       <div class="file-tree" id="fb-tree"></div>
     </div>
   `
@@ -147,6 +151,9 @@ export function createFileBrowser({ container }) {
   const treeEl = container.querySelector('#fb-tree')
   const header = container.querySelector('#fb-header')
   const ignoredToggle = container.querySelector('#fb-show-ignored')
+  const globInput = container.querySelector('#fb-glob-input')
+  const globClear = container.querySelector('#fb-glob-clear')
+  let globMode = false
 
   let panelCollapsed = false
 
@@ -164,6 +171,88 @@ export function createFileBrowser({ container }) {
     // Re-render visible nodes with updated visibility
     refreshTree()
   })
+
+  // ── Glob search wiring ──────────────────────────────────────────────────
+  async function runGlob() {
+    const pattern = (globInput.value || '').trim()
+    if (!pattern) return
+    globMode = true
+    if (globClear) globClear.style.display = ''
+    treeEl.innerHTML = '<div class="file-tree-loading">Searching…</div>'
+    try {
+      const res = await fetchGlobFiles(pattern, { limit: 500 })
+      renderGlobResults(res.files || [])
+    } catch (err) {
+      if (err && err.code === 'GLOB_DISABLED') {
+        treeEl.innerHTML =
+          '<div class="file-tree-error">' +
+          'Glob opener is disabled.<br>' +
+          'Set <code>PILOT_ENABLE_GLOB_OPENER=true</code> and restart OpenCode.' +
+          '</div>'
+      } else {
+        showError('Glob search failed')
+      }
+    }
+  }
+
+  function renderGlobResults(files) {
+    if (files.length === 0) {
+      treeEl.innerHTML = '<div class="file-tree-empty">No matches</div>'
+      return
+    }
+    const html = files
+      .map((f) => {
+        const size = f.size ? ` · ${(f.size / 1024).toFixed(1)} KB` : ''
+        return `<div class="file-tree-item file-tree-item--glob"
+          data-absolute="${esc(f.absolute)}"
+          data-type="file"
+          title="${esc(f.absolute)}">
+          <span class="file-tree-icon">📄</span>
+          <span class="file-tree-name">${esc(f.path)}</span>
+          <span class="file-tree-meta">${esc(size)}</span>
+        </div>`
+      })
+      .join('')
+    treeEl.innerHTML = html
+    treeEl.querySelectorAll('.file-tree-item--glob').forEach((el) => {
+      el.addEventListener('click', handleGlobResultClick)
+    })
+  }
+
+  async function handleGlobResultClick(e) {
+    const el = e.currentTarget
+    const absolute = el.dataset.absolute
+    if (!absolute) return
+    try {
+      el.style.opacity = '0.5'
+      const result = await readAbsFile(absolute)
+      el.style.opacity = ''
+      openFileModal(absolute, result.content ?? '')
+    } catch (err) {
+      el.style.opacity = ''
+      if (err && err.code === 'GLOB_DISABLED') {
+        treeEl.innerHTML =
+          '<div class="file-tree-error">Glob opener disabled on server.</div>'
+      }
+    }
+  }
+
+  function exitGlobMode() {
+    globMode = false
+    if (globInput) globInput.value = ''
+    if (globClear) globClear.style.display = 'none'
+    renderTree()
+  }
+
+  globInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      runGlob()
+    } else if (e.key === 'Escape') {
+      exitGlobMode()
+    }
+  })
+  globClear?.addEventListener('click', exitGlobMode)
 
   // ── Loading / error helpers ──────────────────────────────────────────────
 

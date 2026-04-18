@@ -403,6 +403,8 @@ export function createRightPanel({ container }) {
 
   // ── Subscriptions ──────────────────────────────────────────────────────────
 
+  let _lastDirectory = null
+
   _unsub = subscribe('right-panel', (state) => {
     if (state.activeSession !== _lastSessionId) {
       _lastSessionId = state.activeSession
@@ -410,10 +412,14 @@ export function createRightPanel({ container }) {
     }
   })
 
-  // Re-render when activeDirectory changes (path block + session re-fetch driven by main.js)
+  // Re-render when activeDirectory changes (path block + usage recompute for the newly active session)
   _unsubDir = subscribe('right-panel-dir', (state) => {
-    // Re-render to reflect new active directory in Path block
-    renderAll({ loading: false, inputTokens: 0, percentUsed: 0, cumulativeCost: 0, tooltipHtml: '' })
+    const dir = state.activeDirectory ?? null
+    if (dir !== _lastDirectory) {
+      _lastDirectory = dir
+      // Refresh fetches messages via fetchMessages(activeSession) and recomputes usage
+      refresh()
+    }
   })
 
   // ── MCP polling (30s — MCP has no SSE events) ─────────────────────────────

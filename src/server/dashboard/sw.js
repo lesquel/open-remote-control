@@ -1,5 +1,5 @@
 // sw.js — Service Worker: app shell caching, never caches API calls
-const CACHE_NAME = "pilot-v8"
+const CACHE_NAME = "pilot-v9"
 const PRECACHE = [
   "./",
   "./index.html",
@@ -64,6 +64,8 @@ self.addEventListener("fetch", (event) => {
     "/status",
     "/tools",
     "/project",
+    "/push",
+    "/fs",
   ]
   const isApiCall = apiPaths.some((p) => url.pathname.startsWith(p))
   if (isApiCall) return // Pass through, browser handles natively
@@ -87,5 +89,60 @@ self.addEventListener("fetch", (event) => {
           }
         })
     })
+  )
+})
+
+// ── Push ───────────────────────────────────────────────────────────────────
+self.addEventListener("push", (event) => {
+  let payload = { title: "OpenCode Pilot", body: "", data: {} }
+  if (event.data) {
+    try {
+      payload = { ...payload, ...event.data.json() }
+    } catch (_) {
+      try {
+        payload.body = event.data.text()
+      } catch (_2) {}
+    }
+  }
+  const { title, body, data } = payload
+  event.waitUntil(
+    self.registration.showNotification(title || "OpenCode Pilot", {
+      body: body || "",
+      icon: "./icons/icon.svg",
+      badge: "./icons/icon.svg",
+      data: data || {},
+      requireInteraction: true,
+      actions: [
+        { action: "open", title: "Open" },
+        { action: "dismiss", title: "Dismiss" },
+      ],
+    })
+  )
+})
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+  if (event.action === "dismiss") return
+
+  const target = (event.notification.data && event.notification.data.url) || "/"
+  event.waitUntil(
+    (async () => {
+      const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+      for (const c of all) {
+        try {
+          const u = new URL(c.url)
+          if (u.origin === self.location.origin) {
+            await c.focus()
+            if ("navigate" in c) {
+              try { await c.navigate(target) } catch (_) {}
+            }
+            return
+          }
+        } catch (_) {}
+      }
+      if (self.clients.openWindow) {
+        await self.clients.openWindow(target)
+      }
+    })()
   )
 })

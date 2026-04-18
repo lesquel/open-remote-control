@@ -5,6 +5,7 @@ import { createAuditLog } from "./services/audit"
 import { createEventBus } from "./services/event-bus"
 import { createPermissionQueue } from "./services/permission-queue"
 import { createTelegramBot } from "./services/telegram"
+import { createPushService } from "./services/push"
 import { startTunnel } from "./services/tunnel"
 import { writeState, clearState } from "./services/state"
 import { writeBanner } from "./services/banner"
@@ -28,9 +29,10 @@ export default {
     const audit = createAuditLog(ctx)
     const eventBus = createEventBus()
     const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
-    const telegram = createTelegramBot(config.telegram, permissionQueue)
+    const telegram = createTelegramBot(config.telegram, permissionQueue, logger)
+    const push = createPushService({ config, audit, logger })
 
-    const notifications = createNotificationService(eventBus, telegram, audit)
+    const notifications = createNotificationService(eventBus, telegram, audit, push)
 
     // ─── RouteDeps object — mutable so token rotation works ───────────────
     // rotateToken mutates deps.token in-place; the server reads deps.token on
@@ -51,6 +53,7 @@ export default {
       eventBus,
       permissionQueue,
       telegram,
+      push,
       logger,
     }
 
@@ -160,7 +163,9 @@ export default {
 
     // Send Telegram startup notification (fire and forget)
     const dashboardUrl = `${tunnel.publicUrl ?? localUrl}/?token=${currentToken}`
-    telegram.sendStartup(dashboardUrl).catch(() => {})
+    telegram
+      .sendStartup(dashboardUrl)
+      .catch((err) => audit.log("telegram.send_failed", { error: String(err), kind: "startup" }))
 
     // Notify TUI that the server is up
     ctx.client.tui

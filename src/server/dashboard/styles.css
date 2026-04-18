@@ -311,12 +311,18 @@ body {
 }
 
 .session-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 500;
   color: var(--text);
   margin-bottom: 2px;
+}
+.session-title-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-meta {
@@ -1158,6 +1164,23 @@ body {
 }
 .mv-title { font-size: 11px; font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mv-badge { font-size: 9px; }
+.mv-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mv-strip-agent { font-weight: 700; }
+.mv-strip-sep { color: var(--text-muted); }
+.mv-strip-model, .mv-strip-provider { color: var(--text-dim); }
 .mv-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 10px; padding: 2px 4px; }
 .mv-close:hover { color: var(--danger); }
 .mv-messages {
@@ -1226,6 +1249,85 @@ body {
   align-self: flex-start;
 }
 #mv-add-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Status dot shown in the multi-view panel header */
+.mv-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+.mv-status-dot.badge-idle   { background: var(--text-muted); }
+.mv-status-dot.badge-busy   { background: var(--warning); box-shadow: 0 0 6px var(--warning); animation: mv-pulse 1.4s ease-in-out infinite; }
+.mv-status-dot.badge-error  { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+@keyframes mv-pulse {
+  0%, 100% { opacity: .6; }
+  50%      { opacity: 1; }
+}
+
+/* Loading / empty / error states inside mv-messages */
+.mv-loading, .mv-empty, .mv-error { font-family: var(--mono); }
+
+/* Compact rendering of the shared message renderer inside a multi-view panel */
+.mv-messages.mv-msgs--compact .message {
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  margin: 0;
+}
+.mv-messages.mv-msgs--compact .message + .message { margin-top: 6px; }
+.mv-messages.mv-msgs--compact .message-role {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 700;
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mv-messages.mv-msgs--compact .message-body {
+  font-size: 11px;
+  line-height: 1.4;
+  max-height: 180px;
+  overflow: auto;
+}
+.mv-messages.mv-msgs--compact .tool-block {
+  font-size: 10px;
+  margin: 4px 0;
+}
+.mv-messages.mv-msgs--compact .reasoning-block {
+  font-size: 10px;
+  margin: 4px 0;
+}
+
+/* Inline session-list delete button */
+.session-delete-btn {
+  opacity: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  margin-left: 4px;
+  border-radius: var(--radius-sm);
+  transition: opacity .15s ease, color .15s ease, background .15s ease;
+}
+.session-item:hover .session-delete-btn { opacity: 1; }
+.session-delete-btn:hover { color: var(--danger); background: rgba(255, 77, 77, .1); }
+.session-delete-btn:focus-visible { opacity: 1; outline: 1px solid var(--danger); }
+
+/* Danger-variant palette items (e.g. Delete Session) */
+.palette-item--danger .palette-item-icon { color: var(--danger); }
+.palette-item--danger:hover,
+.palette-item--danger.selected {
+  background: rgba(255, 77, 77, .08);
+}
+.palette-item--danger.selected .palette-item-label { color: var(--danger); }
+
 
 /* ── Settings Modal ──────────────────────────────────────────────────────── */
 #settings-modal {

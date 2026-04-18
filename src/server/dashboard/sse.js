@@ -1,5 +1,5 @@
 // sse.js — SSE connection with exponential backoff reconnect
-import { getState, setState, appendPartDelta, clearStreamingMessage } from './state.js'
+import { getState, setState, appendPartDelta, clearStreamingMessage, subscribe } from './state.js'
 import { loadSessions, renderSessions, updateHeaderSession, updateInfoBar } from './sessions.js'
 import { loadMessages, applyStreamingDelta, removeStreamingCursor } from './messages.js'
 import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from './multi-view.js'
@@ -7,6 +7,7 @@ import { handlePermissionRequested, handlePermissionResolved } from './permissio
 import { onSubagentSpawned } from './subagents.js'
 import { isFileEditingToolEvent } from './files-changed.js'
 import { debouncedRefreshFilesChanged } from './files-changed-bridge.js'
+import { buildApiUrl } from './api.js'
 
 let eventSource = null
 let reconnectTimer = null
@@ -67,7 +68,7 @@ function setConnectionStatus(status) {
 }
 
 export function connect() {
-  const { token, serverUrl } = getState()
+  const { token } = getState()
   if (!token) return
 
   if (eventSource) {
@@ -75,8 +76,11 @@ export function connect() {
     eventSource = null
   }
 
-  const base = serverUrl || ''
-  const url = `${base}/events?token=${encodeURIComponent(token)}`
+  // Build /events URL via api.js so activeDirectory is appended when set
+  // and serverUrl (tunnel) is respected. Then append the token.
+  const base = buildApiUrl('/events')
+  const sep = base.includes('?') ? '&' : '?'
+  const url = `${base}${sep}token=${encodeURIComponent(token)}`
   eventSource = new EventSource(url)
 
   eventSource.onopen = () => {
@@ -107,6 +111,22 @@ export function connect() {
     })
   })
 }
+
+// When activeDirectory changes, close the current stream and reconnect so the
+// new URL (?directory=…) takes effect. The backend event bus is global, but
+// reconnecting keeps the SSE URL in sync and gives a clean state.
+let _lastSSEDirectory = null
+subscribe('sse-dir', (state) => {
+  const dir = state.activeDirectory ?? null
+  if (dir === _lastSSEDirectory) return
+  _lastSSEDirectory = dir
+  // Only reconnect if we already have a live connection
+  if (eventSource) {
+    eventSource.close()
+    eventSource = null
+    connect()
+  }
+})
 
 function scheduleReconnect() {
   if (reconnectTimer) return
@@ -200,10 +220,15 @@ async function handleEvent(ev) {
   }
 
   // Debounced diff refresh when a file-editing tool completes
-  if ((t === 'pilot.tool.completed' || t === 'tool.completed') && activeSession) {
+  if (t === 'pilot.tool.completed' || t === 'tool.completed') {
     const payload = ev.properties ?? d
     if (isFileEditingToolEvent(payload)) {
-      debouncedRefreshFilesChanged(activeSession)
+      if (activeSession) debouncedRefreshFilesChanged(activeSession)
+      // Also refresh multi-view panels belonging to the session that emitted the event
+      const toolSessionId = payload?.sessionID ?? payload?.sessionId ?? null
+      if (toolSessionId && mvPanels?.has?.(toolSessionId)) {
+        loadMVMessages(toolSessionId)
+      }
     }
   }
 

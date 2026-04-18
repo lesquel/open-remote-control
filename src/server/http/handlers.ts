@@ -1,5 +1,5 @@
-import { readFileSync, existsSync } from "fs"
-import { join, dirname, extname } from "path"
+import { readFileSync, existsSync, statSync, realpathSync } from "fs"
+import { join, dirname, extname, isAbsolute } from "path"
 import { fileURLToPath } from "url"
 import type { RouteContext } from "./routes"
 import { json, jsonError } from "./json"
@@ -9,6 +9,7 @@ import { validateBody } from "./validation"
 import { generateToken } from "../util/auth"
 import { updateStateToken } from "../services/state"
 import { PILOT_VERSION } from "../constants"
+import type { PushSubscriptionJson } from "../services/push"
 import type {
   Agent,
   LspStatus,
@@ -185,6 +186,105 @@ export async function getSession({ url, params, deps }: RouteContext): Promise<R
     return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
   const result = await deps.client.session.get({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? null, result.error ? 404 : 200, CORS_HEADERS)
+}
+
+interface UpdateSessionBody {
+  title?: string
+}
+
+export async function updateSession({
+  req,
+  url,
+  params,
+  deps,
+}: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+
+  let rawBody: unknown
+  try {
+    rawBody = await req.json()
+  } catch {
+    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+  }
+
+  if (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return jsonError("INVALID_BODY", "Request body must be a JSON object", 400, CORS_HEADERS)
+  }
+
+  const body = rawBody as UpdateSessionBody
+
+  if (typeof body.title !== "string" || !body.title.trim()) {
+    return jsonError("INVALID_TITLE", "title is required and must be a non-empty string", 400, CORS_HEADERS)
+  }
+
+  try {
+    const result = await deps.client.session.update({
+      path: { id: params.id },
+      query: { ...dirParam },
+      body: { title: body.title.trim() },
+    })
+    deps.audit.log("session.updated", { sessionID: params.id, title: body.title.trim() })
+    return json(result.data ?? { ok: true }, result.error ? 500 : 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("SDK call failed: session.update", { error: message })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+export async function deleteSession({
+  url,
+  params,
+  deps,
+}: RouteContext): Promise<Response> {
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+
+  const sessionID = params.id
+
+  try {
+    const result = await deps.client.session.delete({
+      path: { id: sessionID },
+      query: { ...dirParam },
+    })
+    if (result.error) {
+      // Inspect error shape for a 404 from the SDK; fall back to 500 otherwise.
+      const errMsg =
+        typeof result.error === "object" && result.error !== null && "message" in result.error
+          ? String((result.error as { message?: unknown }).message ?? "")
+          : String(result.error)
+      if (/404|not.*found/i.test(errMsg)) {
+        deps.audit.log("session.delete.notfound", { sessionID })
+        return jsonError("NOT_FOUND", "Session not found", 404, CORS_HEADERS)
+      }
+      deps.logger.error("SDK call failed: session.delete", {
+        sessionID,
+        error: errMsg,
+      })
+      return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+    }
+
+    deps.audit.log("session.deleted", {
+      sessionID,
+      ...("directory" in dirParam ? { directory: (dirParam as { directory: string }).directory } : {}),
+    })
+    return json({ ok: true, id: sessionID }, 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // Graceful 404 when the SDK throws on missing session
+    if (/404|not.*found/i.test(message)) {
+      deps.audit.log("session.delete.notfound", { sessionID })
+      return jsonError("NOT_FOUND", "Session not found", 404, CORS_HEADERS)
+    }
+    deps.logger.error("SDK call failed: session.delete", {
+      sessionID,
+      error: message,
+    })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
 }
 
 export async function getSessionMessages({
@@ -440,7 +540,12 @@ export async function rotateAuthToken({ deps }: RouteContext): Promise<Response>
       .sendMessage(
         `🔑 <b>Token Rotated</b>\n\nNew connect URL:\n<a href="${connectUrl}">${connectUrl}</a>`,
       )
-      .catch(() => {})
+      .catch((err) =>
+        deps.audit.log("telegram.send_failed", {
+          error: String(err),
+          kind: "token_rotated",
+        }),
+      )
   }
 
   return json(
@@ -589,6 +694,242 @@ export async function getLspStatus({ url, deps }: RouteContext): Promise<Respons
     const message = err instanceof Error ? err.message : String(err)
     deps.logger.error("SDK call failed: lsp.status", { error: message })
     return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
+}
+
+// ─── Web Push ────────────────────────────────────────────────────────────────
+
+export async function getPushPublicKey({ deps }: RouteContext): Promise<Response> {
+  if (!deps.config.vapid) {
+    return jsonError(
+      "PUSH_DISABLED",
+      "Web Push is not configured. Set PILOT_VAPID_PUBLIC_KEY and PILOT_VAPID_PRIVATE_KEY.",
+      503,
+      CORS_HEADERS,
+    )
+  }
+  return json({ publicKey: deps.config.vapid.publicKey }, 200, CORS_HEADERS)
+}
+
+function isValidSubscriptionBody(v: unknown): v is PushSubscriptionJson {
+  if (!v || typeof v !== "object") return false
+  const o = v as Record<string, unknown>
+  if (typeof o.endpoint !== "string" || o.endpoint.length === 0) return false
+  const keys = o.keys
+  if (!keys || typeof keys !== "object") return false
+  const k = keys as Record<string, unknown>
+  return typeof k.p256dh === "string" && typeof k.auth === "string"
+}
+
+export async function subscribePush({ req, deps }: RouteContext): Promise<Response> {
+  if (!deps.push.isEnabled()) {
+    return jsonError("PUSH_DISABLED", "Web Push is not configured", 503, CORS_HEADERS)
+  }
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+  }
+  if (!isValidSubscriptionBody(body)) {
+    return jsonError(
+      "INVALID_SUBSCRIPTION",
+      "Body must be a PushSubscription JSON with endpoint and keys.{p256dh,auth}",
+      400,
+      CORS_HEADERS,
+    )
+  }
+  deps.push.addSubscription(body)
+  return json({ ok: true, count: deps.push.count() }, 200, CORS_HEADERS)
+}
+
+interface UnsubscribeBody {
+  endpoint?: string
+}
+
+export async function unsubscribePush({ req, deps }: RouteContext): Promise<Response> {
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+  }
+  if (!body || typeof body !== "object") {
+    return jsonError("INVALID_BODY", "Request body must be a JSON object", 400, CORS_HEADERS)
+  }
+  const { endpoint } = body as UnsubscribeBody
+  if (!endpoint || typeof endpoint !== "string") {
+    return jsonError("MISSING_ENDPOINT", "endpoint is required", 400, CORS_HEADERS)
+  }
+  deps.push.removeSubscription(endpoint)
+  return json({ ok: true }, 200, CORS_HEADERS)
+}
+
+interface TestPushBody {
+  endpoint?: string
+}
+
+export async function testPush({ req, deps }: RouteContext): Promise<Response> {
+  if (!deps.push.isEnabled()) {
+    return jsonError("PUSH_DISABLED", "Web Push is not configured", 503, CORS_HEADERS)
+  }
+  let body: unknown = {}
+  try {
+    const raw = await req.text()
+    body = raw ? JSON.parse(raw) : {}
+  } catch {
+    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+  }
+  const endpoint = (body as TestPushBody)?.endpoint
+
+  const payload = {
+    title: "OpenCode Pilot — test push",
+    body: "Web Push is working 🎉",
+    data: { kind: "test", url: "/" },
+  }
+
+  if (endpoint) {
+    const ok = await deps.push.sendTo(endpoint, payload)
+    return json({ ok }, ok ? 200 : 404, CORS_HEADERS)
+  }
+
+  await deps.push.broadcast(payload)
+  return json({ ok: true, sent: deps.push.count() }, 200, CORS_HEADERS)
+}
+
+// ─── Glob file opener ────────────────────────────────────────────────────────
+
+const GLOB_DEFAULT_LIMIT = 1000
+const GLOB_MAX_LIMIT = 5000
+
+function parseLimit(raw: string | null, def: number, max: number): number {
+  if (!raw) return def
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n <= 0) return def
+  return Math.min(n, max)
+}
+
+/** Resolve an absolute path and ensure it resides under one of the allowed roots. */
+function resolveSafePath(
+  raw: string,
+  allowedRoots: string[],
+): { ok: true; resolved: string } | { ok: false; error: string } {
+  if (!isAbsolute(raw)) return { ok: false, error: "path must be absolute" }
+
+  let resolved: string
+  try {
+    resolved = realpathSync(raw)
+  } catch {
+    return { ok: false, error: "path not found" }
+  }
+
+  for (const root of allowedRoots) {
+    if (!root) continue
+    let realRoot: string
+    try {
+      realRoot = realpathSync(root)
+    } catch {
+      continue
+    }
+    if (resolved === realRoot || resolved.startsWith(realRoot + "/")) {
+      return { ok: true, resolved }
+    }
+  }
+  return { ok: false, error: "path is outside allowed roots" }
+}
+
+export async function globFiles({ url, deps }: RouteContext): Promise<Response> {
+  if (!deps.config.enableGlobOpener) {
+    return jsonError(
+      "GLOB_DISABLED",
+      "Glob opener is disabled. Set PILOT_ENABLE_GLOB_OPENER=true to enable.",
+      403,
+      CORS_HEADERS,
+    )
+  }
+
+  const pattern = url.searchParams.get("pattern")
+  if (!pattern) return jsonError("MISSING_PATTERN", "pattern is required", 400, CORS_HEADERS)
+
+  const cwdParam = url.searchParams.get("cwd")
+  const cwd = cwdParam && cwdParam.length > 0 ? cwdParam : deps.directory
+  const limit = parseLimit(url.searchParams.get("limit"), GLOB_DEFAULT_LIMIT, GLOB_MAX_LIMIT)
+
+  const allowedRoots = [deps.directory, process.env.HOME ?? ""]
+  const cwdSafe = resolveSafePath(cwd, allowedRoots)
+  if (!cwdSafe.ok) {
+    return jsonError("FORBIDDEN", `cwd rejected: ${cwdSafe.error}`, 403, CORS_HEADERS)
+  }
+
+  try {
+    const glob = new Bun.Glob(pattern)
+    const results: Array<{ path: string; absolute: string; mtime: number; size: number }> = []
+    for await (const rel of glob.scan({ cwd: cwdSafe.resolved, onlyFiles: true })) {
+      const abs = join(cwdSafe.resolved, rel)
+      let mtime = 0
+      let size = 0
+      try {
+        const st = statSync(abs)
+        mtime = st.mtimeMs
+        size = st.size
+      } catch {}
+      results.push({ path: rel, absolute: abs, mtime, size })
+      if (results.length >= limit) break
+    }
+    results.sort((a, b) => b.mtime - a.mtime)
+    deps.audit.log("glob.search", {
+      pattern,
+      cwd: cwdSafe.resolved,
+      count: results.length,
+    })
+    return json(
+      { pattern, cwd: cwdSafe.resolved, count: results.length, files: results },
+      200,
+      CORS_HEADERS,
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("glob scan failed", { error: message })
+    return jsonError("GLOB_ERROR", "Glob scan failed", 500, CORS_HEADERS)
+  }
+}
+
+const READ_MAX_BYTES = 2 * 1024 * 1024
+
+export async function readFileAbs({ url, deps }: RouteContext): Promise<Response> {
+  if (!deps.config.enableGlobOpener) {
+    return jsonError(
+      "GLOB_DISABLED",
+      "Glob opener is disabled. Set PILOT_ENABLE_GLOB_OPENER=true to enable.",
+      403,
+      CORS_HEADERS,
+    )
+  }
+
+  const path = url.searchParams.get("path")
+  if (!path) return jsonError("MISSING_PATH", "path is required", 400, CORS_HEADERS)
+
+  const allowedRoots = [deps.directory, process.env.HOME ?? ""]
+  const safe = resolveSafePath(path, allowedRoots)
+  if (!safe.ok) {
+    return jsonError("FORBIDDEN", `path rejected: ${safe.error}`, 403, CORS_HEADERS)
+  }
+
+  try {
+    const st = statSync(safe.resolved)
+    if (!st.isFile()) {
+      return jsonError("NOT_A_FILE", "path is not a file", 400, CORS_HEADERS)
+    }
+    if (st.size > READ_MAX_BYTES) {
+      return jsonError("FILE_TOO_LARGE", "File exceeds 2 MB limit", 413, CORS_HEADERS)
+    }
+    const content = readFileSync(safe.resolved, "utf-8")
+    deps.audit.log("fs.read", { path: safe.resolved })
+    return json({ path: safe.resolved, content, size: st.size }, 200, CORS_HEADERS)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("fs read failed", { error: message, path: safe.resolved })
+    return jsonError("READ_ERROR", "Failed to read file", 500, CORS_HEADERS)
   }
 }
 

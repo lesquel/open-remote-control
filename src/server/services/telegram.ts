@@ -1,5 +1,6 @@
 import type { TelegramConfig } from "../config"
 import type { PermissionQueue } from "./permission-queue"
+import type { Logger } from "../util/logger"
 import { createCircuitBreaker } from "../util/circuit-breaker"
 
 /** Default fetch timeout for all Telegram API calls. */
@@ -19,6 +20,8 @@ export interface TelegramBot {
   sendStartup(dashboardUrl: string): Promise<void>
   sendSessionIdle(sessionId: string, title: string): Promise<void>
   sendSessionError(sessionId: string, title: string, error: string): Promise<void>
+  /** One-shot getMe check — useful for startup verification. */
+  testConnection(): Promise<{ ok: boolean; error?: string }>
   stop(): void
 }
 
@@ -30,6 +33,7 @@ interface InlineKeyboardButton {
 export function createTelegramBot(
   config: TelegramConfig | null,
   permissionQueue: PermissionQueue,
+  logger?: Logger,
 ): TelegramBot {
   if (!config || !config.token || !config.chatId) {
     return {
@@ -39,6 +43,7 @@ export function createTelegramBot(
       sendStartup: async () => {},
       sendSessionIdle: async () => {},
       sendSessionError: async () => {},
+      testConnection: async () => ({ ok: false, error: "not configured" }),
       stop: () => {},
     }
   }
@@ -147,19 +152,21 @@ export function createTelegramBot(
     )
   }
 
+  // Exponential backoff: 5s → 10s → 30s → 60s (max), resets on success.
+  const BACKOFF_STEPS = [5_000, 10_000, 30_000, 60_000]
+  let backoffIdx = 0
+
   async function pollLoop(): Promise<void> {
     while (polling) {
       try {
-        const updates = await api<Array<Record<string, unknown>>>("getUpdates", {
+        const updates = await rawFetch<Array<Record<string, unknown>>>("getUpdates", {
           offset,
           timeout: 30,
           allowed_updates: ["callback_query"],
         })
 
-        if (!updates) {
-          await sleep(5_000)
-          continue
-        }
+        // Success — reset backoff
+        backoffIdx = 0
 
         for (const update of updates) {
           offset = (update.update_id as number) + 1
@@ -167,8 +174,16 @@ export function createTelegramBot(
             await handleCallbackQuery(update.callback_query as Record<string, unknown>)
           }
         }
-      } catch {
-        await sleep(5_000)
+      } catch (err) {
+        const delay = BACKOFF_STEPS[Math.min(backoffIdx, BACKOFF_STEPS.length - 1)]!
+        if (logger) {
+          logger.warn("Telegram polling failed", {
+            error: err instanceof Error ? err.message : String(err),
+            retryInMs: delay,
+          })
+        }
+        backoffIdx = Math.min(backoffIdx + 1, BACKOFF_STEPS.length - 1)
+        await sleep(delay)
       }
     }
   }
@@ -222,6 +237,30 @@ export function createTelegramBot(
     return new Promise((r) => setTimeout(r, ms))
   }
 
+  async function testConnection(): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await rawFetch("getMe", {})
+      return { ok: true }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+
+  // Startup self-check — logs the result but never crashes
+  testConnection()
+    .then((r) => {
+      if (!logger) return
+      if (r.ok) {
+        logger.info("Telegram bot connected")
+      } else {
+        logger.warn("Telegram bot connection failed", { error: r.error ?? "unknown" })
+      }
+    })
+    .catch(() => {})
+
   // Start polling (fire and forget)
   pollLoop()
 
@@ -232,6 +271,7 @@ export function createTelegramBot(
     sendStartup,
     sendSessionIdle,
     sendSessionError,
+    testConnection,
     stop: () => {
       polling = false
     },

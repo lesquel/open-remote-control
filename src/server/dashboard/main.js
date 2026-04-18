@@ -31,9 +31,14 @@ import { createFileBrowser } from './file-browser.js'
 // Expose references refresh globally so command-palette can call it
 window.__refreshReferences = refreshReferences
 
-// ── PWA: register service worker (HTTPS only, not localhost) ─────────────
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('./sw.js').catch(() => {})
+// ── PWA: register service worker (HTTPS or localhost) ────────────────────
+// Service Workers require a secure context, but localhost / 127.0.0.1 count as
+// secure. Registering on localhost unlocks the Web Push flow for local dev.
+if ('serviceWorker' in navigator) {
+  const isLocalhost = ['127.0.0.1', 'localhost'].includes(location.hostname)
+  if (location.protocol === 'https:' || isLocalhost) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {})
+  }
 }
 
 // ── Mode detection ───────────────────────────────────────────────────────

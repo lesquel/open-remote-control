@@ -1,10 +1,10 @@
 // command-palette.js — Fuzzy-searchable command palette (Ctrl+P / Cmd+K)
 // Intentionally untested visual code.
 import { getState, setState, setActiveDirectory, getActiveDirectory } from './state.js'
-import { createSession, selectSession, statusClass, loadSessions } from './sessions.js'
+import { createSession, selectSession, statusClass, loadSessions, deleteSessionById } from './sessions.js'
 import { toast } from './toast.js'
 import { getAgents, getProviders, getConnectedProviders } from './references.js'
-import { sendPromptWithOpts, fetchProjects } from './api.js'
+import { sendPromptWithOpts, fetchProjects, updateSessionTitle } from './api.js'
 import { openDebugModal } from './debug-modal.js'
 
 // Per-session agent preference (client-side only, resets on reload)
@@ -131,6 +131,9 @@ function buildItems(query) {
   // ── Actions ──
   const actions = [
     { label: 'New Session',          icon: '+', kbd: 'alt+n', action: () => { closePalette(); createSession() } },
+    { label: 'Rename Session',       icon: '✎', action: () => { closePalette(); renameActiveSession() } },
+    { label: 'Delete Session',       icon: '✕', variant: 'danger', action: () => { closePalette(); deleteActiveSession() } },
+    { label: 'Delete old sessions (>30 days)', icon: '⌫', variant: 'danger', action: () => { closePalette(); deleteOldSessions() } },
     { label: 'Copy Session ID',      icon: '⊕', action: () => { closePalette(); copySessionId() } },
     { label: 'Resume in TUI',        icon: '↩', action: () => { closePalette(); copyTuiCommand() } },
     { label: 'Switch Folder',        icon: '▤', kbd: 'alt+f', action: () => { closePalette(); openFolderPicker() } },
@@ -577,6 +580,12 @@ async function openProjectPicker() {
     // 3. Clear active session (it belongs to the old project)
     setState({ activeSession: null, sessions: {}, statuses: {} })
 
+    // 3b. Clear the files-changed panel (belonged to the old session/project)
+    try {
+      const { refreshFilesChanged } = await import('./files-changed-bridge.js')
+      refreshFilesChanged(null)
+    } catch (_) {}
+
     // 4. Re-fetch references (agents / providers / MCP / project) for new directory — AWAIT it
     try {
       await window.__refreshReferences?.()
@@ -625,6 +634,75 @@ function copySessionId() {
   if (!activeSession) { toast('No session selected'); return }
   navigator.clipboard?.writeText(activeSession)
   toast('Session ID copied')
+}
+
+async function renameActiveSession() {
+  const { activeSession, sessions } = getState()
+  if (!activeSession) { toast('No session selected'); return }
+  const current = sessions[activeSession]?.title ?? ''
+  const next = window.prompt('Rename session', current)
+  if (next === null) return
+  const trimmed = next.trim()
+  if (!trimmed || trimmed === current) return
+  try {
+    await updateSessionTitle(activeSession, trimmed)
+    // Optimistic local update — SSE session.updated will sync the rest
+    const nextSessions = { ...sessions, [activeSession]: { ...sessions[activeSession], title: trimmed } }
+    setState({ sessions: nextSessions })
+    const { renderSessions, updateHeaderSession, updateInfoBar } = await import('./sessions.js')
+    renderSessions()
+    const { statuses } = getState()
+    const status = statuses[activeSession] ?? 'idle'
+    updateHeaderSession(trimmed, status)
+    updateInfoBar(activeSession, trimmed, status, nextSessions[activeSession])
+    toast('Session renamed')
+  } catch (err) {
+    toast(`Rename failed: ${err?.message ?? 'unknown error'}`)
+  }
+}
+
+async function deleteActiveSession() {
+  const { activeSession, sessions } = getState()
+  if (!activeSession) { toast('No session selected'); return }
+  const title = sessions[activeSession]?.title || activeSession.slice(0, 8)
+  if (!window.confirm(`Delete session "${title}"? This cannot be undone.`)) return
+  await deleteSessionById(activeSession)
+}
+
+async function deleteOldSessions() {
+  const { sessions } = getState()
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
+  const cutoff = Date.now() - THIRTY_DAYS_MS
+  const candidates = Object.values(sessions).filter(s => {
+    const t = s?.time?.updated ?? s?.time?.created ?? 0
+    return t > 0 && t < cutoff
+  })
+
+  if (!candidates.length) {
+    toast('No sessions older than 30 days')
+    return
+  }
+
+  if (!window.confirm(`Delete ${candidates.length} session(s) older than 30 days? This cannot be undone.`)) {
+    return
+  }
+
+  let done = 0
+  let failed = 0
+  for (const s of candidates) {
+    try {
+      const ok = await deleteSessionById(s.id, s.directory ? { directory: s.directory } : {})
+      if (ok) done++
+      else failed++
+    } catch (_) {
+      failed++
+    }
+    // Progress toast every few deletions
+    if (done % 5 === 0 || done + failed === candidates.length) {
+      toast(`Deleting old sessions: ${done + failed}/${candidates.length}`)
+    }
+  }
+  toast(`Deleted ${done} session(s)${failed ? ` (${failed} failed)` : ''}`)
 }
 
 function copyTuiCommand() {
@@ -742,7 +820,8 @@ function renderPaletteList(query) {
       const metaHtml = item.meta && !item.kbd
         ? `<span class="palette-item-meta ${item.metaClass ?? ''}">${escHtml(item.meta)}</span>`
         : ''
-      html += `<div class="palette-item${sel}" data-idx="${globalIdx}">
+      const variantClass = item.variant === 'danger' ? ' palette-item--danger' : ''
+      html += `<div class="palette-item${sel}${variantClass}" data-idx="${globalIdx}">
         <span class="palette-item-icon">${escHtml(item.icon ?? '○')}</span>
         <span class="palette-item-label">${item.labelHtml}</span>
         ${metaHtml}${kbdHtml}

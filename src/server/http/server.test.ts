@@ -5,6 +5,7 @@ import type { AuditLog } from "../services/audit"
 import { createEventBus } from "../services/event-bus"
 import { createPermissionQueue } from "../services/permission-queue"
 import { createTelegramBot } from "../services/telegram"
+import { createPushService } from "../services/push"
 import type { Logger } from "../util/logger"
 import type { RouteDeps } from "./routes"
 import { createRemoteServer, type RemoteServer } from "./server"
@@ -140,11 +141,16 @@ function buildDeps(port: number): RouteDeps {
     tunnel: "off",
     telegram: null,
     dev: false,
+    vapid: null,
+    enableGlobOpener: false,
   }
 
   const eventBus = createEventBus()
   const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
   const telegram = createTelegramBot(null, permissionQueue)
+  const audit = createNoopAudit()
+  const logger = createNoopLogger()
+  const push = createPushService({ config, audit, logger })
 
   const deps: RouteDeps = {
     client: createClientMock(),
@@ -157,11 +163,12 @@ function buildDeps(port: number): RouteDeps {
       deps.token = newToken
     },
     tunnelUrl: null,
-    audit: createNoopAudit(),
+    audit,
     eventBus,
     permissionQueue,
     telegram,
-    logger: createNoopLogger(),
+    push,
+    logger,
   }
   return deps
 }

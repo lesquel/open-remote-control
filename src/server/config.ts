@@ -12,6 +12,12 @@ export interface TelegramConfig {
   chatId: string
 }
 
+export interface VapidConfig {
+  publicKey: string
+  privateKey: string
+  subject: string
+}
+
 export interface Config {
   port: number
   host: string
@@ -20,6 +26,10 @@ export interface Config {
   telegram: TelegramConfig | null
   /** When true, dashboard HTML is re-read from disk on each request (dev mode). */
   dev: boolean
+  /** Web Push VAPID config — only set when BOTH keys are present. */
+  vapid: VapidConfig | null
+  /** Opt-in flag for the glob file opener endpoints. Disabled by default. */
+  enableGlobOpener: boolean
 }
 
 export class ConfigError extends Error {
@@ -60,7 +70,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const dev = env.PILOT_DEV === "true"
 
-  return { port, host, permissionTimeoutMs, tunnel, telegram, dev }
+  const vapid: VapidConfig | null =
+    env.PILOT_VAPID_PUBLIC_KEY && env.PILOT_VAPID_PRIVATE_KEY
+      ? {
+          publicKey: env.PILOT_VAPID_PUBLIC_KEY,
+          privateKey: env.PILOT_VAPID_PRIVATE_KEY,
+          subject: env.PILOT_VAPID_SUBJECT ?? "mailto:admin@opencode-pilot.local",
+        }
+      : null
+
+  const enableGlobOpener = env.PILOT_ENABLE_GLOB_OPENER === "true"
+
+  return {
+    port,
+    host,
+    permissionTimeoutMs,
+    tunnel,
+    telegram,
+    dev,
+    vapid,
+    enableGlobOpener,
+  }
 }
 
 /**

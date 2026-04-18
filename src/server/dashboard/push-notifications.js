@@ -4,11 +4,26 @@
 // Design notes:
 // - Never auto-prompts. Only calls Notification.requestPermission() when the user
 //   explicitly enables notifications via the settings checkbox.
-// - Sends a system notification when a pilot.permission.pending SSE event fires
-//   AND the tab is hidden (document.hidden).
+// - Two layers:
+//     1. Local Notification API — fires on SSE events while the tab is hidden.
+//     2. Web Push — real server push via the Service Worker, works even when the
+//        tab is closed. Gated by VAPID keys on the server.
 // - Graceful degradation: hides the settings row if Notification API is unavailable.
 
+import { pushPublicKey, pushSubscribe, pushUnsubscribe } from './api.js'
+
 const LS_NOTIF_KEY = 'pilot_push_notif_enabled'
+const LS_PUSH_ENDPOINT_KEY = 'pilot_push_endpoint'
+
+// Convert a URL-safe base64 VAPID key to the Uint8Array expected by pushManager.subscribe.
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const rawData = atob(base64)
+  const out = new Uint8Array(rawData.length)
+  for (let i = 0; i < rawData.length; i++) out[i] = rawData.charCodeAt(i)
+  return out
+}
 
 export function createPushNotifications() {
   // ── Feature detection ────────────────────────────────────────────────────
@@ -116,6 +131,99 @@ export function createPushNotifications() {
     })
   }
 
+  // ── Web Push subscription (secondary layer) ───────────────────────────────
+  // Register the SW on localhost too (bypasses the HTTPS-only gate in main.js).
+  async function ensureServiceWorker() {
+    if (!('serviceWorker' in navigator)) return null
+    const isLocalhost = ['127.0.0.1', 'localhost'].includes(location.hostname)
+    if (location.protocol !== 'https:' && !isLocalhost) return null
+    try {
+      let reg = await navigator.serviceWorker.getRegistration('./sw.js')
+      if (!reg) reg = await navigator.serviceWorker.register('./sw.js')
+      return await navigator.serviceWorker.ready
+    } catch (e) {
+      console.warn('[pilot:push] SW register failed', e)
+      return null
+    }
+  }
+
+  function _ensureStatusEl() {
+    let el = document.getElementById('push-notif-status')
+    if (el) return el
+    const row = document.getElementById('push-notif-setting-row')
+    if (!row) return null
+    el = document.createElement('div')
+    el.id = 'push-notif-status'
+    el.style.fontSize = '11px'
+    el.style.marginTop = '4px'
+    el.style.opacity = '0.8'
+    el.style.display = 'none'
+    row.appendChild(el)
+    return el
+  }
+
+  function _setWebPushStatus(msg, isError = false) {
+    const el = _ensureStatusEl()
+    if (!el) return
+    el.textContent = msg || ''
+    el.style.color = isError ? 'var(--color-error, #c33)' : ''
+    el.style.display = msg ? '' : 'none'
+  }
+
+  async function _enableWebPush() {
+    const reg = await ensureServiceWorker()
+    if (!reg || !('pushManager' in reg)) {
+      _setWebPushStatus('Web Push unsupported in this browser', true)
+      return false
+    }
+    let publicKey = null
+    try {
+      publicKey = await pushPublicKey()
+    } catch (err) {
+      _setWebPushStatus('Could not reach server', true)
+      return false
+    }
+    if (!publicKey) {
+      _setWebPushStatus(
+        'Server VAPID keys missing. Set PILOT_VAPID_PUBLIC_KEY and PILOT_VAPID_PRIVATE_KEY.',
+        true,
+      )
+      return false
+    }
+    try {
+      let sub = await reg.pushManager.getSubscription()
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        })
+      }
+      await pushSubscribe(sub.toJSON())
+      try { localStorage.setItem(LS_PUSH_ENDPOINT_KEY, sub.endpoint) } catch (_) {}
+      _setWebPushStatus('Push notifications active')
+      return true
+    } catch (err) {
+      console.warn('[pilot:push] subscribe failed', err)
+      _setWebPushStatus('Subscription failed: ' + (err?.message ?? 'unknown'), true)
+      return false
+    }
+  }
+
+  async function _disableWebPush() {
+    const reg = await ensureServiceWorker()
+    if (!reg || !('pushManager' in reg)) return
+    try {
+      const sub = await reg.pushManager.getSubscription()
+      if (sub) {
+        const endpoint = sub.endpoint
+        await sub.unsubscribe().catch(() => {})
+        try { await pushUnsubscribe(endpoint) } catch (_) {}
+        try { localStorage.removeItem(LS_PUSH_ENDPOINT_KEY) } catch (_) {}
+      }
+    } catch (_) {}
+    _setWebPushStatus('')
+  }
+
   // ── Checkbox wiring (called after settings modal DOM is ready) ────────────
   function _wireSettingsModal() {
     const cb       = document.getElementById('s-push-notif')
@@ -129,6 +237,8 @@ export function createPushNotifications() {
       if (!e.target.checked) {
         _setEnabled(false)
         if (testBtn) testBtn.style.display = 'none'
+        // Best-effort: tear down Web Push subscription too
+        _disableWebPush().catch(() => {})
         return
       }
 
@@ -138,6 +248,8 @@ export function createPushNotifications() {
         _setEnabled(true)
         if (testBtn) testBtn.style.display = ''
         _syncCheckbox()
+        // Best-effort: also upgrade to Web Push for background delivery
+        _enableWebPush().catch((err) => console.warn('[pilot:push] enable failed', err))
       } else {
         // Denied or dismissed
         e.target.checked = false
@@ -158,6 +270,12 @@ export function createPushNotifications() {
 
   // Wire immediately (settings modal exists at this point)
   _wireSettingsModal()
+
+  // Best-effort: if the user previously enabled push, silently re-subscribe on
+  // load so we don't miss notifications after a token refresh or browser restart.
+  if (supported && _isEnabled() && Notification.permission === 'granted') {
+    _enableWebPush().catch(() => {})
+  }
 
   // ── Destroy ────────────────────────────────────────────────────────────────
   function destroy() {

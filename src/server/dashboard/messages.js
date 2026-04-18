@@ -517,3 +517,33 @@ export function renderMessages(msgs) {
 window.__toggleTool = function(id) {
   document.getElementById(id)?.classList.toggle('open')
 }
+
+/**
+ * Render an array of raw SDK messages into a specific panel element.
+ * Shared between the single-session view and multi-view.
+ *
+ * @param {HTMLElement} box   — the container to render into
+ * @param {Array}       msgs  — raw SDK messages (wrapped or flat)
+ * @param {object}      [opts]
+ * @param {boolean}     [opts.compact=false] — compact mode (used by multi-view)
+ * @param {boolean}     [opts.scrollToBottom=true]
+ */
+export function renderMessageIntoPanel(box, msgs, opts = {}) {
+  if (!box) return
+  const { compact = false, scrollToBottom = true } = opts
+  if (!Array.isArray(msgs) || msgs.length === 0) {
+    box.innerHTML = `<div class="mv-empty" style="color:var(--text-dim);font-size:.78rem;text-align:center;padding:12px">No messages yet.</div>`
+    return
+  }
+  try {
+    box.innerHTML = msgs.map(m => renderMsg(m)).join('')
+  } catch (err) {
+    console.error('[pilot:data] renderMessageIntoPanel failed', err)
+    box.innerHTML = `<div class="panel-error"><span>⚠ Failed to render messages</span></div>`
+    return
+  }
+  const { tools } = getState().settings
+  box.querySelectorAll('.tool-block').forEach(el => el.classList.toggle('hidden-tools', !tools))
+  if (compact) box.classList.add('mv-msgs--compact')
+  if (scrollToBottom) box.scrollTop = box.scrollHeight
+}

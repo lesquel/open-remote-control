@@ -1,7 +1,9 @@
 // multi-view.js — Multi-session split view
 import { getState, setState } from './state.js'
 import { fetchMessages, sendPrompt as apiSendPrompt } from './api.js'
-import { statusClass } from './sessions.js'
+import { statusClass, sessionAgent, agentBadgeClass } from './sessions.js'
+import { normalizeMessage, renderMessageIntoPanel } from './messages.js'
+import { getModel, getProvider, agentColorFromName, getAgent } from './references.js'
 import { toast } from './toast.js'
 
 const STORAGE_KEY_PANELS = 'pilot_mvpanels'
@@ -93,18 +95,28 @@ function createMVPanel(id) {
   const s = sessions[id]
   const status = statuses[id] ?? 'idle'
   const title = s?.title || id.slice(0, 8)
+  const agent = sessionAgent(s)
+  const agentColor = agent ? (getAgent(agent)?.color || agentColorFromName(agent)) : null
+  const agentBadgeHtml = agent
+    ? (agentColor
+      ? `<span class="agent-badge agent-badge--compact agent-badge--dynamic" style="--agent-color:${agentColor};border-color:${agentColor}40;color:${agentColor}" title="${esc(agent)}">${esc(agent)}</span>`
+      : `<span class="agent-badge agent-badge--compact ${agentBadgeClass(agent)}" title="${esc(agent)}">${esc(agent)}</span>`)
+    : ''
 
   const panel = document.createElement('div')
   panel.className = 'mv-panel'
   panel.dataset.sessionId = id
   panel.innerHTML = `
     <div class="mv-header">
-      <span class="mv-title">${esc(title)}</span>
+      <span class="mv-status-dot badge-${statusClass(status)}" id="mv-dot-${id}" title="${esc(status)}"></span>
+      <span class="mv-title" title="${esc(title)}">${esc(title)}</span>
+      ${agentBadgeHtml}
       <span class="badge badge-${statusClass(status)} mv-badge" id="mv-badge-${id}">${status}</span>
       <button class="mv-close" title="Close panel">✕</button>
     </div>
+    <div class="mv-strip" id="mv-strip-${id}" style="display:none"></div>
     <div class="mv-messages" id="mv-msgs-${id}">
-      <div style="color:var(--text-dim);font-size:.78rem">Loading…</div>
+      <div class="mv-loading" style="color:var(--text-dim);font-size:.78rem;text-align:center;padding:12px">Loading…</div>
     </div>
     <div class="mv-input-row">
       <input class="mv-input" placeholder="Type a prompt…" id="mv-input-${id}">
@@ -135,36 +147,74 @@ function createMVPanel(id) {
   return panel
 }
 
+// Track in-flight loads so rapid SSE-driven reloads don't stomp each other.
+const _mvLoadInFlight = new Map() // id -> Promise
+
 export async function loadMVMessages(id) {
   const box = document.getElementById(`mv-msgs-${id}`)
   if (!box) return
-  const { settings } = getState()
-  try {
-    const msgs = await fetchMessages(id)
-    if (!msgs.length) {
-      box.innerHTML = '<div style="color:var(--text-dim);font-size:.78rem">No messages yet.</div>'
-      return
+  // Serialize per-panel loads
+  if (_mvLoadInFlight.has(id)) return _mvLoadInFlight.get(id)
+
+  const p = (async () => {
+    // Resolve the session's directory — a pinned session may belong to a
+    // different project than the current activeDirectory. We pass its own
+    // directory explicitly so fetchMessages hits the right instance.
+    const { sessions } = getState()
+    const sessionDir = sessions[id]?.directory ?? undefined
+    const fetchOpts = sessionDir !== undefined ? { directory: sessionDir } : {}
+
+    try {
+      const raw = await fetchMessages(id, fetchOpts)
+      const rawArr = Array.isArray(raw) ? raw : []
+      const normalized = rawArr.map(normalizeMessage)
+      updateMVHeaderLabels(id, normalized)
+      // Use the shared single-session renderer so multi-view matches the
+      // main view (text parts, tool calls, reasoning blocks, agent badge).
+      renderMessageIntoPanel(box, rawArr, { compact: true, scrollToBottom: true })
+    } catch (err) {
+      console.warn('[pilot:mv] loadMVMessages failed', id, err)
+      box.innerHTML = `<div class="mv-error" style="color:var(--danger);font-size:.78rem;text-align:center;padding:12px">Failed to load messages${err?.status ? ' (' + err.status + ')' : ''}</div>`
     }
-    box.innerHTML = msgs.map(m => {
-      const role = m.role ?? 'assistant'
-      const parts = m.parts ?? []
-      const text = parts.filter(p => p.type === 'text').map(p => p.text ?? '').join('\n').trim()
-      const hasTools = parts.some(p => p.type === 'tool-invocation' || p.type === 'tool')
-      return `<div class="mv-msg ${role}">
-        <div class="mv-msg-role">${role}</div>
-        ${text ? `<div class="mv-msg-body">${esc(text)}</div>` : ''}
-        ${hasTools && settings.tools ? `<div style="font-size:.7rem;color:var(--text-dim);padding:2px 0">[tool calls]</div>` : ''}
-      </div>`
-    }).join('')
-    box.scrollTop = box.scrollHeight
-  } catch (_) {}
+  })().finally(() => {
+    _mvLoadInFlight.delete(id)
+  })
+
+  _mvLoadInFlight.set(id, p)
+  return p
+}
+
+function updateMVHeaderLabels(id, normalizedMsgs) {
+  const stripEl = document.getElementById(`mv-strip-${id}`)
+  if (!stripEl) return
+  const lastAssistant = [...normalizedMsgs].reverse().find(m => m.role === 'assistant')
+  const agentName  = lastAssistant?.mode ?? null
+  const modelId    = lastAssistant?.modelID ?? null
+  const providerId = lastAssistant?.providerID ?? null
+  const modelLabel    = modelId    ? (getModel(modelId)?.name ?? modelId)       : ''
+  const providerLabel = providerId ? (getProvider(providerId)?.name ?? providerId) : ''
+  const agentParts = []
+  if (agentName) {
+    const color = getAgent(agentName)?.color || agentColorFromName(agentName)
+    agentParts.push(`<span class="mv-strip-agent" style="color:${color}">${esc(agentName)}</span>`)
+  }
+  if (modelLabel) agentParts.push(`<span class="mv-strip-sep">·</span><span class="mv-strip-model">${esc(modelLabel)}</span>`)
+  if (providerLabel) agentParts.push(`<span class="mv-strip-sep">·</span><span class="mv-strip-provider">${esc(providerLabel)}</span>`)
+  stripEl.innerHTML = agentParts.join(' ')
+  stripEl.style.display = agentParts.length ? '' : 'none'
 }
 
 export function updateMVPanelStatus(id, status) {
   const badge = document.getElementById(`mv-badge-${id}`)
-  if (!badge) return
-  badge.textContent = status
-  badge.className = `badge badge-${statusClass(status)} mv-badge`
+  if (badge) {
+    badge.textContent = status
+    badge.className = `badge badge-${statusClass(status)} mv-badge`
+  }
+  const dot = document.getElementById(`mv-dot-${id}`)
+  if (dot) {
+    dot.className = `mv-status-dot badge-${statusClass(status)}`
+    dot.title = status
+  }
 }
 
 // ── Session picker integration ─────────────────────────────────────────────

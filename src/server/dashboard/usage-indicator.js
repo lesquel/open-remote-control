@@ -15,7 +15,9 @@ export function createUsageIndicator({ container }) {
   if (!container) return { refresh: () => {}, destroy: () => {} }
 
   let _unsub = null
+  let _unsubDir = null
   let _lastSessionId = null
+  let _lastDirectory = null
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -123,12 +125,21 @@ export function createUsageIndicator({ container }) {
     }
   })
 
+  _unsubDir = subscribe('usage-indicator-dir', (state) => {
+    const dir = state.activeDirectory ?? null
+    if (dir !== _lastDirectory) {
+      _lastDirectory = dir
+      refresh()
+    }
+  })
+
   // Initial render
   renderPlaceholder(false)
   refresh()
 
   function destroy() {
     if (_unsub) _unsub()
+    if (_unsubDir) _unsubDir()
     container.innerHTML = ''
   }
 
