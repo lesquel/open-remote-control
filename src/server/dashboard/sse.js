@@ -187,14 +187,20 @@ async function handleEvent(ev) {
       }
     }
 
+    // SDK emits sessionID (capital D) under ev.properties, but data may also
+    // carry sessionId (lower d) in some envelope shapes. Resolve both so the
+    // multi-view refresh actually fires (regression: only the lower-d form
+    // was being checked, so SSE never re-rendered MV panes).
+    const evtSessionId = d?.sessionId ?? d?.sessionID ?? ev.properties?.sessionID ?? ev.properties?.sessionId ?? null
+
     if (activeSession && !multiviewActive) {
       loadMessages(activeSession)
     }
-    if (d?.sessionId && mvPanels.has(d.sessionId)) {
-      loadMVMessages(d.sessionId)
+    if (evtSessionId && mvPanels.has(evtSessionId)) {
+      loadMVMessages(evtSessionId)
     }
     // Refresh label strip and usage indicator on message events
-    if (d?.sessionId === activeSession || !d?.sessionId) {
+    if (evtSessionId === activeSession || !evtSessionId) {
       window.__refreshLabelStrip?.()
       window.__refreshUsageIndicator?.()
       window.__agentPanel?.refresh?.()
