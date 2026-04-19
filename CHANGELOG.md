@@ -4,6 +4,70 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.6.0] — 2026-04-19
+
+### Fixed
+
+- **Sessions list now shows model and provider per row** — agent badge already worked, but `model · provider` never appeared in the list (only in the label-strip + multi-view headers). Each row now fetches its last assistant message in parallel (capped at 50 most-recent sessions, failures swallowed per session) and renders a small mono `model · provider` after the agent badge.
+- **Agent badge race on first paint** — if `renderSessions()` ran before `initReferences()` finished, badges fell back to raw names with default colors. `initSessions` now subscribes to `references:ready` and re-renders once references load. Same fix pattern that previously stabilized `label-strip.js`.
+- **Multi-view panes stuck on "Loading…"** — when `renderMessageIntoPanel` or the message fetch threw, the pane never recovered. Now both are wrapped in try/catch and replaced with `Failed to load · Retry` (clickable) plus a `console.error` with pane + session id context.
+- **Stale `@ts-expect-error` directive** in `push.test.ts:71` triggered TS2578 because an empty-string endpoint is valid TS (only the runtime guard rejects it). Removed the directive, kept a comment explaining intent.
+
+### Changed — Simpler keyboard shortcuts
+
+The Alt-chord soup is gone. Single-key shortcuts now work when no input is focused, modifier shortcuts always work.
+
+| Key | Action |
+|-----|--------|
+| `?` | Open shortcuts modal |
+| `n` | New session |
+| `s` | Toggle sidebar |
+| `m` | Toggle multi-view |
+| `t` | Toggle theme |
+| `/` | Focus prompt input |
+| `Cmd/Ctrl+K` | Command palette |
+| `Cmd/Ctrl+Enter` | Send prompt |
+| `Esc` | Close modal/picker/palette |
+| `Alt+B`, `Alt+P` | Legacy aliases (kept for muscle memory) |
+
+Removed: `Alt+\``, `Alt+[`, `Alt+]`, `Alt+T`, `Alt+N` — they were rebusque on non-US layouts and most weren't discoverable.
+
+### Added — Robustness pass
+
+- **`apiFetch` wrapper** (`src/server/dashboard/api-fetch.js`) — exponential backoff (250ms → 500ms → 1s → 2s, max 4 attempts) on network errors and 502/503/504/429. Honors `Retry-After` (capped at 5s). Aborts on `AbortSignal`. Throws `ApiError` with `{ url, status, attempts, body }` on exhaustion. GET requests in `api.js` migrated; mutations stay fail-fast to avoid duplicate side effects.
+- **Server payload validators** (`src/server/http/validators.ts`) — manual type-guard validators (no Zod dep added) wired into `POST /sessions`, `PATCH /sessions/:id`, `POST /sessions/:id/prompt`, `POST /push/subscribe`, `POST /push/test`. Returns 400 with `code: VALIDATION_FAILED` and audits `validation.failed` on bad input.
+- **`GET /health`** (no auth) returns `{ status, version, uptime_s, started_at, sse_clients, telegram_ok, push_configured }` for monitoring. Backward-compat fields kept so existing tests pass.
+- **17 new integration tests** for auth gating, validation, delete-session roundtrip, payload-size limits, push gating. Total **145 pass / 0 fail** at release.
+
+### Changed — Refactor pass (zero behavior change)
+
+- **`src/server/dashboard/constants.js`** — single source of truth for status classes, agent badge classes, SSE event names, numeric limits, localStorage keys, and the agent-color HSL formula. 50 magic strings/numbers migrated across 8 dashboard files.
+- **`renderSessions()` split** — the 140-line god function was carved into `buildSessionGroups`, `renderSessionRow`, `renderSessionGroup`, `wireSessionEvents`, with `renderSessions()` now a ~30-line orchestrator. Public API preserved — every external caller keeps working.
+- **`createReference({ fetchFn, key })` factory** in `references.js` — reusable cache+load+get pattern for reference-data endpoints. Migrated `agents` and `mcpStatus`. Providers deferred (multi-field shape needs its own type).
+- **`normalizeMessage` consolidation** — audit confirmed all consumers use the shared util. 7 unit tests added for wrapped/flat/null/empty cases. 6 tests added for `createReference` happy path + failure.
+
+### Added — Cost tracking
+
+- **Cost panel** (collapsible, in sidebar) — per-session cost (4 decimals), today's total, this week's total, top-3 sessions today. Reads `cost` from each assistant message defensively (handles `number`, `{total}`, `{input,output,cacheRead,cacheWrite}`, null).
+- **Daily budget alert (opt-in)** — Settings field "Daily budget limit ($)". When today's total exceeds the limit, a toast warning fires once per calendar day. Doesn't block sending — informational.
+- **History persisted in `localStorage`** under `pilot_cost_history`, structured as `{ "YYYY-MM-DD": { sessions: { id: cost }, total } }`. Quota errors swallowed.
+
+### Added — Pinned TODOs (cross-session)
+
+- **Per-item pin button** appears on hover when a `todowrite` tool result is expanded in the messages pane. Click to pin that TODO item.
+- **Sidebar section** above the sessions list, collapsible, with **Active / Done / All** filter tabs. Each pinned item shows a checkbox (toggle done), the text (truncated at 80 chars), source-session link (click to jump), and unpin X button.
+- **Persisted in `localStorage`** under `pilot_pinned_todos`. Multi-tab sync via the `storage` event. Capped at 100 items with a confirm prompt to clear done items when full. Dedup via stable `djb2` hash of `text|sessionId`.
+
+### Fixed — CI lockfile (separate commit `eee2e52`)
+
+`bun.lock` was not regenerated when v1.5.0 added the `web-push` dependency, so `bun install --frozen-lockfile` failed in both `publish` and `test` workflows. Lockfile now in sync.
+
+### Changed — Version strings synchronized
+
+`PILOT_VERSION` was stale at `0.4.0` in `src/server/constants.ts`, `0.5.0` in `debug-modal.js`/`right-panel.js`, and the `getStatus` handler hardcoded `0.1.0`. All bumped to `1.6.0`. `getStatus` now reads from the constant.
+
+---
+
 ## [1.5.0] — 2026-04-17
 
 ### Fixed

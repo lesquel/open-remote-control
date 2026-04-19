@@ -153,7 +153,7 @@ export async function getStatus({ deps }: RouteContext): Promise<Response> {
   const statuses = await deps.client.session.status()
   return json(
     {
-      pilot: { version: "0.1.0", uptime: process.uptime() },
+      pilot: { version: PILOT_VERSION, uptime: process.uptime() },
       sessions: {
         total: sessions.data?.length ?? 0,
         statuses: statuses.data ?? {},
