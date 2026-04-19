@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import { loadConfigSafe } from "./config"
+import { loadDotEnv } from "./util/dotenv"
 import { generateToken } from "./util/auth"
 import { createAuditLog } from "./services/audit"
 import { createEventBus } from "./services/event-bus"
@@ -17,6 +18,22 @@ import { createLogger } from "./util/logger"
 export default {
   id: "opencode-pilot",
   server: (async (ctx) => {
+    // OpenCode does not auto-load the plugin's .env into process.env, so we
+    // do it ourselves before reading config. Variables already set in the
+    // shell environment win over .env values.
+    const dotenv = loadDotEnv()
+    if (dotenv.loaded) {
+      ctx.client.app
+        .log({
+          body: {
+            service: "opencode-pilot",
+            level: "info",
+            message: `Loaded .env from ${dotenv.loaded} (${dotenv.applied.length} vars)`,
+          },
+        })
+        .catch(() => {})
+    }
+
     const config = loadConfigSafe(process.env, (msg) => {
       ctx.client.app
         .log({ body: { service: "opencode-pilot", level: "warn", message: msg } })

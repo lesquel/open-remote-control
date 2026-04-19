@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.7.1] — 2026-04-19
+
+### Fixed
+
+- **`PILOT_HOST=0.0.0.0` in `.env` was ignored** — OpenCode does not auto-load the plugin's `.env` file, so `process.env.PILOT_HOST` was always undefined and the config silently fell back to `127.0.0.1`. The dashboard's "Connect from phone" modal correctly reported "Server bound to localhost only" but the user had set `PILOT_HOST=0.0.0.0` in `opencode-pilot/.env`. Added a tiny `loadDotEnv()` utility (no deps, ~50 LOC) that runs before config load. Searches `process.cwd()/.env` then plugin install dir / `.env`. Existing shell env vars always win over `.env` values. Logs the loaded path + variable count for visibility.
+
+This unblocks **all** `PILOT_*` env var configuration when the plugin is installed as a dependency rather than run from its own directory.
+
+---
+
 ## [1.7.0] — 2026-04-19
 
 Headline release for **mobile / remote access**. Two new features that close the gap between "self-hosted toy" and "I can use this from my phone" — plus a complete design document for the future cloud relay (v2.0) for reference.
