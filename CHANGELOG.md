@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.6.2] — 2026-04-19
+
+### Fixed
+
+- **Multi-view panes stuck on "Loading…" forever** — `loadMVMessages` was called from inside `createMVPanel` BEFORE the panel was appended to the DOM. Since the loader uses `document.getElementById('mv-msgs-{id}')` to find the message container, it returned `null` and silently no-op'd, leaving the placeholder in place. The loader now runs from `renderMultiviewGrid` after every panel is in the document tree. As a side effect, this also fixes "send from pane doesn't seem to work" — sends were succeeding but the SSE-driven re-render landed on a panel whose initial state machine was wedged. With the initial render fixed, message.updated SSE events now show streaming responses correctly.
+
+---
+
 ## [1.6.1] — 2026-04-19
 
 Patch release for 3 bugs reported immediately after v1.6.0 release.

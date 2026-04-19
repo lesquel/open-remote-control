@@ -57,6 +57,13 @@ export function renderMultiviewGrid() {
   addBtn.textContent = '+ Add session'
   addBtn.addEventListener('click', openSessionPicker)
   grid.appendChild(addBtn)
+
+  // Load messages AFTER panels are in the DOM. loadMVMessages relies on
+  // document.getElementById to find each panel's mv-msgs-* element; if called
+  // from inside createMVPanel before appendChild, the element does not exist
+  // in the document tree yet and the loader silently no-ops, leaving the
+  // "Loading..." placeholder forever.
+  mvPanels.forEach(id => loadMVMessages(id))
 }
 
 export function addToMultiview(id) {
@@ -144,7 +151,7 @@ function createMVPanel(id) {
   sendBtn.addEventListener('click', doSend)
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') doSend() })
 
-  loadMVMessages(id)
+  // NOTE: do NOT call loadMVMessages here — see renderMultiviewGrid below.
   return panel
 }
 
