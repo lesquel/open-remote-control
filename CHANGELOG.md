@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.8.1] — 2026-04-19
+
+### Fixed
+
+- **Right panel could not be hidden on mobile** — there was no visible toggle anywhere; the only way to hide it was the `Alt+I` shortcut, which doesn't exist on phone. Two fixes:
+  1. **Always-visible close button** (`×`) at the top-right corner of the right panel itself. Works on every viewport.
+  2. **New `i` icon in the header** (between sidebar toggle and settings) toggles the right panel from any viewport. On phone, this is the way back in once you close it.
+- **Right panel defaults to hidden on mobile** — main.js now adds `right-panel--hidden` on mount when `window.innerWidth <= 768`. So the first phone load starts with a clean main view, and the user opens the panel only when they want it.
+- **Service worker cache bumped to `pilot-v10`** — v1.8.0's mobile CSS wasn't loading on phones because the service worker was still serving the cached `pilot-v9` shell from prior versions. Cache rotation forces re-download on next visit.
+
+If you're on iOS and still see the old layout: open Settings → Safari → Clear History and Website Data, then reload. Chrome/Firefox: hard reload (`Ctrl+Shift+R`) or DevTools → Application → Service Workers → Unregister.
+
+---
+
 ## [1.8.0] — 2026-04-19
 
 Headline release for **mobile**. The dashboard is now properly usable from a phone after the v1.7 access path was unblocked.

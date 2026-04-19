@@ -16,7 +16,7 @@ import { normalizeMessage } from './messages.js'
 import { LIMITS, STORAGE_KEYS } from './constants.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const PILOT_VERSION = '1.8.0'
+const PILOT_VERSION = '1.8.1'
 const LS_KEY_PREFIX = STORAGE_KEYS.RIGHT_PANEL_COLLAPSED
 const MCP_POLL_INTERVAL_MS = LIMITS.MCP_POLL_INTERVAL_MS
 
@@ -331,6 +331,7 @@ export function createRightPanel({ container }) {
 
     container.innerHTML = `
       <div class="rp-inner">
+        <button class="rp-close-btn" id="rp-close-btn" type="button" title="Hide panel (alt+i)" aria-label="Hide right panel">×</button>
         <div class="rp-scroll">
           ${renderSessionBlock(activeSession)}
           <div class="rp-section">${renderContextBlock(inputTokens, percentUsed, cumulativeCost, tooltipHtml, loading)}</div>
@@ -342,6 +343,13 @@ export function createRightPanel({ container }) {
       </div>
     `
     wireEvents()
+    // Wire the close button — hides the panel via the same class Alt+I uses
+    const closeBtn = container.querySelector('#rp-close-btn')
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        container.classList.add('right-panel--hidden')
+      })
+    }
     // Update footer compact usage
     if (!loading) updateFooterUsage(inputTokens, percentUsed)
   }

@@ -2687,6 +2687,45 @@ body {
   }
 }
 
+/* ── Right panel close button (always visible, all viewports) ──────────── */
+.rp-close-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border2);
+  background: var(--bg2);
+  color: var(--text-dim);
+  border-radius: 4px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-family: inherit;
+}
+.rp-close-btn:hover {
+  background: var(--bg3);
+  color: var(--text);
+  border-color: var(--border);
+}
+.rp-inner {
+  position: relative;
+}
+@media (max-width: 768px) {
+  .rp-close-btn {
+    width: 36px;
+    height: 36px;
+    font-size: 22px;
+    top: 8px;
+    right: 8px;
+  }
+}
+
 /* ── Footer label strip (TUI style) ────────────────────────────────────── */
 .footer-label-strip {
   font-family: var(--mono);

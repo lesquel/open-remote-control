@@ -1,5 +1,5 @@
 // sw.js — Service Worker: app shell caching, never caches API calls
-const CACHE_NAME = "pilot-v9"
+const CACHE_NAME = "pilot-v10"
 const PRECACHE = [
   "./",
   "./index.html",

@@ -182,6 +182,18 @@ async function bootstrap() {
   if (rightPanelEl) {
     const rightPanel = createRightPanel({ container: rightPanelEl })
     window.__rightPanel = rightPanel
+    // On mobile, default to hidden so the panel doesn't pile up next to
+    // the main view. User can reveal it via the "i" button in the header.
+    if (window.innerWidth <= 768) {
+      rightPanelEl.classList.add('right-panel--hidden')
+    }
+    // Wire the header info button — toggles the right panel from any viewport.
+    const infoBtn = document.getElementById('info-toggle-btn')
+    if (infoBtn) {
+      infoBtn.addEventListener('click', () => {
+        rightPanelEl.classList.toggle('right-panel--hidden')
+      })
+    }
   }
 
   // Mount cost panel — lives inside right panel DOM (sessions-panel bottom section)
