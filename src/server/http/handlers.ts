@@ -183,14 +183,21 @@ export async function createSession({ req, url, deps }: RouteContext): Promise<R
   if (dirParam === null)
     return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
 
-  // Body is optional for POST /sessions (no-title session), but if present, validate it
+  // Body is optional for POST /sessions (no-title session). Tolerate:
+  // - no body
+  // - empty body (Content-Length: 0) even when Content-Type is application/json
+  // - empty string
+  // - valid JSON object
   let rawBody: unknown = {}
   const contentType = req.headers.get("content-type") ?? ""
   if (contentType.includes("application/json")) {
-    try {
-      rawBody = await req.json()
-    } catch {
-      return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+    const raw = await req.text()
+    if (raw.trim().length > 0) {
+      try {
+        rawBody = JSON.parse(raw)
+      } catch {
+        return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+      }
     }
   }
 

@@ -253,6 +253,17 @@ describe("integration: critical flows", () => {
     expect(res.status).toBe(201)
   })
 
+  it("POST /sessions with empty body but JSON content-type passes (regression: v1.6.0 dashboard sent this combo and got 400)", async () => {
+    const res = await fetch(`${base}/sessions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    })
+    expect(res.status).toBe(201)
+  })
+
   it("PATCH /sessions/:id with missing title returns 400", async () => {
     const res = await fetch(`${base}/sessions/some-id`, {
       method: "PATCH",

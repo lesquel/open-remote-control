@@ -11,12 +11,12 @@ import {
   getModel,
   refresh as refreshReferences,
 } from './references.js'
-import { fetchMessages, fetchInstanceInfo, fetchHealth, fetchMcpStatus } from './api.js'
+import { fetchMessages, fetchHealth, fetchMcpStatus } from './api.js'
 import { normalizeMessage } from './messages.js'
 import { LIMITS, STORAGE_KEYS } from './constants.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const PILOT_VERSION = '1.6.0'
+const PILOT_VERSION = '1.6.1'
 const LS_KEY_PREFIX = STORAGE_KEYS.RIGHT_PANEL_COLLAPSED
 const MCP_POLL_INTERVAL_MS = LIMITS.MCP_POLL_INTERVAL_MS
 
@@ -442,26 +442,16 @@ export function createRightPanel({ container }) {
 
   _mcpPollTimer = setInterval(pollMcp, MCP_POLL_INTERVAL_MS)
 
-  // ── Fetch instance version once on init ───────────────────────────────────
+  // ── Fetch instance version once on init from /health ──────────────────────
 
   async function fetchVersion() {
-    try {
-      const info = await fetchInstanceInfo()
-      if (info?.version) {
-        _instanceVersion = info.version
-        console.debug('[right-panel] Instance version:', _instanceVersion)
-        return
-      }
-    } catch (_) {}
-    // Fallback: try /health for version field
     try {
       const health = await fetchHealth()
       if (health?.version) {
         _instanceVersion = health.version
-        console.debug('[right-panel] Version from /health:', _instanceVersion)
       }
     } catch (_) {
-      console.debug('[right-panel] Could not determine OpenCode version — showing "local"')
+      // Health probe failed — version stays as "local" placeholder
     }
   }
 

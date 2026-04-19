@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.6.1] — 2026-04-19
+
+Patch release for 3 bugs reported immediately after v1.6.0 release.
+
+### Fixed
+
+- **`POST /sessions` returned 400 INVALID_JSON** — the new `createSession` validator added in v1.6.0 attempted `req.json()` whenever `Content-Type: application/json` was present, but the dashboard's `createSession()` helper sends that header without a body. Bun's `req.json()` throws on empty body. Now reads `req.text()` first and only parses if non-empty. Regression test added.
+- **highlight.js CDN URLs were mangled with `[email protected]`** — `index.html` contained literal `[email protected]` instead of `highlight.js@11.10.0`, likely from a copy-paste from a Cloudflare-protected page that obfuscated the `@` pattern. All 9 script + 1 stylesheet tags fixed. Syntax highlighting in code blocks now works.
+- **`GET /instance` returned 404** on every page load — `right-panel.js` called a non-existent `/instance` endpoint as a primary version source, with `/health` as fallback. Removed `fetchInstanceInfo()` entirely and use `fetchHealth()` directly. No more 404 in console.
+
+---
+
 ## [1.6.0] — 2026-04-19
 
 ### Fixed

@@ -157,21 +157,6 @@ export async function fetchLspStatus() {
 }
 
 /**
- * Fetch instance metadata (version, mode).
- * Falls back gracefully if the endpoint is 404 (not yet deployed).
- * Returns null on failure — callers should handle null.
- */
-export async function fetchInstanceInfo() {
-  try {
-    const r = await apiFetch(baseUrl() + '/instance', { headers: authHeaders() })
-    if (!r.ok) return null
-    return r.json()
-  } catch (_) {
-    return null
-  }
-}
-
-/**
  * Send a prompt to a session with optional agent/model override.
  * Body shape matches handlers.ts PromptBody: model is nested { providerID, modelID }.
  * @param {string} sessionId
