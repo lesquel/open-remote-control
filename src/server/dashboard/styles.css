@@ -2966,6 +2966,440 @@ body {
   color: var(--text);
 }
 
+/* ── Mobile Responsive Pass (v1.8.0) — max-width: 768px ─────────────────── */
+/* All rules below are additive — desktop CSS above is untouched.             */
+
+/* ── 1. Base: iOS tap optimisation ──────────────────────────────────────── */
+@media (max-width: 768px) {
+  body {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent iOS auto-zoom on form focus — 16px minimum */
+  input, textarea, select {
+    font-size: 16px !important;
+    touch-action: manipulation;
+  }
+
+  /* 44×44 touch target on interactive elements */
+  button, .btn, .btn-icon, .session-item, .folder-row,
+  .tab, .palette-item, .picker-item {
+    touch-action: manipulation;
+  }
+}
+
+/* ── 2. Header: single row, 44px, icon-only actions ─────────────────────── */
+@media (max-width: 768px) {
+  :root {
+    --header-h: 44px;
+  }
+
+  /* Hide decorative traffic light dots */
+  .tl-dots, .header-sep {
+    display: none;
+  }
+
+  /* Truncate breadcrumb */
+  .header-breadcrumb {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+  }
+  .header-breadcrumb .bc-session {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Hide SSE label text — dot only */
+  .conn-label {
+    display: none;
+  }
+
+  /* Hide "+ New" button text — icon only */
+  #header-new-btn .btn-text {
+    display: none;
+  }
+
+  /* Header actions: tighter */
+  .header-actions {
+    gap: 4px;
+  }
+
+  /* Ensure icon buttons hit 44×44 touch targets */
+  .btn-icon {
+    min-width: 36px;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* + New button: icon-only, same target size */
+  #header-new-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 8px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  /* Usage indicator in header: hide on mobile to save space */
+  .usage-indicator-wrap {
+    display: none;
+  }
+}
+
+/* ── 3. Sidebar as drawer at < 768px ─────────────────────────────────────── */
+/* Note: tablet rule (max-width: 1023px) already makes #sessions-panel a     */
+/* positioned overlay with open-overlay toggle. We extend/override here.     */
+@media (max-width: 768px) {
+  #sessions-panel {
+    position: fixed;
+    left: 0;
+    top: var(--header-h);
+    bottom: 0;
+    width: min(85vw, 360px);
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    border-right: 1px solid var(--border2);
+    box-shadow: none;
+    overflow-y: auto;
+    /* override the tablet 'bottom' that includes footer height */
+    height: auto;
+  }
+
+  /* .open-overlay is toggled by shortcuts.js toggleSidebar() */
+  #sessions-panel.open-overlay {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0,0,0,.6);
+  }
+
+  /* Backdrop — shown by main.js when drawer is open */
+  .mobile-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    top: var(--header-h);
+    background: rgba(0,0,0,.5);
+    z-index: 199;
+  }
+  .mobile-backdrop.visible {
+    display: block;
+  }
+
+  /* Session items: bigger touch target */
+  .session-item {
+    padding: 10px 10px;
+    min-height: 44px;
+  }
+
+  /* Always show delete button on mobile (no hover state) */
+  /* On touch devices hover-only affordances don't work */
+  .session-delete-btn {
+    opacity: 1;
+  }
+
+  /* Pinned todo unpin button: always visible on mobile */
+  .pt-unpin {
+    opacity: 1;
+  }
+
+  /* Pin button on todo items: always visible */
+  .tw-pin-btn {
+    opacity: 1;
+  }
+}
+
+/* ── 4. Main panel: full width when drawer closed ────────────────────────── */
+@media (max-width: 768px) {
+  #main-panel {
+    width: 100%;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Input bar: sticky to bottom */
+  #input-bar {
+    position: sticky;
+    bottom: 0;
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  /* Composer textarea: thumb-friendly padding */
+  #prompt-input {
+    font-size: 16px;
+    min-height: 44px;
+    padding: 8px 0;
+  }
+
+  /* Send button: 44×44 minimum */
+  .btn-send {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 18px;
+  }
+}
+
+/* ── 5. Hide label strip below 480px ─────────────────────────────────────── */
+@media (max-width: 480px) {
+  .input-label-strip {
+    display: none;
+  }
+}
+
+/* ── 6. Multi-view: horizontal scroll-snap ───────────────────────────────── */
+@media (max-width: 768px) {
+  #multiview-grid.active {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding: 0;
+    gap: 0;
+    align-items: stretch;
+  }
+
+  /* Each pane takes full viewport width and snaps */
+  .mv-panel {
+    flex: 0 0 100vw;
+    min-width: 0;
+    max-width: 100vw;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    border-left: none;
+    border-right: 1px solid var(--border);
+    scroll-snap-align: start;
+  }
+
+  /* Hide the "add session" button in multi-view on mobile — use palette */
+  #mv-add-btn {
+    display: none;
+  }
+
+  /* Multi-view input: 16px font to prevent iOS zoom */
+  .mv-input {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  .mv-send {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ── 7. Modals: full-screen on mobile ────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Settings modal */
+  .settings-box {
+    width: 100vw;
+    max-width: 100vw;
+    min-width: 0;
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid var(--border);
+    padding: 20px 16px;
+    height: auto;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  #settings-modal {
+    align-items: flex-end;
+  }
+
+  /* Close buttons in modals: 44×44 */
+  #settings-close, #keymap-close {
+    min-height: 44px;
+    font-size: 13px;
+    padding: 10px;
+    width: 100%;
+  }
+
+  /* Command palette: full-width, reduced top padding */
+  #command-palette {
+    padding-top: 0;
+    align-items: flex-start;
+  }
+  .palette-box {
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #palette-list {
+    max-height: none;
+    flex: 1;
+    overflow-y: auto;
+  }
+  .palette-hint {
+    display: none;
+  }
+
+  /* Keymap modal: full-screen sheet */
+  .keymap-box {
+    width: 100vw;
+    max-width: 100vw;
+    min-width: 0;
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid var(--border);
+    padding: 20px 16px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  #keymap-modal {
+    align-items: flex-end;
+  }
+
+  /* Connect phone modal: full-screen */
+  .cpm-box {
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid var(--border);
+    min-height: 50vh;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .cpm-overlay {
+    align-items: flex-end;
+  }
+
+  /* Session picker: full-width */
+  .picker-box {
+    width: 100vw;
+    max-width: 100vw;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  #session-picker {
+    padding-top: 0;
+    align-items: flex-start;
+  }
+}
+
+/* ── 8. Permission banner ────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  #perm-banner {
+    padding: 10px 14px;
+  }
+  /* Allow / Deny buttons: 44px min touch target */
+  .btn-allow, .btn-deny {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .perm-actions {
+    flex-direction: row;
+    gap: 10px;
+  }
+}
+
+/* ── 9. Code blocks: no horizontal overflow ──────────────────────────────── */
+@media (max-width: 768px) {
+  pre, .message-body pre {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+  }
+  code {
+    word-break: break-word;
+  }
+  #messages {
+    overflow-y: auto;
+  }
+  /* Diff lines: wrap on mobile */
+  .diff-line {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+}
+
+/* ── 10. Tabs: bigger touch targets ──────────────────────────────────────── */
+@media (max-width: 768px) {
+  .tab {
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+}
+
+/* ── 11. Footer: hide on mobile (space is precious) ──────────────────────── */
+@media (max-width: 768px) {
+  #tui-footer {
+    display: none;
+  }
+}
+
+/* ── 12. QR code: responsive canvas size ─────────────────────────────────── */
+@media (max-width: 768px) {
+  .cpm-body canvas {
+    max-width: 280px;
+    width: 100% !important;
+    height: auto !important;
+  }
+  .qr-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* Close button in connect modal: 44×44 touch target */
+  .cpm-close {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Connect modal tabs: bigger tap targets */
+  .cpm-tab {
+    padding: 12px 14px;
+    min-height: 44px;
+  }
+}
+
+/* ── 13. Right panel: hidden on mobile (Alt+I toggles overlay) ───────────── */
+/* Already handled by existing max-width: 639px rule above.                  */
+/* Extend to 768px breakpoint:                                                */
+@media (max-width: 768px) and (min-width: 640px) {
+  .right-panel {
+    position: fixed;
+    top: var(--header-h);
+    right: 0;
+    bottom: 0;
+    z-index: 150;
+    width: min(var(--right-panel-w), 90vw);
+    border-left: 1px solid var(--border2);
+    transform: translateX(100%);
+    transition: transform 0.2s, opacity 0.15s;
+    opacity: 0;
+    box-shadow: -4px 0 20px rgba(0,0,0,.5);
+  }
+  .right-panel:not(.right-panel--hidden) {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* ── End of v1.8.0 mobile responsive pass ───────────────────────────────── */
+
 .file-tree-icon {
   width: 10px;
   flex-shrink: 0;

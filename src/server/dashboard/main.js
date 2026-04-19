@@ -260,6 +260,66 @@ async function bootstrap() {
   // Initial sync after a tick
   setTimeout(syncFooterLabels, 200)
 
+  // ── Mobile drawer: backdrop + ESC + session-tap-to-close ────────────────
+  // The sidebar uses `.open-overlay` class (toggled by shortcuts.js).
+  // On mobile we show a backdrop and auto-close on backdrop tap, ESC, or
+  // when a session item is tapped.
+  function createMobileDrawer() {
+    const backdrop = document.getElementById('mobile-backdrop')
+    const panel    = document.getElementById('sessions-panel')
+    if (!backdrop || !panel) return
+
+    function isDrawerOpen() {
+      return panel.classList.contains('open-overlay')
+    }
+
+    function closeDrawer() {
+      panel.classList.remove('open-overlay')
+      backdrop.classList.remove('visible')
+    }
+
+    function openDrawer() {
+      panel.classList.add('open-overlay')
+      backdrop.classList.add('visible')
+    }
+
+    // Intercept the sidebar-toggle button to also manage backdrop
+    const sidebarBtn = document.getElementById('sidebar-toggle-btn')
+    if (sidebarBtn) {
+      sidebarBtn.addEventListener('click', () => {
+        if (window.innerWidth > 768) return
+        if (isDrawerOpen()) {
+          closeDrawer()
+        } else {
+          openDrawer()
+        }
+      }, { capture: true })
+    }
+
+    // Backdrop tap closes drawer
+    backdrop.addEventListener('click', closeDrawer)
+
+    // Tapping a session while drawer is open closes it
+    panel.addEventListener('click', (e) => {
+      if (!isDrawerOpen()) return
+      if (window.innerWidth > 768) return
+      const item = e.target.closest('.session-item')
+      if (item) {
+        // Small delay so selectSession() gets the click first
+        setTimeout(closeDrawer, 80)
+      }
+    })
+
+    // ESC closes drawer (supplement to shortcuts.js which closes modals)
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && isDrawerOpen()) {
+        closeDrawer()
+      }
+    })
+  }
+
+  createMobileDrawer()
+
   // Alt+I — toggle right panel
   document.addEventListener('keydown', (e) => {
     if (e.altKey && (e.key === 'i' || e.key === 'I')) {

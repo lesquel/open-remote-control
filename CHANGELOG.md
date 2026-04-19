@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.8.0] — 2026-04-19
+
+Headline release for **mobile**. The dashboard is now properly usable from a phone after the v1.7 access path was unblocked.
+
+### Added — Mobile responsive pass
+
+868 lines of `@media (max-width: 768px)` CSS rules appended to styles.css. Zero existing desktop CSS touched — all additive, all under media queries. Desktop layout is bit-identical.
+
+- **Header**: collapses to a single 44px row. Traffic-light dots hidden, SSE label hidden (dot stays), `+ New` button shows just `+`. All header buttons remain icon-tappable.
+- **Sidebar drawer**: `#sessions-panel` becomes `position: fixed; transform: translateX(-100%)` and slides in from the left when toggled. New `#mobile-backdrop` div darkens the main panel and closes the drawer on tap. Tapping a session in the list auto-closes the drawer and shows messages. ESC closes too.
+- **Multi-view as swipeable carousel**: panes stack horizontally with `scroll-snap-type: x mandatory` so each pane snaps to full viewport width. Native swipe gesture between panes feels right on phone. `+ Add session` hidden on mobile (use command palette).
+- **Modals go full-screen**: settings, command palette, keymap/shortcuts, connect-from-phone modal, session picker — all become bottom sheets at `max-width: 768px` (`align-items: flex-end`, full width, no border radius on the bottom).
+- **Composer**: textarea sticks to bottom, send button >=44×44 touch target. Label-strip below composer hidden under 480px to save vertical space.
+- **Touch targets**: all interactive elements (`btn-icon`, `btn-send`, `session-item`, allow/deny, close X) get `min-height: 44px` per Apple/Material guidelines.
+- **iOS zoom prevention**: every `input` and `textarea` gets `font-size: 16px !important` inside the mobile media block (Safari auto-zooms inputs <16px on focus).
+- **Code blocks**: `pre, code` get `white-space: pre-wrap; word-break: break-word; overflow-x: auto` so long lines scroll horizontally inside their container instead of breaking the page layout.
+- **Always-visible affordances**: delete X buttons and pin-TODO buttons no longer require hover — visible at all times on small screens.
+- **Right panel**: hidden by default below 768px (existing Alt+I overlay behavior extended). Bottom-sheet variant deferred to v1.9.
+- **Footer**: hidden on mobile to reclaim ~44px of vertical space.
+
+### Plus a tiny JS addition
+
+`createMobileDrawer()` factory in `main.js` (~30 LOC) wires the backdrop show/hide, session-tap-to-close, and ESC. Uses `capture: true` on the toggle button click so it intercepts before `shortcuts.js`. Early-returns above 768px so desktop behavior is untouched.
+
+### How to verify
+
+Open the dashboard on your phone (LAN URL via QR from v1.7 modal):
+- Header: 1 row, fits on screen, all icons tappable
+- Toggle the ☰ button (top right) → sidebar slides in from left, dark overlay behind
+- Tap a session → drawer closes, messages render, composer sticky at bottom
+- Multi-view: swipe horizontally between panes
+- Settings, palette, etc.: open as full-screen sheets
+
+### Known limitations (v1.9 candidates)
+
+- Right panel on phone: just hidden, no bottom-sheet alternative yet
+- No haptic feedback on swipe/tap
+- Drawer doesn't have an edge-swipe gesture — must tap the toggle button
+- No PWA install prompt UI (manifest is ready, just no in-app affordance)
+
+---
+
 ## [1.7.2] — 2026-04-19
 
 ### Fixed
