@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.6.3] — 2026-04-19
+
+### Fixed — Three multi-view UX bugs reported on v1.6.2
+
+- **All panes recreated on every SSE event** — `loadSessions()` was calling `renderMultiviewGrid()` whenever multi-view was active. Since loadSessions runs on every `session.*` SSE event (incoming message, status change, title update), every keystroke from any session wiped ALL panes back to "Loading…" and re-fetched everything. Now loadSessions only updates the sidebar; multi-view panes refresh per-session via `loadMVMessages` from `sse.js`. Trade-off: if a session title changes while pinned in multi-view, the pane header stays stale until it's removed and re-added — acceptable because titles rarely change mid-session.
+- **Pane wiped to "No messages yet" right after sending** — `doSend` was calling `loadMVMessages(id)` immediately after the POST. The POST returns before the SDK has persisted the user message, so the fetch returned `[]` and the renderer wiped the pane. SSE delivers `message.updated` within ~100-500ms anyway and `sse.js` already triggers a refresh on it. Removed the post-send fetch.
+- **Empty / new sessions showed no agent or model in panes** — both the header badge and the mini strip relied on `session.mode/agent` metadata or a previous assistant message. New sessions have neither. Now both fall back to the default agent (prefers "build", else first available) and the default model from the references registry, rendered at 65-70% opacity to indicate "default, not from history".
+
+---
+
 ## [1.6.2] — 2026-04-19
 
 ### Fixed

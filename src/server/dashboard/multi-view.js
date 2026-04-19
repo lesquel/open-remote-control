@@ -3,7 +3,7 @@ import { getState, setState } from './state.js'
 import { fetchMessages, sendPrompt as apiSendPrompt } from './api.js'
 import { statusClass, sessionAgent, agentBadgeClass } from './sessions.js'
 import { normalizeMessage, renderMessageIntoPanel } from './messages.js'
-import { getModel, getProvider, agentColorFromName, getAgent } from './references.js'
+import { getModel, getProvider, agentColorFromName, getAgent, getAgents, getFirstDefaultModel } from './references.js'
 import { toast } from './toast.js'
 import { STORAGE_KEYS, AGENT_BADGE_CLASS } from './constants.js'
 
@@ -98,17 +98,31 @@ function esc(s) {
     .replace(/"/g, '&quot;')
 }
 
+/**
+ * Best-guess agent name when the session itself has no metadata yet.
+ * For new sessions the SDK won't populate `mode`/`agent` until the first
+ * assistant message arrives, but we still want the user to see something.
+ */
+function fallbackAgent() {
+  const agents = getAgents() ?? []
+  // Prefer "build" if present, else first available, else null.
+  return agents.find(a => a.name?.toLowerCase() === 'build')?.name ?? agents[0]?.name ?? null
+}
+
 function createMVPanel(id) {
   const { sessions, statuses } = getState()
   const s = sessions[id]
   const status = statuses[id] ?? 'idle'
   const title = s?.title || id.slice(0, 8)
-  const agent = sessionAgent(s)
+  const sessionOwnAgent = sessionAgent(s)
+  const agent = sessionOwnAgent ?? fallbackAgent()
+  const isFallback = !sessionOwnAgent
   const agentColor = agent ? (getAgent(agent)?.color || agentColorFromName(agent)) : null
+  const agentLabel = agent ? (isFallback ? `${agent} (default)` : agent) : ''
   const agentBadgeHtml = agent
     ? (agentColor
-      ? `<span class="agent-badge ${AGENT_BADGE_CLASS.compact} ${AGENT_BADGE_CLASS.dynamic}" style="--agent-color:${agentColor};border-color:${agentColor}40;color:${agentColor}" title="${esc(agent)}">${esc(agent)}</span>`
-      : `<span class="agent-badge ${AGENT_BADGE_CLASS.compact} ${agentBadgeClass(agent)}" title="${esc(agent)}">${esc(agent)}</span>`)
+      ? `<span class="agent-badge ${AGENT_BADGE_CLASS.compact} ${AGENT_BADGE_CLASS.dynamic}" style="--agent-color:${agentColor};border-color:${agentColor}40;color:${agentColor}${isFallback ? ';opacity:.65' : ''}" title="${esc(agentLabel)}">${esc(agent)}</span>`
+      : `<span class="agent-badge ${AGENT_BADGE_CLASS.compact} ${agentBadgeClass(agent)}"${isFallback ? ' style="opacity:.65"' : ''} title="${esc(agentLabel)}">${esc(agent)}</span>`)
     : ''
 
   const panel = document.createElement('div')
@@ -142,7 +156,11 @@ function createMVPanel(id) {
     inp.value = ''
     try {
       await apiSendPrompt(id, msg)
-      await loadMVMessages(id)
+      // NOTE: do NOT call loadMVMessages here. The POST returns before the
+      // SDK has persisted the user message, so an immediate fetch returns []
+      // and the renderer wipes the pane to "No messages yet". SSE delivers
+      // message.updated within ~100-500ms — sse.js calls loadMVMessages then,
+      // and every subsequent stream chunk also triggers a refresh.
     } catch (_) {
       toast('Failed to send')
     }
@@ -214,18 +232,24 @@ function updateMVHeaderLabels(id, normalizedMsgs) {
   const stripEl = document.getElementById(`mv-strip-${id}`)
   if (!stripEl) return
   const lastAssistant = [...normalizedMsgs].reverse().find(m => m.role === 'assistant')
-  const agentName  = lastAssistant?.mode ?? null
-  const modelId    = lastAssistant?.modelID ?? null
-  const providerId = lastAssistant?.providerID ?? null
+
+  // Resolve agent / model / provider from last assistant message when present,
+  // else fall back to defaults so empty sessions still show something.
+  const def = getFirstDefaultModel()
+  const agentName  = lastAssistant?.mode ?? fallbackAgent() ?? null
+  const modelId    = lastAssistant?.modelID    ?? def?.modelId    ?? null
+  const providerId = lastAssistant?.providerID ?? def?.providerId ?? null
+  const isPending  = !lastAssistant
+
   const modelLabel    = modelId    ? (getModel(modelId)?.name ?? modelId)       : ''
   const providerLabel = providerId ? (getProvider(providerId)?.name ?? providerId) : ''
   const agentParts = []
-  if (agentName) {
+  if (typeof agentName === 'string' && agentName) {
     const color = getAgent(agentName)?.color || agentColorFromName(agentName)
-    agentParts.push(`<span class="mv-strip-agent" style="color:${color}">${esc(agentName)}</span>`)
+    agentParts.push(`<span class="mv-strip-agent" style="color:${color}${isPending ? ';opacity:.7' : ''}">${esc(agentName)}</span>`)
   }
-  if (modelLabel) agentParts.push(`<span class="mv-strip-sep">·</span><span class="mv-strip-model">${esc(modelLabel)}</span>`)
-  if (providerLabel) agentParts.push(`<span class="mv-strip-sep">·</span><span class="mv-strip-provider">${esc(providerLabel)}</span>`)
+  if (modelLabel) agentParts.push(`<span class="mv-strip-sep">·</span><span class="mv-strip-model"${isPending ? ' style="opacity:.7"' : ''}>${esc(modelLabel)}</span>`)
+  if (providerLabel) agentParts.push(`<span class="mv-strip-sep">·</span><span class="mv-strip-provider"${isPending ? ' style="opacity:.7"' : ''}>${esc(providerLabel)}</span>`)
   stripEl.innerHTML = agentParts.join(' ')
   stripEl.style.display = agentParts.length ? '' : 'none'
 }

@@ -170,11 +170,11 @@ export async function loadSessions(autoSelectMostRecent) {
     updateAgentFilterOptions()
     renderSessions()
     if (autoSelectMostRecent && !getState().activeSession) autoSelect()
-    const { multiviewActive } = getState()
-    if (multiviewActive) {
-      const { renderMultiviewGrid } = await import('./multi-view.js')
-      renderMultiviewGrid()
-    }
+    // NOTE: do NOT call renderMultiviewGrid() here. loadSessions() runs on
+    // every session.* SSE event, and re-rendering the entire grid wipes ALL
+    // panes back to "Loading…" every time. The grid is recreated only when
+    // the SET of pinned panes changes (addToMultiview / removeFromMultiview).
+    // Per-pane content updates flow through loadMVMessages() in sse.js.
   } catch (_) {
     toast('Failed to load sessions')
   }
