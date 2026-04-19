@@ -152,6 +152,7 @@ function buildItems(query) {
     { label: 'Show Agent Context',   icon: '◉', action: () => { closePalette(); window.__agentPanel?.open?.() } },
     { label: 'Refresh References',   icon: '⟳', action: () => { closePalette(); window.__refreshReferences?.().then(() => toast('References refreshed')) } },
     { label: 'Show Debug Info',      icon: '⚑', action: () => { closePalette(); openDebugModal() } },
+    { label: 'Show Shortcuts',       icon: '?', kbd: '?', action: () => { closePalette(); document.getElementById('keymap-modal')?.classList.add('open') } },
     { label: 'Clear Prompt History', icon: '⌫', action: () => {
       closePalette()
       if (!confirm('Clear all prompt history?')) return

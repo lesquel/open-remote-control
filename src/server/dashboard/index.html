@@ -186,8 +186,8 @@
     <div class="footer-right">
       <span class="footer-usage-compact" id="footer-usage-compact"></span>
       <span class="footer-sep">│</span>
-      <div class="footer-shortcut footer-shortcut--btn" data-action="palette" title="Open command palette (alt+p)">
-        <kbd>alt+p</kbd>
+      <div class="footer-shortcut footer-shortcut--btn" data-action="palette" title="Open command palette (Cmd/Ctrl+K)">
+        <kbd>Ctrl+K</kbd>
         <span class="fsc-label">commands</span>
       </div>
       <span class="footer-sep">│</span>
@@ -205,21 +205,30 @@
     </div>
   </div>
 
-  <!-- Keymap modal -->
+  <!-- Keymap / Shortcuts modal (id="keymap-modal" kept for backward compat) -->
   <div id="keymap-modal">
     <div class="keymap-box">
       <h3>Keyboard Shortcuts</h3>
+      <div class="keymap-section-label">Single-key (when not in an input)</div>
       <div class="keymap-grid">
-        <kbd>alt+p</kbd><span>Command palette</span>
-        <kbd>alt+n</kbd><span>New session</span>
-        <kbd>alt+b</kbd><span>Toggle sidebar</span>
-        <kbd>alt+i</kbd><span>Toggle info panel</span>
-        <kbd>alt+t</kbd><span>Toggle theme</span>
-        <kbd>tab</kbd><span>Cycle agents</span>
-        <kbd>ctrl+enter</kbd><span>Send prompt</span>
-        <kbd>esc</kbd><span>Interrupt / close</span>
+        <kbd>?</kbd><span>Show this shortcuts guide</span>
+        <kbd>n</kbd><span>New session</span>
+        <kbd>s</kbd><span>Toggle sidebar</span>
+        <kbd>m</kbd><span>Toggle multi-view</span>
+        <kbd>t</kbd><span>Toggle theme</span>
+        <kbd>/</kbd><span>Focus prompt input</span>
       </div>
-      <button class="btn btn-ghost" id="keymap-close" style="margin-top:8px;font-size:11px">Close</button>
+      <div class="keymap-section-label" style="margin-top:10px">Modifier shortcuts (always active)</div>
+      <div class="keymap-grid">
+        <kbd>Cmd/Ctrl+K</kbd><span>Command palette</span>
+        <kbd>Cmd/Ctrl+Enter</kbd><span>Send prompt</span>
+        <kbd>Esc</kbd><span>Close modal / palette</span>
+        <kbd>Alt+B</kbd><span>Toggle sidebar (legacy)</span>
+        <kbd>Alt+[</kbd><span>Collapse all folders</span>
+        <kbd>Alt+]</kbd><span>Expand all folders</span>
+        <kbd>Alt+I</kbd><span>Toggle info panel</span>
+      </div>
+      <button class="btn btn-ghost" id="keymap-close" style="margin-top:12px;font-size:11px">Close</button>
     </div>
   </div>
 

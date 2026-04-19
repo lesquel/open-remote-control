@@ -332,6 +332,7 @@ body {
   margin-top: 2px;
 }
 .session-time { font-size: 10px; color: var(--text-muted); }
+.session-model-meta { font-family: var(--mono); font-size: 9px; color: var(--text-dim); opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 120px; }
 
 /* Status badges */
 .badge {
@@ -1268,6 +1269,24 @@ body {
 
 /* Loading / empty / error states inside mv-messages */
 .mv-loading, .mv-empty, .mv-error { font-family: var(--mono); }
+.mv-error {
+  color: var(--danger);
+  font-size: .78rem;
+  text-align: center;
+  padding: 12px;
+}
+.mv-retry {
+  background: none;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-family: var(--mono);
+  font-size: .72rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-left: 4px;
+}
+.mv-retry:hover { background: color-mix(in srgb, var(--danger) 15%, transparent); }
 
 /* Compact rendering of the shared message renderer inside a multi-view panel */
 .mv-messages.mv-msgs--compact .message {
@@ -2448,6 +2467,15 @@ body {
 
 .keymap-grid span {
   color: var(--text-dim);
+}
+
+.keymap-section-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: 4px;
 }
 
 /* ── Todo Dock ───────────────────────────────────────────────────────────── */

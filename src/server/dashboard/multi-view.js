@@ -150,6 +150,19 @@ function createMVPanel(id) {
 // Track in-flight loads so rapid SSE-driven reloads don't stomp each other.
 const _mvLoadInFlight = new Map() // id -> Promise
 
+/**
+ * Render an error state in the given mv-messages box with a Retry button.
+ * @param {HTMLElement} box - the mv-msgs-{id} element
+ * @param {string} id - session id (used to wire the retry button)
+ */
+function _showMVError(box, id) {
+  box.innerHTML = '<div class="mv-error">Failed to load \xb7 <button class="mv-retry">Retry</button></div>'
+  const retryBtn = box.querySelector('.mv-retry')
+  if (retryBtn) {
+    retryBtn.addEventListener('click', () => loadMVMessages(id))
+  }
+}
+
 export async function loadMVMessages(id) {
   const box = document.getElementById(`mv-msgs-${id}`)
   if (!box) return
@@ -167,14 +180,19 @@ export async function loadMVMessages(id) {
     try {
       const raw = await fetchMessages(id, fetchOpts)
       const rawArr = Array.isArray(raw) ? raw : []
-      const normalized = rawArr.map(normalizeMessage)
-      updateMVHeaderLabels(id, normalized)
-      // Use the shared single-session renderer so multi-view matches the
-      // main view (text parts, tool calls, reasoning blocks, agent badge).
-      renderMessageIntoPanel(box, rawArr, { compact: true, scrollToBottom: true })
+      try {
+        const normalized = rawArr.map(normalizeMessage)
+        updateMVHeaderLabels(id, normalized)
+        // Use the shared single-session renderer so multi-view matches the
+        // main view (text parts, tool calls, reasoning blocks, agent badge).
+        renderMessageIntoPanel(box, rawArr, { compact: true, scrollToBottom: true })
+      } catch (renderErr) {
+        console.error('[pilot:mv] render error pane=%s session=%s', id, id, renderErr)
+        _showMVError(box, id)
+      }
     } catch (err) {
-      console.warn('[pilot:mv] loadMVMessages failed', id, err)
-      box.innerHTML = `<div class="mv-error" style="color:var(--danger);font-size:.78rem;text-align:center;padding:12px">Failed to load messages${err?.status ? ' (' + err.status + ')' : ''}</div>`
+      console.error('[pilot:mv] fetch error pane=%s session=%s status=%s', id, id, err?.status ?? '?', err)
+      _showMVError(box, id)
     }
   })().finally(() => {
     _mvLoadInFlight.delete(id)

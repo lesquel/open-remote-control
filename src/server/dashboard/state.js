@@ -6,6 +6,7 @@ const state = {
   serverUrl: "",     // empty = same-origin (embedded); set to tunnel URL in standalone mode
   sessions: {},      // id → session object
   statuses: {},      // id → status string
+  sessionMeta: {},   // id → { lastModel?: string, lastProvider?: string, lastAgent?: string }
   agentFilter: "",   // "" = all; otherwise exact agent/mode string
   activeSession: null,
   activeDirectory: null, // string | null — null = default (current OpenCode instance dir)

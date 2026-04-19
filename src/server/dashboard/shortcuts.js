@@ -108,6 +108,40 @@ async function triggerSend() {
   document.getElementById('send-btn').click()
 }
 
+// ── Shortcuts modal ────────────────────────────────────────────────────────
+
+export function openShortcutsModal() {
+  const modal = document.getElementById('shortcuts-modal') || document.getElementById('keymap-modal')
+  modal?.classList.add('open')
+}
+
+export function closeShortcutsModal() {
+  const modal = document.getElementById('shortcuts-modal') || document.getElementById('keymap-modal')
+  modal?.classList.remove('open')
+}
+
+// ── Input focus guard ──────────────────────────────────────────────────────
+
+/**
+ * Returns true when the user is typing into a focusable text element.
+ * Single-key shortcuts must not fire when an input is focused.
+ */
+function isTypingFocused() {
+  const el = document.activeElement
+  if (!el) return false
+  const tag = el.tagName.toLowerCase()
+  if (tag === 'input' || tag === 'textarea') return true
+  if (el.isContentEditable) return true
+  return false
+}
+
+// ── Multi-view toggle ──────────────────────────────────────────────────────
+
+async function toggleMultiview() {
+  const multiviewBtn = document.getElementById('multiview-btn')
+  if (multiviewBtn) multiviewBtn.click()
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 
 export function initShortcuts() {
@@ -140,31 +174,47 @@ export function initShortcuts() {
 
   // Global keyboard shortcuts
   document.addEventListener('keydown', e => {
+    // Esc — close any open modal / picker / palette (always works)
     if (e.key === 'Escape') {
-      document.getElementById('settings-modal').classList.remove('open')
+      closeShortcutsModal()
+      document.getElementById('settings-modal')?.classList.remove('open')
       closeSessionPicker()
       closePalette()
       return
     }
 
-    // Alt+P — open command palette (Alt is safe cross-browser; Cmd+K kept for Mac)
-    if (isCombo(e, { alt: true, key: 'p' })) { e.preventDefault(); openPalette(); return }
-    // Cmd+K — Mac-friendly alternative (macOS doesn't pre-empt Cmd+K)
+    // Modifier shortcuts — always active regardless of focus
+    // Cmd+K / Ctrl+K — command palette
     if (isCombo(e, { meta: true, key: 'k' })) { e.preventDefault(); openPalette(); return }
-
-    // Alt+N — new session
-    if (isCombo(e, { alt: true, key: 'n' })) { e.preventDefault(); createSession(); return }
-
-    // Ctrl+Enter — send prompt (muscle memory, no conflicts)
+    if (isCombo(e, { ctrl: true, key: 'k' })) { e.preventDefault(); openPalette(); return }
+    // Cmd+Enter / Ctrl+Enter — send prompt
     if (isCombo(e, { ctrl: true, key: 'enter' })) { e.preventDefault(); triggerSend(); return }
+    if (isCombo(e, { meta: true, key: 'enter' })) { e.preventDefault(); triggerSend(); return }
 
-    // Alt+T — toggle theme
-    if (isCombo(e, { alt: true, key: 't' })) { e.preventDefault(); toggleThemeShortcut(); return }
-
-    // Alt+` — sidebar toggle (backtick)
-    // Alt+B — sidebar toggle synonym (B for Bar, safer on layouts where Alt+` is awkward)
-    if (isCombo(e, { alt: true, key: '`' })) { e.preventDefault(); toggleSidebar(); return }
+    // Legacy Alt aliases (keep for muscle memory)
+    if (isCombo(e, { alt: true, key: 'p' })) { e.preventDefault(); openPalette(); return }
     if (isCombo(e, { alt: true, key: 'b' })) { e.preventDefault(); toggleSidebar(); return }
+
+    // Single-key shortcuts — only fire when NOT typing in an input
+    if (isTypingFocused()) return
+
+    // ? — open shortcuts modal (and palette)
+    if (e.key === '?') { e.preventDefault(); openShortcutsModal(); return }
+    // n — new session
+    if (e.key === 'n') { e.preventDefault(); createSession(); return }
+    // s — toggle sidebar
+    if (e.key === 's') { e.preventDefault(); toggleSidebar(); return }
+    // m — toggle multi-view
+    if (e.key === 'm') { e.preventDefault(); toggleMultiview(); return }
+    // t — toggle theme
+    if (e.key === 't') { e.preventDefault(); toggleThemeShortcut(); return }
+    // / — focus prompt input
+    if (e.key === '/') {
+      e.preventDefault()
+      const inp = document.getElementById('prompt-input')
+      inp?.focus()
+      return
+    }
   })
 }
 

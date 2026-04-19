@@ -1,7 +1,7 @@
 // sessions.js — Sessions list, single-session panel, send prompt, abort
 import { getState, setState } from './state.js'
-import { fetchSessions, createSession as apiCreateSession, sendPromptWithOpts, abortSession as apiAbortSession, updateSessionTitle, deleteSession as apiDeleteSession } from './api.js'
-import { loadMessages } from './messages.js'
+import { fetchSessions, fetchMessages, createSession as apiCreateSession, sendPromptWithOpts, abortSession as apiAbortSession, updateSessionTitle, deleteSession as apiDeleteSession } from './api.js'
+import { loadMessages, normalizeMessage } from './messages.js'
 import { loadDiff } from './diff.js'
 import { toast } from './toast.js'
 import { loadSubagents } from './subagents.js'
@@ -119,6 +119,33 @@ function groupSessionsByFolder(ids, sessions, activeSession) {
 
 // ── Load & render sessions list ────────────────────────────────────────────
 
+/**
+ * Fetch last-message meta (lastAgent, lastModel, lastProvider) for a session.
+ * Returns an empty object on failure so one bad session doesn't block the list.
+ */
+async function fetchSessionLastMeta(id, directory) {
+  try {
+    const fetchOpts = directory ? { directory } : {}
+    const raw = await fetchMessages(id, fetchOpts)
+    const arr = Array.isArray(raw) ? raw : []
+    // Walk from end to find the last assistant message
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const m = normalizeMessage(arr[i])
+      if (m.role === 'assistant') {
+        const out = {}
+        if (m.mode && typeof m.mode === 'string') out.lastAgent = m.mode
+        else if (m.mode && typeof m.mode === 'object' && m.mode.name) out.lastAgent = m.mode.name
+        if (m.modelID)    out.lastModel    = m.modelID
+        if (m.providerID) out.lastProvider = m.providerID
+        return out
+      }
+    }
+    return {}
+  } catch (_) {
+    return {}
+  }
+}
+
 export async function loadSessions(autoSelectMostRecent) {
   try {
     const data = await fetchSessions()
@@ -126,6 +153,19 @@ export async function loadSessions(autoSelectMostRecent) {
     const statuses = data.statuses ?? {}
     for (const s of (data.sessions ?? [])) sessions[s.id] = s
     setState({ sessions, statuses })
+
+    // Fetch last-message meta for up to 50 most-recent sessions in parallel.
+    // Failures are swallowed per session so the list always renders.
+    const ids = Object.keys(sessions)
+      .sort((a, b) => (sessions[b]?.time?.updated ?? 0) - (sessions[a]?.time?.updated ?? 0))
+      .slice(0, 50)
+    const metaResults = await Promise.all(
+      ids.map(id => fetchSessionLastMeta(id, sessions[id]?.directory))
+    )
+    const sessionMeta = {}
+    ids.forEach((id, i) => { sessionMeta[id] = metaResults[i] })
+    setState({ sessionMeta })
+
     updateAgentFilterOptions()
     renderSessions()
     if (autoSelectMostRecent && !getState().activeSession) autoSelect()
@@ -152,7 +192,7 @@ function autoSelect() {
 }
 
 export function renderSessions() {
-  const { sessions, statuses, activeSession, mvPanels, agentFilter } = getState()
+  const { sessions, statuses, activeSession, mvPanels, agentFilter, sessionMeta } = getState()
   const list = document.getElementById('sessions-list')
   let ids = Object.keys(sessions)
 
@@ -214,6 +254,11 @@ export function renderSessions() {
       const inMV = mvPanels.has(id) ? ' style="border-left-color:var(--warning)"' : ''
       const agent = sessionAgent(s)
       const agentBadge = agent ? renderCompactAgentBadge(agent) : ''
+      const meta = sessionMeta?.[id] ?? {}
+      // Show lastModel · lastProvider if available (small muted mono)
+      const modelProviderHtml = (meta.lastModel || meta.lastProvider)
+        ? `<span class="session-model-meta">${esc(meta.lastModel ?? '')}${meta.lastModel && meta.lastProvider ? ' · ' : ''}${esc(meta.lastProvider ?? '')}</span>`
+        : ''
       return `<div class="session-item ${cls}" data-id="${id}"${inMV}>
         <div class="session-title">
           <span class="session-title-text">${esc(title)}</span>
@@ -221,6 +266,7 @@ export function renderSessions() {
         </div>
         <div class="session-meta">
           ${agentBadge}
+          ${modelProviderHtml}
           <span class="badge badge-${statusClass(status)}">${status}</span>
           ${ago ? `<span class="session-time">${ago}</span>` : ''}
         </div>
@@ -658,4 +704,8 @@ export function initSessions() {
     if (e.altKey && e.key === '[') { e.preventDefault(); setAllFoldersCollapsed('collapse') }
     if (e.altKey && e.key === ']') { e.preventDefault(); setAllFoldersCollapsed('expand') }
   })
+
+  // Re-render sessions list when references finish loading so agent badges
+  // show proper colors and display names on first paint.
+  window.addEventListener('references:ready', () => renderSessions(), { once: true })
 }
