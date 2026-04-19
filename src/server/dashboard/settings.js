@@ -17,13 +17,15 @@ export function saveSettings() {
 }
 
 export function applySettings() {
-  const { sound, notif, theme, tools, showReasoning } = getState().settings
+  const { sound, notif, theme, tools, showReasoning, dailyBudget } = getState().settings
   document.getElementById('s-sound').checked = sound
   document.getElementById('s-notif').checked = notif
   document.getElementById('s-theme').checked = theme
   document.getElementById('s-tools').checked = tools
   const reasoningEl = document.getElementById('s-reasoning')
   if (reasoningEl) reasoningEl.checked = showReasoning ?? false
+  const budgetEl = document.getElementById('s-daily-budget')
+  if (budgetEl) budgetEl.value = dailyBudget != null && dailyBudget > 0 ? String(dailyBudget) : ''
   document.body.classList.toggle('theme-light', theme)
   document.querySelectorAll('.tool-block').forEach(el => {
     el.classList.toggle('hidden-tools', !tools)
@@ -103,6 +105,18 @@ export function initSettings() {
   if (reasoningEl) {
     reasoningEl.addEventListener('change', e => {
       const settings = { ...getState().settings, showReasoning: e.target.checked }
+      setState({ settings })
+      saveSettings()
+    })
+  }
+
+  // Cost tracking: daily budget limit
+  const budgetEl = document.getElementById('s-daily-budget')
+  if (budgetEl) {
+    budgetEl.addEventListener('change', e => {
+      const val = parseFloat(e.target.value)
+      const dailyBudget = (!isNaN(val) && val > 0) ? val : 0
+      const settings = { ...getState().settings, dailyBudget }
       setState({ settings })
       saveSettings()
     })

@@ -397,6 +397,8 @@ export function createRightPanel({ container }) {
       const usage = computeUsage(assistantMsgs)
       // Re-render with real usage
       renderAll({ ...usage, loading: false })
+      // Update cost panel with full message set
+      window.__costPanel?.updateSession(activeSession, msgs)
     } catch (_) {
       renderAll({ inputTokens: 0, percentUsed: 0, cumulativeCost: 0, tooltipHtml: '', loading: false })
     }

@@ -87,9 +87,13 @@
           <option value="">All</option>
         </select>
       </div>
+      <!-- Pinned TODOs — injected by pinned-todos.js -->
+      <div id="pinned-todos-mount"></div>
       <div id="sessions-list"></div>
       <!-- Files changed panel — injected by files-changed.js -->
       <div id="files-changed-panel" class="files-changed-panel" style="display:none"></div>
+      <!-- Cost panel — injected by cost-panel.js -->
+      <div id="cost-panel-mount"></div>
     </div>
 
     <!-- Main content area -->
@@ -264,6 +268,10 @@
     <div class="setting-row">
       <label>Show reasoning by default</label>
       <label class="toggle"><input type="checkbox" id="s-reasoning"><span class="toggle-slider"></span></label>
+    </div>
+    <div class="setting-row">
+      <label>Daily budget limit ($)</label>
+      <input type="number" id="s-daily-budget" class="setting-number-input" placeholder="off" min="0" step="0.01" style="width:72px">
     </div>
     <div style="font-size:10px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:10px;line-height:1.8">
       <b style="color:var(--text-dim)">Alt+P</b> command palette &nbsp;·&nbsp;

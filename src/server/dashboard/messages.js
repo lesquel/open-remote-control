@@ -366,11 +366,13 @@ function formatBuiltinSummary(name, input, output, status) {
   }
 
   if (n === 'todowrite') {
-    const count = Array.isArray(input?.todos ?? input?.items) ? (input.todos ?? input.items).length : null
+    const items = Array.isArray(input?.todos) ? input.todos : Array.isArray(input?.items) ? input.items : null
+    const count = items !== null ? items.length : null
     return {
       nameHtml: `<span class="tool-name">TodoWrite</span>`,
       argHtml:  '',
       metaHtml: count !== null ? `<span class="tool-meta">${count} items</span>` : '',
+      _todoItems: items,  // passed through to renderToolPart for expanded view
     }
   }
 
@@ -409,9 +411,12 @@ function renderToolPart(p) {
 
   // Determine summary format
   const isMcp = parseMcpName(name) !== null
-  const { nameHtml, argHtml, metaHtml } = isMcp
+  const summaryResult = isMcp
     ? formatMcpSummary(name, input)
     : formatBuiltinSummary(name, input, output, status)
+  const { nameHtml, argHtml, metaHtml } = summaryResult
+  // TodoWrite: capture item list for expanded body
+  const todoItems = summaryResult._todoItems ?? null
 
   // Status icon class for pulse on running
   const iconClass = `tool-prefix tool-prefix--${status}`
@@ -449,12 +454,30 @@ function renderToolPart(p) {
   const autoOpen = (status === 'running' || status === 'error') ? ' open' : ''
   const hiddenClass = tools ? '' : 'hidden-tools'
 
+  // TodoWrite: render individual items with pin buttons in the expanded body
+  let todoItemsHtml = ''
+  if (todoItems && todoItems.length) {
+    const rows = todoItems.map((item, idx) => {
+      const text    = escapeHtml(String(item.text ?? item.content ?? ''))
+      const st      = item.status ?? 'pending'
+      const stClass = st === 'completed' ? 'completed' : st === 'in_progress' ? 'in-progress' : 'pending'
+      const stIcon  = st === 'completed' ? '●' : st === 'in_progress' ? '◐' : '○'
+      const itemIdx = idx  // captured for onclick
+      return `<div class="tw-item tw-item--${escapeHtml(stClass)}">
+        <span class="tw-item-icon" aria-hidden="true">${stIcon}</span>
+        <span class="tw-item-text">${text}</span>
+        <button class="tw-pin-btn" onclick="window.__pinTodoItem(this)" data-text="${escapeHtml(String(item.text ?? item.content ?? ''))}" title="Pin this todo">[+]</button>
+      </div>`
+    }).join('')
+    todoItemsHtml = `<div class="tw-items">${rows}</div>`
+  }
+
   return `<div class="tool-block ${hiddenClass}${autoOpen}" id="${id}">
     <div class="tool-line tool-header" onclick="window.__toggleTool('${id}')">
       ${summaryHtml}
       <span class="tool-chevron">▶</span>
     </div>
-    <div class="tool-body">${argsHtml}${resultHtml}</div>
+    <div class="tool-body">${todoItemsHtml}${argsHtml}${resultHtml}</div>
   </div>`
 }
 

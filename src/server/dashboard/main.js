@@ -27,6 +27,8 @@ import { createTodoDock } from './todo-dock.js'
 import { createPushNotifications } from './push-notifications.js'
 import { createCommandHistory } from './command-history.js'
 import { createFileBrowser } from './file-browser.js'
+import { createCostPanel } from './cost-panel.js'
+import { createPinnedTodos } from './pinned-todos.js'
 
 // Expose references refresh globally so command-palette can call it
 window.__refreshReferences = refreshReferences
@@ -153,6 +155,36 @@ async function bootstrap() {
   if (rightPanelEl) {
     const rightPanel = createRightPanel({ container: rightPanelEl })
     window.__rightPanel = rightPanel
+  }
+
+  // Mount cost panel — lives inside right panel DOM (sessions-panel bottom section)
+  const costPanelMount = document.getElementById('cost-panel-mount')
+  if (costPanelMount) {
+    const costPanel = createCostPanel({ container: costPanelMount })
+    // Expose so SSE / messages refresh can call it
+    window.__costPanel = costPanel
+  }
+
+  // Mount pinned todos — lives in sessions sidebar above sessions list
+  const pinnedTodosMount = document.getElementById('pinned-todos-mount')
+  if (pinnedTodosMount) {
+    const pinnedTodos = createPinnedTodos({ container: pinnedTodosMount })
+    window.__pinnedTodos = pinnedTodos
+  }
+
+  // Wire pin button handler — called from inline onclick in rendered TodoWrite items
+  window.__pinTodoItem = function(btn) {
+    if (!btn) return
+    const text = btn.dataset.text
+    if (!text) return
+    // Import state lazily to get current activeSession/sessions
+    import('./state.js').then(({ getState }) => {
+      const { activeSession, sessions } = getState()
+      const sessionTitle = sessions?.[activeSession]?.title ?? ''
+      if (window.__pinnedTodos && activeSession) {
+        window.__pinnedTodos.addItem({ text, sessionId: activeSession, sessionTitle })
+      }
+    }).catch(() => {})
   }
 
   // Mount todo dock (above messages list, inside messages-tab)

@@ -73,6 +73,11 @@ export const STORAGE_KEYS = Object.freeze({
   MV_ACTIVE:              'pilot_mvactive',
   SUBAGENTS_COLLAPSED:    'pilot_subagents_collapsed',
   RIGHT_PANEL_COLLAPSED:  'pilot_rp_collapsed_',
+  // Feature: cost tracking
+  COST_HISTORY:           'pilot_cost_history',
+  COST_BUDGET_WARNED:     'pilot_cost_budget_warned',
+  // Feature: pinned TODOs
+  PINNED_TODOS:           'pilot_pinned_todos',
 })
 
 // ── Color / style constants ───────────────────────────────────────────────────
