@@ -6,6 +6,7 @@ import { getState, subscribe } from './state.js'
 import { getModel, getProvider, getAgent, agentColorFromName, getFirstDefaultModel } from './references.js'
 import { fetchMessages } from './api.js'
 import { normalizeMessage } from './messages.js'
+import { EVENTS } from './constants.js'
 
 /**
  * Factory: createLabelStrip({ container, state })
@@ -160,7 +161,7 @@ export function createLabelStrip({ container }) {
 
   // Re-render when references finish loading (resolves race condition where
   // getModel/getAgent return undefined because initReferences hasn't completed)
-  window.addEventListener('references:ready', () => refresh(), { once: true })
+  window.addEventListener(EVENTS.REFERENCES_READY, () => refresh(), { once: true })
 
   // Expose pending setter globally so command-palette can call it immediately on pick
   window.__labelStripSetPending = setPending

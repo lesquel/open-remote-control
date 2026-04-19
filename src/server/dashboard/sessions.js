@@ -7,6 +7,7 @@ import { toast } from './toast.js'
 import { loadSubagents } from './subagents.js'
 import { refreshFilesChanged } from './files-changed-bridge.js'
 import { getAgent, agentColorFromName } from './references.js'
+import { LIMITS, STORAGE_KEYS, AGENT_BADGE_CLASS, EVENTS } from './constants.js'
 
 // Dynamic import to break circular dependency with multi-view.js
 async function addToMultiview(id) {
@@ -41,7 +42,7 @@ function esc(s) {
 
 // ── Folder helpers ─────────────────────────────────────────────────────────
 
-const FOLDER_STORAGE_KEY = 'pilot_folder_collapsed'
+const FOLDER_STORAGE_KEY = STORAGE_KEYS.FOLDER_COLLAPSED
 
 /**
  * Shorten a directory path for display.
@@ -158,7 +159,7 @@ export async function loadSessions(autoSelectMostRecent) {
     // Failures are swallowed per session so the list always renders.
     const ids = Object.keys(sessions)
       .sort((a, b) => (sessions[b]?.time?.updated ?? 0) - (sessions[a]?.time?.updated ?? 0))
-      .slice(0, 50)
+      .slice(0, LIMITS.SESSIONS_META_FETCH)
     const metaResults = await Promise.all(
       ids.map(id => fetchSessionLastMeta(id, sessions[id]?.directory))
     )
@@ -191,97 +192,72 @@ function autoSelect() {
   selectSession(best)
 }
 
-export function renderSessions() {
-  const { sessions, statuses, activeSession, mvPanels, agentFilter, sessionMeta } = getState()
-  const list = document.getElementById('sessions-list')
-  let ids = Object.keys(sessions)
+/**
+ * Pure: render HTML for one session row.
+ * ctx: { sessions, statuses, activeSession, mvPanels, sessionMeta }
+ */
+function renderSessionRow(id, ctx) {
+  const { sessions, statuses, activeSession, mvPanels, sessionMeta } = ctx
+  const s = sessions[id]
+  const status = statuses[id] ?? 'idle'
+  const title = s.title || id.slice(0, 8)
+  const cls = id === activeSession ? 'active' : ''
+  const ago = timeAgo(s?.time?.updated)
+  const inMV = mvPanels.has(id) ? ' style="border-left-color:var(--warning)"' : ''
+  const agent = sessionAgent(s)
+  const agentBadge = agent ? renderCompactAgentBadge(agent) : ''
+  const meta = sessionMeta?.[id] ?? {}
+  const modelProviderHtml = (meta.lastModel || meta.lastProvider)
+    ? `<span class="session-model-meta">${esc(meta.lastModel ?? '')}${meta.lastModel && meta.lastProvider ? ' · ' : ''}${esc(meta.lastProvider ?? '')}</span>`
+    : ''
+  return `<div class="session-item ${cls}" data-id="${id}"${inMV}>
+    <div class="session-title">
+      <span class="session-title-text">${esc(title)}</span>
+      <button class="session-delete-btn" data-del-id="${id}" title="Delete session" aria-label="Delete session">✕</button>
+    </div>
+    <div class="session-meta">
+      ${agentBadge}
+      ${modelProviderHtml}
+      <span class="badge badge-${statusClass(status)}">${status}</span>
+      ${ago ? `<span class="session-time">${ago}</span>` : ''}
+    </div>
+  </div>`
+}
 
-  if (!ids.length) {
-    list.innerHTML = '<div style="padding:16px;color:var(--text-dim);font-size:.82rem;text-align:center">No sessions yet</div>'
-    return
+/**
+ * Pure: render HTML for one folder group including all its session rows.
+ * collapsed: Record<string, boolean> from localStorage.
+ * ctx: passed through to renderSessionRow.
+ */
+function renderSessionGroup(folder, collapsed, ctx) {
+  let isCollapsed
+  if (Object.prototype.hasOwnProperty.call(collapsed, folder.dir)) {
+    isCollapsed = collapsed[folder.dir]
+  } else {
+    // default: expanded if it contains the active session, collapsed otherwise
+    isCollapsed = !folder.hasActive
   }
 
-  // Filter by agent if set
-  if (agentFilter) {
-    ids = ids.filter(id => sessionAgent(sessions[id]) === agentFilter)
-    if (!ids.length) {
-      list.innerHTML = `<div style="padding:16px;color:var(--text-dim);font-size:.82rem;text-align:center;line-height:1.5">No sessions match agent: <b>${esc(agentFilter)}</b><br><a href="#" id="clear-agent-filter" style="color:var(--accent);text-decoration:none">Clear filter</a></div>`
-      const clear = document.getElementById('clear-agent-filter')
-      if (clear) {
-        clear.addEventListener('click', (e) => {
-          e.preventDefault()
-          setState({ agentFilter: '' })
-          const sel = document.getElementById('agent-filter')
-          if (sel) sel.value = ''
-          renderSessions()
-        })
-      }
-      return
-    }
-  }
+  const chevron = isCollapsed ? '▸' : '▾'
+  const accentBorder = folder.hasActive ? ' folder-row--active' : ''
+  const count = folder.ids.length
 
-  const scrollTop = list.scrollTop
-  const collapsed = getFolderCollapsed()
-  const folders = groupSessionsByFolder(ids, sessions, activeSession)
+  const folderRow = `<div class="folder-row${accentBorder}" data-folder-dir="${esc(folder.dir)}" data-collapsed="${isCollapsed}">
+    <span class="folder-chevron${isCollapsed ? ' folder-chevron--collapsed' : ''}">${chevron}</span>
+    <span class="folder-label" title="${esc(folder.dir)}">${esc(folder.label)}</span>
+    <span class="folder-count">${count}</span>
+  </div>`
 
-  const html = folders.map(folder => {
-    // Active-session folder is expanded by default; others collapsed by default.
-    // User override stored in localStorage takes precedence.
-    let isCollapsed
-    if (Object.prototype.hasOwnProperty.call(collapsed, folder.dir)) {
-      isCollapsed = collapsed[folder.dir]
-    } else {
-      // default: expanded if it contains the active session, collapsed otherwise
-      isCollapsed = !folder.hasActive
-    }
+  const childrenHtml = folder.ids.map(id => renderSessionRow(id, ctx)).join('')
+  const childrenStyle = isCollapsed ? 'display:none' : ''
+  return `${folderRow}<div class="folder-children" style="${childrenStyle}">${childrenHtml}</div>`
+}
 
-    const chevron = isCollapsed ? '▸' : '▾'
-    const accentBorder = folder.hasActive ? ' folder-row--active' : ''
-    const count = folder.ids.length
-
-    const folderRow = `<div class="folder-row${accentBorder}" data-folder-dir="${esc(folder.dir)}" data-collapsed="${isCollapsed}">
-      <span class="folder-chevron${isCollapsed ? ' folder-chevron--collapsed' : ''}">${chevron}</span>
-      <span class="folder-label" title="${esc(folder.dir)}">${esc(folder.label)}</span>
-      <span class="folder-count">${count}</span>
-    </div>`
-
-    const childrenHtml = folder.ids.map(id => {
-      const s = sessions[id]
-      const status = statuses[id] ?? 'idle'
-      const title = s.title || id.slice(0, 8)
-      const cls = id === activeSession ? 'active' : ''
-      const ago = timeAgo(s?.time?.updated)
-      const inMV = mvPanels.has(id) ? ' style="border-left-color:var(--warning)"' : ''
-      const agent = sessionAgent(s)
-      const agentBadge = agent ? renderCompactAgentBadge(agent) : ''
-      const meta = sessionMeta?.[id] ?? {}
-      // Show lastModel · lastProvider if available (small muted mono)
-      const modelProviderHtml = (meta.lastModel || meta.lastProvider)
-        ? `<span class="session-model-meta">${esc(meta.lastModel ?? '')}${meta.lastModel && meta.lastProvider ? ' · ' : ''}${esc(meta.lastProvider ?? '')}</span>`
-        : ''
-      return `<div class="session-item ${cls}" data-id="${id}"${inMV}>
-        <div class="session-title">
-          <span class="session-title-text">${esc(title)}</span>
-          <button class="session-delete-btn" data-del-id="${id}" title="Delete session" aria-label="Delete session">✕</button>
-        </div>
-        <div class="session-meta">
-          ${agentBadge}
-          ${modelProviderHtml}
-          <span class="badge badge-${statusClass(status)}">${status}</span>
-          ${ago ? `<span class="session-time">${ago}</span>` : ''}
-        </div>
-      </div>`
-    }).join('')
-
-    const childrenStyle = isCollapsed ? 'display:none' : ''
-    return `${folderRow}<div class="folder-children" style="${childrenStyle}">${childrenHtml}</div>`
-  }).join('')
-
-  list.innerHTML = html
-
-  // Restore scroll position
-  list.scrollTop = scrollTop
-
+/**
+ * Wire folder toggle, session click, and delete button events after HTML injection.
+ * Called once by renderSessions() after setting list.innerHTML.
+ */
+function wireSessionEvents(list) {
   // Wire folder toggle
   list.querySelectorAll('.folder-row').forEach(el => {
     el.addEventListener('click', () => {
@@ -330,6 +306,48 @@ export function renderSessions() {
       await deleteSessionById(id)
     })
   })
+}
+
+export function renderSessions() {
+  const { sessions, statuses, activeSession, mvPanels, agentFilter, sessionMeta } = getState()
+  const list = document.getElementById('sessions-list')
+  let ids = Object.keys(sessions)
+
+  if (!ids.length) {
+    list.innerHTML = '<div style="padding:16px;color:var(--text-dim);font-size:.82rem;text-align:center">No sessions yet</div>'
+    return
+  }
+
+  // Filter by agent if set
+  if (agentFilter) {
+    ids = ids.filter(id => sessionAgent(sessions[id]) === agentFilter)
+    if (!ids.length) {
+      list.innerHTML = `<div style="padding:16px;color:var(--text-dim);font-size:.82rem;text-align:center;line-height:1.5">No sessions match agent: <b>${esc(agentFilter)}</b><br><a href="#" id="clear-agent-filter" style="color:var(--accent);text-decoration:none">Clear filter</a></div>`
+      const clear = document.getElementById('clear-agent-filter')
+      if (clear) {
+        clear.addEventListener('click', (e) => {
+          e.preventDefault()
+          setState({ agentFilter: '' })
+          const sel = document.getElementById('agent-filter')
+          if (sel) sel.value = ''
+          renderSessions()
+        })
+      }
+      return
+    }
+  }
+
+  const scrollTop = list.scrollTop
+  const collapsed = getFolderCollapsed()
+  const folders = groupSessionsByFolder(ids, sessions, activeSession)
+  const ctx = { sessions, statuses, activeSession, mvPanels, sessionMeta }
+
+  list.innerHTML = folders.map(folder => renderSessionGroup(folder, collapsed, ctx)).join('')
+
+  // Restore scroll position
+  list.scrollTop = scrollTop
+
+  wireSessionEvents(list)
 }
 
 /**
@@ -418,9 +436,9 @@ export function updateHeaderSession(title, status) {
  * Known modes: "plan", "build"; anything else → "custom".
  */
 export function agentBadgeClass(mode) {
-  if (mode === 'plan') return 'agent-badge--plan'
-  if (mode === 'build') return 'agent-badge--build'
-  return 'agent-badge--custom'
+  if (mode === 'plan') return AGENT_BADGE_CLASS.plan
+  if (mode === 'build') return AGENT_BADGE_CLASS.build
+  return AGENT_BADGE_CLASS.custom
 }
 
 /**
@@ -446,7 +464,7 @@ export function sessionAgent(s) {
  * Truncate an agent label so it fits the compact list badge.
  * Keeps a leading ellipsis-friendly slice of up to N chars.
  */
-function truncateAgent(name, max = 12) {
+function truncateAgent(name, max = LIMITS.AGENT_BADGE_MAX_CHARS) {
   if (!name) return ''
   return name.length > max ? `${name.slice(0, max - 1)}…` : name
 }
@@ -461,7 +479,7 @@ export function renderCompactAgentBadge(agentName) {
   if (!agentName) return ''
   const color = getAgent(agentName)?.color || agentColorFromName(agentName)
   const label = truncateAgent(agentName)
-  return `<span class="agent-badge agent-badge--compact agent-badge--dynamic" style="--agent-color:${color};border-color:${color}40;color:${color}" title="${esc(agentName)}">${esc(label)}</span>`
+  return `<span class="agent-badge ${AGENT_BADGE_CLASS.compact} ${AGENT_BADGE_CLASS.dynamic}" style="--agent-color:${color};border-color:${color}40;color:${color}" title="${esc(agentName)}">${esc(label)}</span>`
 }
 
 export function updateInfoBar(id, title, status, session) {
@@ -707,5 +725,5 @@ export function initSessions() {
 
   // Re-render sessions list when references finish loading so agent badges
   // show proper colors and display names on first paint.
-  window.addEventListener('references:ready', () => renderSessions(), { once: true })
+  window.addEventListener(EVENTS.REFERENCES_READY, () => renderSessions(), { once: true })
 }

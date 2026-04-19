@@ -8,29 +8,30 @@ import { onSubagentSpawned } from './subagents.js'
 import { isFileEditingToolEvent } from './files-changed.js'
 import { debouncedRefreshFilesChanged } from './files-changed-bridge.js'
 import { buildApiUrl } from './api.js'
+import { EVENTS, LIMITS } from './constants.js'
 
 let eventSource = null
 let reconnectTimer = null
 // Backoff state: starts at 1s, doubles to max 30s, resets on successful open
-let backoffMs = 1000
-const BACKOFF_MIN = 1000
-const BACKOFF_MAX = 30000
+let backoffMs = LIMITS.SSE_BACKOFF_MIN_MS
+const BACKOFF_MIN = LIMITS.SSE_BACKOFF_MIN_MS
+const BACKOFF_MAX = LIMITS.SSE_BACKOFF_MAX_MS
 
 // Tooltip metadata for the SSE dot
 let _lastConnectTime = null
 let _reconnectAttempts = 0
 
 const SSE_EVENTS = [
-  'session.updated',
-  'session.created',
-  'session.deleted',
-  'message.created',
-  'message.updated',
-  'message.part.updated',
-  'permission.requested',
-  'permission.resolved',
-  'status.changed',
-  'todo.updated',
+  EVENTS.SESSION_UPDATED,
+  EVENTS.SESSION_CREATED,
+  EVENTS.SESSION_DELETED,
+  EVENTS.MESSAGE_CREATED,
+  EVENTS.MESSAGE_UPDATED,
+  EVENTS.MESSAGE_PART_UPDATED,
+  EVENTS.PERMISSION_REQUESTED,
+  EVENTS.PERMISSION_RESOLVED,
+  EVENTS.STATUS_CHANGED,
+  EVENTS.TODO_UPDATED,
 ]
 
 /**
@@ -152,7 +153,7 @@ async function handleEvent(ev) {
   }
 
   // ── Feature B: streaming delta for text parts ──────────────────────────
-  if (t === 'message.part.updated') {
+  if (t === EVENTS.MESSAGE_PART_UPDATED) {
     // ev.data has { part, delta? } — delta is the incremental text chunk
     const part = d?.part ?? ev.properties?.part
     const delta = d?.delta ?? ev.properties?.delta
@@ -172,9 +173,9 @@ async function handleEvent(ev) {
     return
   }
 
-  if (t === 'message.created' || t === 'message.updated') {
+  if (t === EVENTS.MESSAGE_CREATED || t === EVENTS.MESSAGE_UPDATED) {
     // On message.updated: clear streaming state for this message (it's complete)
-    if (t === 'message.updated') {
+    if (t === EVENTS.MESSAGE_UPDATED) {
       const sessionId = d?.sessionId ?? ev.properties?.sessionID
       const messageId = d?.id ?? d?.messageId ?? ev.properties?.id
       if (sessionId && messageId) {
@@ -200,27 +201,27 @@ async function handleEvent(ev) {
     }
   }
 
-  if (t === 'permission.requested') {
+  if (t === EVENTS.PERMISSION_REQUESTED) {
     handlePermissionRequested(d)
     // Dispatch for push-notifications module
     window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: d }))
   }
 
-  if (t === 'permission.resolved') {
+  if (t === EVENTS.PERMISSION_RESOLVED) {
     handlePermissionResolved(d)
   }
 
-  if (t === 'todo.updated') {
+  if (t === EVENTS.TODO_UPDATED) {
     window.dispatchEvent(new CustomEvent('pilot:todo:updated', { detail: d }))
   }
 
-  if (t === 'pilot.subagent.spawned') {
+  if (t === EVENTS.PILOT_SUBAGENT_SPAWNED) {
     // Pilot events carry payload under .properties (not .data)
     onSubagentSpawned(ev.properties ?? d)
   }
 
   // Debounced diff refresh when a file-editing tool completes
-  if (t === 'pilot.tool.completed' || t === 'tool.completed') {
+  if (t === EVENTS.PILOT_TOOL_COMPLETED || t === EVENTS.TOOL_COMPLETED) {
     const payload = ev.properties ?? d
     if (isFileEditingToolEvent(payload)) {
       if (activeSession) debouncedRefreshFilesChanged(activeSession)
@@ -232,7 +233,7 @@ async function handleEvent(ev) {
     }
   }
 
-  if (t === 'status.changed' && d.sessionId && d.status) {
+  if (t === EVENTS.STATUS_CHANGED && d.sessionId && d.status) {
     const statuses = { ...getState().statuses, [d.sessionId]: d.status }
     setState({ statuses })
     renderSessions()
@@ -245,11 +246,11 @@ async function handleEvent(ev) {
     updateMVPanelStatus(d.sessionId, d.status)
   }
 
-  if (t === 'vcs.branch.updated') {
+  if (t === EVENTS.VCS_BRANCH_UPDATED) {
     window.__rightPanelSetBranch?.(ev.properties?.branch ?? ev.branch ?? d?.branch ?? null)
   }
 
-  if (t === 'lsp.updated') {
+  if (t === EVENTS.LSP_UPDATED) {
     // Refresh references (which re-fetches /lsp/status) then re-render the right panel
     window.__refreshReferences?.().then(() => {
       window.__refreshRightPanel?.()

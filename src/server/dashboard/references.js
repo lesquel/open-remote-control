@@ -3,6 +3,7 @@
 // caches them in module-scope, and exposes getters.
 import { fetchAgents, fetchProviders, fetchMcpStatus, fetchCurrentProject, fetchLspStatus } from './api.js'
 import { toast } from './toast.js'
+import { AGENT_COLOR, EVENTS, AGENT_BADGE_CLASS } from './constants.js'
 
 // ── Module-scope cache ─────────────────────────────────────────────────────
 /** @type {Array<Agent>} */
@@ -21,6 +22,37 @@ let _currentProject = null
 let _lspClients = []
 /** @type {boolean} */
 let _initialized = false
+
+// ── Generic reference factory ─────────────────────────────────────────────────
+/**
+ * createReference({ fetchFn, key })
+ *
+ * Generic factory for a simple cache-and-lookup reference.
+ * Covers single-resource endpoints that return a flat array.
+ *
+ * Not used for providers (which returns multiple fields: all/default/connected)
+ * or project/lsp (complex shapes). Those remain as dedicated module-scope vars.
+ *
+ * @param {{ fetchFn: () => Promise<Array>, key?: string }} opts
+ * @returns {{ load, list, get, isReady }}
+ */
+export function createReference({ fetchFn, key = 'name' }) {
+  let cache = []
+  let loaded = false
+  return {
+    async load() {
+      try {
+        cache = await fetchFn()
+        loaded = true
+      } catch (_) {
+        // On failure, cache stays empty and isReady stays false
+      }
+    },
+    list() { return cache },
+    get(value) { return cache.find(x => x[key] === value) },
+    isReady() { return loaded },
+  }
+}
 
 // ── Sanitize helper (mirrors OpenCode SDK MCP tool naming) ─────────────────
 /**
@@ -44,7 +76,7 @@ export function agentColorFromName(name) {
     hash = (hash * 31 + name.charCodeAt(i)) | 0
   }
   const hue = ((hash >>> 0) % 360)
-  return `hsl(${hue}, 55%, 65%)`
+  return `hsl(${hue}, ${AGENT_COLOR.SATURATION}%, ${AGENT_COLOR.LIGHTNESS}%)`
 }
 
 // ── Fetch helpers (graceful fallback) ─────────────────────────────────────
@@ -101,7 +133,7 @@ export async function init() {
     lsp:        _lspClients.map(c => c.name),
   })
   // Fire a global event so dependent modules can react
-  window.dispatchEvent(new CustomEvent('references:ready'))
+  window.dispatchEvent(new CustomEvent(EVENTS.REFERENCES_READY))
 }
 
 /**
@@ -239,11 +271,11 @@ export function renderAgentBadge(agentName) {
   if (agent) {
     const color = agent.color || agentColorFromName(agentName)
     const desc  = agent.description ? ` title="${escapeHtml(agent.description)}"` : ''
-    return `<span class="agent-badge agent-badge--dynamic" style="--agent-color:${color};border-color:${color}40;color:${color}"${desc}>${escapeHtml(label)}</span>`
+    return `<span class="agent-badge ${AGENT_BADGE_CLASS.dynamic}" style="--agent-color:${color};border-color:${color}40;color:${color}"${desc}>${escapeHtml(label)}</span>`
   }
 
   // Unknown agent — muted custom badge
-  return `<span class="agent-badge agent-badge--custom" title="Custom / unknown agent">${escapeHtml(label)}</span>`
+  return `<span class="agent-badge ${AGENT_BADGE_CLASS.custom}" title="Custom / unknown agent">${escapeHtml(label)}</span>`
 }
 
 function escapeHtml(s) {

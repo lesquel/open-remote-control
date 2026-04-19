@@ -5,9 +5,10 @@ import { statusClass, sessionAgent, agentBadgeClass } from './sessions.js'
 import { normalizeMessage, renderMessageIntoPanel } from './messages.js'
 import { getModel, getProvider, agentColorFromName, getAgent } from './references.js'
 import { toast } from './toast.js'
+import { STORAGE_KEYS, AGENT_BADGE_CLASS } from './constants.js'
 
-const STORAGE_KEY_PANELS = 'pilot_mvpanels'
-const STORAGE_KEY_ACTIVE = 'pilot_mvactive'
+const STORAGE_KEY_PANELS = STORAGE_KEYS.MV_PANELS
+const STORAGE_KEY_ACTIVE = STORAGE_KEYS.MV_ACTIVE
 
 // ── Persistence ────────────────────────────────────────────────────────────
 
@@ -99,8 +100,8 @@ function createMVPanel(id) {
   const agentColor = agent ? (getAgent(agent)?.color || agentColorFromName(agent)) : null
   const agentBadgeHtml = agent
     ? (agentColor
-      ? `<span class="agent-badge agent-badge--compact agent-badge--dynamic" style="--agent-color:${agentColor};border-color:${agentColor}40;color:${agentColor}" title="${esc(agent)}">${esc(agent)}</span>`
-      : `<span class="agent-badge agent-badge--compact ${agentBadgeClass(agent)}" title="${esc(agent)}">${esc(agent)}</span>`)
+      ? `<span class="agent-badge ${AGENT_BADGE_CLASS.compact} ${AGENT_BADGE_CLASS.dynamic}" style="--agent-color:${agentColor};border-color:${agentColor}40;color:${agentColor}" title="${esc(agent)}">${esc(agent)}</span>`
+      : `<span class="agent-badge ${AGENT_BADGE_CLASS.compact} ${agentBadgeClass(agent)}" title="${esc(agent)}">${esc(agent)}</span>`)
     : ''
 
   const panel = document.createElement('div')

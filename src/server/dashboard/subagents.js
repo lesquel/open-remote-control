@@ -3,9 +3,10 @@ import { getState } from './state.js'
 import { getSessionChildren } from './api.js'
 import { toast } from './toast.js'
 import { renderCompactAgentBadge } from './sessions.js'
+import { STORAGE_KEYS } from './constants.js'
 
 const PANEL_ID = 'subagents-panel'
-const COLLAPSED_KEY = 'pilot_subagents_collapsed'
+const COLLAPSED_KEY = STORAGE_KEYS.SUBAGENTS_COLLAPSED
 
 function esc(s) {
   return String(s)

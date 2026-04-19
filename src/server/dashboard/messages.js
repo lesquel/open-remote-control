@@ -6,6 +6,7 @@ import { fetchMessages } from './api.js'
 import { isPartStreaming } from './state.js'
 // Dynamic agent references — imported lazily to avoid circular-init issues
 import { renderAgentBadge, getMcpServers, sanitizeMcpName } from './references.js'
+import { LIMITS } from './constants.js'
 // TODO (sessions subagent): import renderAgentBadge from './references.js' and use it
 //   for session-list header badges in sessions.js to get consistent dynamic coloring.
 
@@ -197,11 +198,11 @@ export function applyStreamingDelta(partId, delta) {
   newCursor.setAttribute('aria-hidden', 'true')
   el.appendChild(newCursor)
 
-  // Scroll messages to bottom if near bottom (within 80px)
+  // Scroll messages to bottom if near bottom
   const msgBox = document.getElementById('messages')
   if (msgBox) {
     const distFromBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight
-    if (distFromBottom < 80) msgBox.scrollTop = msgBox.scrollHeight
+    if (distFromBottom < LIMITS.SCROLL_BOTTOM_THRESHOLD_PX) msgBox.scrollTop = msgBox.scrollHeight
   }
 }
 
@@ -321,8 +322,8 @@ function formatBuiltinSummary(name, input, output, status) {
   }
 
   if (n === 'bash') {
-    const cmd = String(input?.command ?? '').slice(0, 60)
-    const truncated = String(input?.command ?? '').length > 60
+    const cmd = String(input?.command ?? '').slice(0, LIMITS.BASH_CMD_PREVIEW_CHARS)
+    const truncated = String(input?.command ?? '').length > LIMITS.BASH_CMD_PREVIEW_CHARS
     const exitCode = output?.exitCode ?? output?.exit_code ?? null
     const exitMeta = exitCode !== null
       ? `<span class="tool-meta${exitCode !== 0 ? ' tool-status--error' : ''}">[exit ${exitCode}]</span>`
@@ -373,8 +374,8 @@ function formatBuiltinSummary(name, input, output, status) {
     }
   }
 
-  // Unknown builtin: name + first 40 chars of JSON args
-  const preview = input ? JSON.stringify(input).slice(0, 40) : ''
+  // Unknown builtin: name + first N chars of JSON args
+  const preview = input ? JSON.stringify(input).slice(0, LIMITS.TOOL_ARG_PREVIEW_CHARS) : ''
   return {
     nameHtml: `<span class="tool-name">${escapeHtml(name)}</span>`,
     argHtml:  preview ? `<span class="tool-arg">${escapeHtml(preview)}…</span>` : '',
@@ -387,7 +388,7 @@ function formatBuiltinSummary(name, input, output, status) {
  */
 function formatMcpSummary(name, input) {
   const mcp = parseMcpName(name)
-  const args = input ? JSON.stringify(input).slice(0, 40) : ''
+  const args = input ? JSON.stringify(input).slice(0, LIMITS.TOOL_ARG_PREVIEW_CHARS) : ''
   return {
     nameHtml: `<span class="tool-mcp-server">[${escapeHtml(mcp.server)}]</span> <span class="tool-name">${escapeHtml(mcp.tool || name)}</span>`,
     argHtml:  args ? `<span class="tool-arg">${escapeHtml(args)}…</span>` : '',
