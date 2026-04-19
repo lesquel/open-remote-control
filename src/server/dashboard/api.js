@@ -284,3 +284,13 @@ export async function pushTest(endpoint) {
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json()
 }
+
+// ── Connect from phone ────────────────────────────────────────────────────
+
+/**
+ * Fetch connect info for "Connect from phone" modal.
+ * Returns { lan, tunnel, local, token, tokenPreview }.
+ */
+export async function fetchConnectInfo() {
+  return request('GET', '/connect-info')
+}

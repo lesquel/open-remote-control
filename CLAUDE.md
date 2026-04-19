@@ -95,6 +95,7 @@ src/tui/
 | GET | /tools | required |
 | GET | /project | required |
 | GET | /sessions/:id/children | required |
+| GET | /connect-info | required |
 | GET | /health | none |
 | POST | /auth/rotate | required |
 | GET | /agents | required |

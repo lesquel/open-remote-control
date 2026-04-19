@@ -29,6 +29,7 @@ import { createCommandHistory } from './command-history.js'
 import { createFileBrowser } from './file-browser.js'
 import { createCostPanel } from './cost-panel.js'
 import { createPinnedTodos } from './pinned-todos.js'
+import { initConnectModal, openConnectModal } from './connect-modal.js'
 
 // Expose references refresh globally so command-palette can call it
 window.__refreshReferences = refreshReferences
@@ -103,6 +104,9 @@ async function bootstrap() {
   initCommandPalette()
   initShortcuts()
   initMultiView()
+  initConnectModal()
+  // Expose for shortcuts.js and command-palette.js
+  window.__openConnectModal = openConnectModal
 
   // Mount files-changed panel
   const filesContainer = document.getElementById('files-changed-panel')

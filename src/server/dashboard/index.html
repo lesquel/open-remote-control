@@ -53,6 +53,12 @@
 
     <!-- Header actions -->
     <div class="header-actions">
+      <button class="btn btn-icon" id="connect-phone-btn" title="Connect from phone (c)">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
+          <line x1="12" y1="18" x2="12.01" y2="18"/>
+        </svg>
+      </button>
       <button class="btn btn-icon" id="sidebar-toggle-btn" title="Toggle sidebar (alt+b)">☰</button>
       <button class="btn btn-icon" id="settings-btn" title="Settings">⚙</button>
       <button class="btn btn-primary" id="header-new-btn" style="flex-shrink:0">+ New</button>
@@ -221,6 +227,7 @@
         <kbd>m</kbd><span>Toggle multi-view</span>
         <kbd>t</kbd><span>Toggle theme</span>
         <kbd>/</kbd><span>Focus prompt input</span>
+        <kbd>c</kbd><span>Connect from phone</span>
       </div>
       <div class="keymap-section-label" style="margin-top:10px">Modifier shortcuts (always active)</div>
       <div class="keymap-grid">
@@ -237,6 +244,19 @@
   </div>
 
 </div><!-- /#app -->
+
+<!-- Connect from phone modal -->
+<div id="connect-phone-modal" class="cpm-overlay">
+  <div class="cpm-box">
+    <div class="cpm-header">
+      <span class="cpm-title">Connect from phone</span>
+      <button class="btn btn-icon cpm-close" title="Close (Esc)">&#x2715;</button>
+    </div>
+    <div id="connect-phone-body" class="cpm-body">
+      <div class="cpm-loading">Loading…</div>
+    </div>
+  </div>
+</div>
 
 <!-- Settings modal -->
 <div id="settings-modal">

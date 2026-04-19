@@ -15,6 +15,8 @@ import {
 } from "./validators"
 import { generateToken } from "../util/auth"
 import { updateStateToken } from "../services/state"
+import { getLocalIP } from "../util/network"
+import { getTunnelInfo } from "../services/tunnel"
 import { PILOT_VERSION } from "../constants"
 import type { PushSubscriptionJson } from "../services/push"
 import type {
@@ -473,6 +475,70 @@ export async function getProject({ deps }: RouteContext): Promise<Response> {
       project: deps.project,
       directory: deps.directory,
       worktree: deps.worktree,
+    },
+    200,
+    CORS_HEADERS,
+  )
+}
+
+// ─── Connect info ────────────────────────────────────────────────────────────
+
+/**
+ * GET /connect-info — returns all info needed by the dashboard "Connect from phone" modal.
+ * Auth: required.
+ */
+export async function getConnectInfo({ deps }: RouteContext): Promise<Response> {
+  const { config, token } = deps
+  const port = config.port
+  const localIp = getLocalIP()
+  const isExposed =
+    config.host === "0.0.0.0" ||
+    (config.host !== "127.0.0.1" && config.host !== "localhost" && config.host !== "::1")
+
+  const lanUrl = localIp ? `http://${localIp}:${port}/?token=${token}` : null
+
+  const lanInfo = {
+    available: localIp !== null,
+    url: isExposed && localIp ? lanUrl : (localIp ? `http://${localIp}:${port}/?token=${token}` : null),
+    ip: localIp,
+    exposed: isExposed,
+  }
+
+  const tunnelInfo = getTunnelInfo()
+  const tunnelResult =
+    tunnelInfo.status === "connected" && tunnelInfo.url !== null
+      ? {
+          available: true as const,
+          provider: tunnelInfo.provider,
+          url: `${tunnelInfo.url}/?token=${token}`,
+          status: tunnelInfo.status,
+        }
+      : {
+          available: false as const,
+          provider: tunnelInfo.provider,
+          status: tunnelInfo.status,
+          howTo: "Set PILOT_TUNNEL=cloudflared (or ngrok) and restart",
+        }
+
+  const localInfo = {
+    url: `http://127.0.0.1:${port}/?token=${token}`,
+  }
+
+  // Token preview: first 4 + "..." + last 4 (show full token for URL embedding)
+  const tokenPreview =
+    token.length > 10
+      ? `${token.slice(0, 4)}...${token.slice(-4)}`
+      : token.slice(0, 4) + "..."
+
+  deps.audit.log("connect-info.requested", {})
+
+  return json(
+    {
+      lan: lanInfo,
+      tunnel: tunnelResult,
+      local: localInfo,
+      token,
+      tokenPreview,
     },
     200,
     CORS_HEADERS,

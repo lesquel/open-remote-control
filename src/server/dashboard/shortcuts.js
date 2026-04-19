@@ -215,6 +215,8 @@ export function initShortcuts() {
       inp?.focus()
       return
     }
+    // c — connect from phone
+    if (e.key === 'c') { e.preventDefault(); window.__openConnectModal?.(); return }
   })
 }
 

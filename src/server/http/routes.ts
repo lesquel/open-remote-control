@@ -74,6 +74,7 @@ import {
   streamEvents,
   listTools,
   getProject,
+  getConnectInfo,
   getHealth,
   rotateAuthToken,
   listAgents,
@@ -185,6 +186,8 @@ export const routes: Route[] = [
   { method: "GET", pattern: /^\/events$/, auth: "optional", handler: streamEvents },
   { method: "GET", pattern: /^\/tools$/, auth: "required", handler: listTools },
   { method: "GET", pattern: /^\/project$/, auth: "required", handler: getProject },
+  // Connect info — returns LAN / tunnel / local URLs for phone access modal
+  { method: "GET", pattern: /^\/connect-info$/, auth: "required", handler: getConnectInfo },
   // Health check — no auth required (monitoring systems, load balancers)
   { method: "GET", pattern: /^\/health$/, auth: "none", handler: getHealth },
   // Token rotation — auth required with the CURRENT token

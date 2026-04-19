@@ -143,7 +143,7 @@ function buildItems(query) {
     { label: 'Toggle Sound',         icon: '♪', action: () => { closePalette(); toggleSound() } },
     { label: 'Toggle Hide Tools',    icon: '⊟', action: () => { closePalette(); toggleTools() } },
     { label: 'Open Settings',        icon: '⚙', action: () => { closePalette(); openSettings() } },
-    { label: 'Scan QR / Connect',    icon: '▣', action: () => { closePalette(); toast('Reload with ?token= or scan the QR from your terminal') } },
+    { label: 'Connect from phone',   icon: '▣', kbd: 'c', action: () => { closePalette(); window.__openConnectModal?.() } },
     { label: 'Rotate Token',         icon: '↺', action: () => { closePalette(); rotateToken() } },
     // ── References actions ───────────────────────────────────────────────────
     { label: 'Switch Agent',         icon: '◈', action: () => { closePalette(); openAgentPicker() } },

@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.7.0] — 2026-04-19
+
+Headline release for **mobile / remote access**. Two new features that close the gap between "self-hosted toy" and "I can use this from my phone" — plus a complete design document for the future cloud relay (v2.0) for reference.
+
+### Added — Connect from phone (LAN + tunnel + QR)
+
+- **New `GET /connect-info` endpoint** (auth-required) reports `lan` (URL, IP, exposed?), `tunnel` (provider, URL, status), `local` (loopback URL), and an abbreviated `tokenPreview` for display. The dashboard polls this every 10 seconds while the modal is open so newly-started tunnels surface automatically.
+- **"Connect from phone" modal** with three tabs: Local network, Public tunnel, Localhost. Each tab renders a scannable QR code from the corresponding URL using the `qrcode` library lazy-loaded from CDN (cached, with offline fallback to copyable text). Polished UX: warning boxes when LAN binding is off or tunnel isn't running, "Copy URL" buttons, security notes for tunnel mode.
+- **Phone icon in the header** (next to SSE indicator) launches the modal. Also accessible via:
+  - Single-key shortcut `c` (when no input focused)
+  - Command palette action "Connect from phone"
+- **Tunnel state visibility** — `services/tunnel.ts` now exposes a `getTunnelInfo()` getter with live status (`off | starting | connected | failed`) and the active URL. Audit logs `tunnel.connected` / `tunnel.disconnected` events.
+- **README "Connect from phone" section** covers LAN setup (`PILOT_HOST=0.0.0.0`), tunnel setup (cloudflared / ngrok), security caveats (token = password, rotate via `/auth/rotate`), and limitations.
+
+How to use it from your phone:
+
+1. **Same WiFi**: set `PILOT_HOST=0.0.0.0` → restart OpenCode → click the phone icon in the header → scan QR with your phone camera.
+2. **Anywhere**: also set `PILOT_TUNNEL=cloudflared` (or `ngrok`) → restart → modal's "Public tunnel" tab now has a QR with the public URL.
+
+### Added — Cloud Relay v2.0 design document
+
+`docs/CLOUD_RELAY_v2_DESIGN.md` — 5,850 words, 12 sections, ASCII diagrams, cost tables, threat model. Covers the architecture for a centralized service (think `pilot.lesquel.com`) where the plugin connects OUT to a relay so non-technical users can pair via QR without configuring tunnels.
+
+**Verdict in the doc: 6/10 — "interesting, but not now"**. Recommends polishing self-hosted + tunnel UX first (1-2 weeks), validating with 5+ real paying commitments, only then building. Anthropic likely ships native remote access within 12 months which would compete head-on. Read the doc before committing to v2.0.
+
+### Notes for users on v1.6.x
+
+If you were on v1.6.4, no breaking changes. Just hard-reload the dashboard (`Ctrl+Shift+R`) to see the new phone icon in the header.
+
+---
+
 ## [1.6.4] — 2026-04-19
 
 ### Fixed

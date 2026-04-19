@@ -4,6 +4,8 @@ import type { TunnelProvider } from "../config"
 
 export type { TunnelProvider }
 
+export type TunnelStatus = "off" | "starting" | "connected" | "failed"
+
 export interface TunnelConfig {
   provider: TunnelProvider
   port: number
@@ -15,17 +17,48 @@ export interface TunnelInstance {
   stop(): void
 }
 
+export interface TunnelInfo {
+  provider: TunnelProvider | null
+  url: string | null
+  status: TunnelStatus
+}
+
+// ─── Module-scoped tunnel state ──────────────────────────────────────────────
+// Exported so /connect-info can read current truth without needing deps.
+
+let _tunnelInfo: TunnelInfo = { provider: null, url: null, status: "off" }
+
+/** Get the current tunnel connection state. */
+export function getTunnelInfo(): TunnelInfo {
+  return { ..._tunnelInfo }
+}
+
 export async function startTunnel(config: TunnelConfig): Promise<TunnelInstance> {
   if (config.provider === "off") {
+    _tunnelInfo = { provider: null, url: null, status: "off" }
     return { publicUrl: null, provider: "off", stop: () => {} }
   }
 
   if (config.provider === "cloudflared") {
-    return startCloudflared(config.port)
+    _tunnelInfo = { provider: "cloudflared", url: null, status: "starting" }
+    const instance = await startCloudflared(config.port)
+    _tunnelInfo = {
+      provider: "cloudflared",
+      url: instance.publicUrl,
+      status: instance.publicUrl !== null ? "connected" : "failed",
+    }
+    return instance
   }
 
   if (config.provider === "ngrok") {
-    return startNgrok(config.port)
+    _tunnelInfo = { provider: "ngrok", url: null, status: "starting" }
+    const instance = await startNgrok(config.port)
+    _tunnelInfo = {
+      provider: "ngrok",
+      url: instance.publicUrl,
+      status: instance.publicUrl !== null ? "connected" : "failed",
+    }
+    return instance
   }
 
   // TypeScript exhaustive check
@@ -53,6 +86,7 @@ async function startCloudflared(port: number): Promise<TunnelInstance> {
       try {
         proc.kill()
       } catch {}
+      _tunnelInfo = { provider: "cloudflared", url: null, status: "off" }
     },
   }
 }
@@ -79,6 +113,7 @@ async function startNgrok(port: number): Promise<TunnelInstance> {
       try {
         proc.kill()
       } catch {}
+      _tunnelInfo = { provider: "ngrok", url: null, status: "off" }
     },
   }
 }

@@ -188,6 +188,82 @@ If the requested tunnel binary is not found or fails to start, the plugin logs a
 
 ---
 
+## Connect from phone
+
+OpenCode Pilot includes a **"Connect from phone"** modal in the dashboard that makes mobile access easy. Press `c` in the dashboard (or use the phone icon in the header, or search "Connect from phone" in the command palette).
+
+The modal has three tabs:
+
+- **Local network** — QR code for LAN access (same Wi-Fi). Fastest option, no internet required.
+- **Public tunnel** — QR code for the tunnel URL. Works anywhere, any network.
+- **Localhost** — Direct `127.0.0.1` URL (same-device or Tauri-style setups).
+
+### Option A — LAN (Local Network)
+
+Best for everyday use when you are on the same Wi-Fi as your machine.
+
+```bash
+# Bind to all interfaces so your phone can reach it:
+PILOT_HOST=0.0.0.0 opencode
+```
+
+> [!WARNING]
+> **Only use `PILOT_HOST=0.0.0.0` on trusted networks (home, office Wi-Fi).** Binding to all interfaces exposes the dashboard to every device on the same network. The auth token is the only barrier — keep it secret.
+
+Then open the dashboard, press `c`, and scan the QR code on the **Local network** tab.
+
+### Option B — Public tunnel
+
+Required when you are on mobile data or a different network from your machine.
+
+```bash
+# Cloudflare Tunnel — zero-config (recommended):
+PILOT_TUNNEL=cloudflared opencode
+
+# ngrok — requires a free account:
+PILOT_TUNNEL=ngrok opencode
+```
+
+If `PILOT_HOST` is still `127.0.0.1` (the default), the tunnel forwards the public URL to localhost on your machine — this is safe and the recommended setup. The modal will show the tunnel tab with a working QR code.
+
+### Security considerations
+
+- The token embedded in QR URLs is your **only** auth barrier. Never screenshot it and post publicly.
+- For public tunnels, rotate the token regularly: open the command palette and run **Rotate Token** (`POST /auth/rotate`).
+- If you share a tunnel URL (e.g. with a teammate), be aware they can send prompts, abort sessions, and approve permissions — same as you.
+- Tunnels are not rate-limited by the plugin. If you need rate limiting, put a reverse proxy in front.
+- Prefer LAN over tunnel whenever possible — shorter path, no third party involved.
+
+### `GET /connect-info` endpoint
+
+The modal fetches `GET /connect-info` (auth required). Response shape:
+
+```json
+{
+  "lan": {
+    "available": true,
+    "url": "http://192.168.1.42:4097/?token=abc…",
+    "ip": "192.168.1.42",
+    "exposed": true
+  },
+  "tunnel": {
+    "available": true,
+    "provider": "cloudflared",
+    "url": "https://abc-xyz.trycloudflare.com/?token=abc…",
+    "status": "connected"
+  },
+  "local": {
+    "url": "http://127.0.0.1:4097/?token=abc…"
+  },
+  "token": "<full token>",
+  "tokenPreview": "abcd...wxyz"
+}
+```
+
+`lan.exposed` is `true` only when `PILOT_HOST=0.0.0.0`. When false, the LAN tab shows a warning and a greyed-out URL instead of a working QR code.
+
+---
+
 ## Telegram Integration
 
 Get push notifications for permission requests, errors, and session completions directly in Telegram — with inline **Allow** / **Deny** buttons.
