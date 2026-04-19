@@ -1,5 +1,6 @@
 // api.js — All HTTP API calls centralized
 import { getState, getActiveDirectory } from './state.js'
+import { apiFetch } from './api-fetch.js'
 
 /**
  * Base URL for API calls.
@@ -50,11 +51,15 @@ function buildUrl(path, overrideDir) {
   return baseUrl() + pathname + '?' + params.toString()
 }
 
+// GET requests use apiFetch (retry + backoff).
+// Mutating methods (POST, PATCH, DELETE) use plain fetch — fail-fast to avoid
+// duplicate side effects.
 async function request(method, path, body, opts = {}) {
   const fetchOpts = { method, headers: authHeaders() }
   if (body) fetchOpts.body = JSON.stringify(body)
   const url = buildUrl(path, opts.directory)
-  const r = await fetch(url, fetchOpts)
+  const fetcher = method === 'GET' ? apiFetch : fetch
+  const r = await fetcher(url, fetchOpts)
   const data = r.ok ? await r.json() : null
   if (!r.ok) {
     console.debug('[pilot:data] request %s %s → %d', method, url, r.status)
@@ -120,7 +125,7 @@ export async function rotateAuthToken() {
 }
 
 export async function fetchHealth() {
-  const r = await fetch(baseUrl() + '/health')
+  const r = await apiFetch(baseUrl() + '/health')
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json()
 }
@@ -158,7 +163,7 @@ export async function fetchLspStatus() {
  */
 export async function fetchInstanceInfo() {
   try {
-    const r = await fetch(baseUrl() + '/instance', { headers: authHeaders() })
+    const r = await apiFetch(baseUrl() + '/instance', { headers: authHeaders() })
     if (!r.ok) return null
     return r.json()
   } catch (_) {

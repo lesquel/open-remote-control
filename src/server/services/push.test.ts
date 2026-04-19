@@ -66,9 +66,9 @@ describe("push service", () => {
     const svc = createPushService(makeDeps())
     // @ts-expect-error intentionally bad input
     svc.addSubscription({ endpoint: "no-keys" })
-    // @ts-expect-error intentionally bad input
+    // @ts-ignore -- null is intentionally bad input to test rejection
     svc.addSubscription(null)
-    // @ts-expect-error intentionally bad input
+    // Empty endpoint is a valid PushSubscriptionJson shape but rejected at runtime
     svc.addSubscription({ endpoint: "", keys: { p256dh: "a", auth: "b" } })
     expect(svc.count()).toBe(0)
   })

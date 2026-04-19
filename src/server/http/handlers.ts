@@ -6,6 +6,13 @@ import { json, jsonError } from "./json"
 import { CORS_HEADERS } from "./cors"
 import { validateToken } from "./auth"
 import { validateBody } from "./validation"
+import {
+  validateCreateSession,
+  validateUpdateSession,
+  validatePromptBody,
+  validatePushSubscribe,
+  validatePushTest,
+} from "./validators"
 import { generateToken } from "../util/auth"
 import { updateStateToken } from "../services/state"
 import { PILOT_VERSION } from "../constants"
@@ -171,10 +178,28 @@ export async function listSessions({ url, deps }: RouteContext): Promise<Respons
   )
 }
 
-export async function createSession({ url, deps }: RouteContext): Promise<Response> {
+export async function createSession({ req, url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
     return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+
+  // Body is optional for POST /sessions (no-title session), but if present, validate it
+  let rawBody: unknown = {}
+  const contentType = req.headers.get("content-type") ?? ""
+  if (contentType.includes("application/json")) {
+    try {
+      rawBody = await req.json()
+    } catch {
+      return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+    }
+  }
+
+  const validation = validateCreateSession(rawBody)
+  if (!validation.ok) {
+    deps.audit.log("validation.failed", { endpoint: "POST /sessions", reason: validation.error })
+    return jsonError("VALIDATION_FAILED", validation.error, 400, CORS_HEADERS)
+  }
+
   const result = await deps.client.session.create({ query: { ...dirParam } })
   deps.audit.log("session.created", { sessionID: result.data?.id ?? null })
   return json(result.data ?? null, result.error ? 500 : 201, CORS_HEADERS)
@@ -186,10 +211,6 @@ export async function getSession({ url, params, deps }: RouteContext): Promise<R
     return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
   const result = await deps.client.session.get({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? null, result.error ? 404 : 200, CORS_HEADERS)
-}
-
-interface UpdateSessionBody {
-  title?: string
 }
 
 export async function updateSession({
@@ -209,23 +230,23 @@ export async function updateSession({
     return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
   }
 
-  if (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody)) {
-    return jsonError("INVALID_BODY", "Request body must be a JSON object", 400, CORS_HEADERS)
+  const validation = validateUpdateSession(rawBody)
+  if (!validation.ok) {
+    deps.audit.log("validation.failed", {
+      endpoint: "PATCH /sessions/:id",
+      reason: validation.error,
+    })
+    return jsonError("VALIDATION_FAILED", validation.error, 400, CORS_HEADERS)
   }
 
-  const body = rawBody as UpdateSessionBody
-
-  if (typeof body.title !== "string" || !body.title.trim()) {
-    return jsonError("INVALID_TITLE", "title is required and must be a non-empty string", 400, CORS_HEADERS)
-  }
-
+  const title = validation.data.title.trim()
   try {
     const result = await deps.client.session.update({
       path: { id: params.id },
       query: { ...dirParam },
-      body: { title: body.title.trim() },
+      body: { title },
     })
-    deps.audit.log("session.updated", { sessionID: params.id, title: body.title.trim() })
+    deps.audit.log("session.updated", { sessionID: params.id, title })
     return json(result.data ?? { ok: true }, result.error ? 500 : 200, CORS_HEADERS)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -323,13 +344,6 @@ export async function getSessionChildren({
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
 
-interface PromptBody {
-  message?: string
-  parts?: Array<{ type: string; text?: string; [key: string]: unknown }>
-  model?: { providerID: string; modelID: string }
-  agent?: string
-}
-
 export async function postSessionPrompt({
   req,
   url,
@@ -346,17 +360,16 @@ export async function postSessionPrompt({
     return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
   }
 
-  // Validate that body is an object (message or parts required — checked below)
-  if (rawBody === null || typeof rawBody !== "object" || Array.isArray(rawBody)) {
-    return jsonError("INVALID_BODY", "Request body must be a JSON object", 400, CORS_HEADERS)
+  const validation = validatePromptBody(rawBody)
+  if (!validation.ok) {
+    deps.audit.log("validation.failed", {
+      endpoint: "POST /sessions/:id/prompt",
+      reason: validation.error,
+    })
+    return jsonError("VALIDATION_FAILED", validation.error, 400, CORS_HEADERS)
   }
 
-  const body = rawBody as PromptBody
-
-  if (!body.message && (!body.parts || body.parts.length === 0)) {
-    return jsonError("MISSING_BODY", "message or parts is required", 400, CORS_HEADERS)
-  }
-
+  const body = validation.data
   const sessionID = params.id
   deps.audit.log("prompt.sent", {
     sessionID,
@@ -461,6 +474,9 @@ export async function getProject({ deps }: RouteContext): Promise<Response> {
 
 // ─── Health ─────────────────────────────────────────────────────────────────
 
+// Captured once when the module is first loaded — used for uptime_s and started_at.
+const SERVER_STARTED_AT = new Date()
+
 export async function getHealth({ deps }: RouteContext): Promise<Response> {
   // SDK liveness: try a lightweight call
   let sdkStatus: "up" | "down" = "down"
@@ -487,16 +503,35 @@ export async function getHealth({ deps }: RouteContext): Promise<Response> {
         ? "up"
         : "down"
 
+  // Telegram connectivity — non-blocking check; fall back to null if invasive
+  let telegramOk: boolean | null = null
+  if (deps.telegram.enabled) {
+    try {
+      const result = await deps.telegram.testConnection()
+      telegramOk = result.ok
+    } catch {
+      telegramOk = null
+    }
+  }
+
   const anyDegraded =
     sdkStatus === "down" ||
     tunnelStatus === "down" ||
     telegramStatus === "down"
 
+  const uptimeS = (Date.now() - SERVER_STARTED_AT.getTime()) / 1000
+
   return json(
     {
       status: anyDegraded ? "degraded" : "ok",
-      uptimeMs: Math.round(process.uptime() * 1000),
       version: PILOT_VERSION,
+      uptime_s: Math.round(uptimeS),
+      started_at: SERVER_STARTED_AT.toISOString(),
+      sse_clients: deps.eventBus.clientCount(),
+      telegram_ok: telegramOk,
+      push_configured: deps.push.isEnabled(),
+      // Legacy fields kept for backward compatibility
+      uptimeMs: Math.round(process.uptime() * 1000),
       services: {
         tunnel: tunnelStatus,
         telegram: telegramStatus,
@@ -731,6 +766,14 @@ export async function subscribePush({ req, deps }: RouteContext): Promise<Respon
   } catch {
     return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
   }
+  const validation = validatePushSubscribe(body)
+  if (!validation.ok) {
+    deps.audit.log("validation.failed", {
+      endpoint: "POST /push/subscribe",
+      reason: validation.error,
+    })
+    return jsonError("VALIDATION_FAILED", validation.error, 400, CORS_HEADERS)
+  }
   if (!isValidSubscriptionBody(body)) {
     return jsonError(
       "INVALID_SUBSCRIPTION",
@@ -739,7 +782,7 @@ export async function subscribePush({ req, deps }: RouteContext): Promise<Respon
       CORS_HEADERS,
     )
   }
-  deps.push.addSubscription(body)
+  deps.push.addSubscription(body as PushSubscriptionJson)
   return json({ ok: true, count: deps.push.count() }, 200, CORS_HEADERS)
 }
 
@@ -765,26 +808,32 @@ export async function unsubscribePush({ req, deps }: RouteContext): Promise<Resp
   return json({ ok: true }, 200, CORS_HEADERS)
 }
 
-interface TestPushBody {
-  endpoint?: string
-}
-
 export async function testPush({ req, deps }: RouteContext): Promise<Response> {
   if (!deps.push.isEnabled()) {
     return jsonError("PUSH_DISABLED", "Web Push is not configured", 503, CORS_HEADERS)
   }
-  let body: unknown = {}
+  let rawBody: unknown = {}
   try {
     const raw = await req.text()
-    body = raw ? JSON.parse(raw) : {}
+    rawBody = raw ? JSON.parse(raw) : {}
   } catch {
     return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
   }
-  const endpoint = (body as TestPushBody)?.endpoint
+
+  const validation = validatePushTest(rawBody)
+  if (!validation.ok) {
+    deps.audit.log("validation.failed", {
+      endpoint: "POST /push/test",
+      reason: validation.error,
+    })
+    return jsonError("VALIDATION_FAILED", validation.error, 400, CORS_HEADERS)
+  }
+
+  const { endpoint } = validation.data
 
   const payload = {
     title: "OpenCode Pilot — test push",
-    body: "Web Push is working 🎉",
+    body: "Web Push is working",
     data: { kind: "test", url: "/" },
   }
 
