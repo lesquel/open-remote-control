@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.7.2] — 2026-04-19
+
+### Fixed
+
+- **Phone access via LAN IP showed the standalone "Connect to instance" form** instead of auto-logging in with the URL token — `isEmbeddedMode()` only treated `127.0.0.1` / `localhost` as embedded, so any LAN IP (e.g. `192.168.100.115`), tunnel domain, or QR-generated URL fell through to standalone mode and asked for manual server URL + token. Now embedded mode detects:
+  - URL with `?token=` query param (page came from a plugin-generated link)
+  - Localhost (`127.0.0.1`, `localhost`, `::1`)
+  - RFC1918 private network IPs (`192.168.x.x`, `10.x.x.x`, `172.16-31.x.x`)
+  - Cloudflare tunnel domains (`*.trycloudflare.com`)
+  - ngrok tunnel domains (`*.ngrok.io`, `*.ngrok-free.app`, `*.ngrok.app`)
+
+  Only genuine standalone deploys (e.g. GitHub Pages serving the dashboard with a separate API host) get the connect screen.
+
+---
+
 ## [1.7.1] — 2026-04-19
 
 ### Fixed

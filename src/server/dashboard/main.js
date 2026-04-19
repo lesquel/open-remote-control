@@ -45,8 +45,31 @@ if ('serviceWorker' in navigator) {
 }
 
 // ── Mode detection ───────────────────────────────────────────────────────
+// "Embedded" = the dashboard is being served by the plugin itself, so all
+// API calls can use same-origin fetch. "Standalone" = the dashboard was
+// deployed to a CDN (e.g. GitHub Pages) and needs to be told the API URL.
 function isEmbeddedMode() {
-  return ['127.0.0.1', 'localhost'].includes(location.hostname)
+  const host = location.hostname
+
+  // 1. URL carries ?token= → page was opened from a plugin-generated link
+  // (QR or banner). The API is wherever the page came from.
+  if (new URLSearchParams(location.search).get('token')) return true
+
+  // 2. Localhost — classic embedded case.
+  if (host === '127.0.0.1' || host === 'localhost' || host === '::1') return true
+
+  // 3. RFC1918 private network IPs (LAN access via PILOT_HOST=0.0.0.0).
+  //    192.168.0.0/16, 10.0.0.0/8, 172.16.0.0/12
+  if (/^192\.168\./.test(host)) return true
+  if (/^10\./.test(host)) return true
+  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return true
+
+  // 4. Tunnel hostnames (the plugin serves the dashboard over the tunnel).
+  if (host.endsWith('.trycloudflare.com')) return true
+  if (host.endsWith('.ngrok.io') || host.endsWith('.ngrok-free.app') || host.endsWith('.ngrok.app')) return true
+
+  // 5. Otherwise assume standalone (CDN deploy, no plugin on this origin).
+  return false
 }
 
 async function bootstrap() {

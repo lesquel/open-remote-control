@@ -16,7 +16,7 @@ import { normalizeMessage } from './messages.js'
 import { LIMITS, STORAGE_KEYS } from './constants.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const PILOT_VERSION = '1.7.1'
+const PILOT_VERSION = '1.7.2'
 const LS_KEY_PREFIX = STORAGE_KEYS.RIGHT_PANEL_COLLAPSED
 const MCP_POLL_INTERVAL_MS = LIMITS.MCP_POLL_INTERVAL_MS
 

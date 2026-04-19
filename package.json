@@ -1,6 +1,6 @@
 {
   "name": "opencode-pilot",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Remote control plugin for OpenCode — monitor sessions, send prompts, approve permissions, and get Telegram notifications from anywhere",
   "type": "module",
   "exports": {
