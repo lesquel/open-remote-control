@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.6.4] — 2026-04-19
+
+### Fixed
+
+- **Multi-view pane never refreshed after sending** — `sse.js` MESSAGE_CREATED/UPDATED handler only matched `d?.sessionId` (lower-d) when looking for pinned panes, but the OpenCode SDK emits `sessionID` (capital D) under `ev.properties`. Same shape we handle in line 179 already. The check silently missed every time, so `loadMVMessages` never ran. Combined with v1.6.3 removing the post-send fetch, the user's pane stayed stale forever. Now resolves all four shapes the SDK might use (`d.sessionId`, `d.sessionID`, `ev.properties.sessionID`, `ev.properties.sessionId`).
+
+---
+
 ## [1.6.3] — 2026-04-19
 
 ### Fixed — Three multi-view UX bugs reported on v1.6.2
