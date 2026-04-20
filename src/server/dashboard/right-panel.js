@@ -16,7 +16,16 @@ import { normalizeMessage } from './messages.js'
 import { LIMITS, STORAGE_KEYS } from './constants.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const PILOT_VERSION = '1.12.8'
+// PILOT_VERSION is no longer hardcoded here. The actual version is read from
+// the /health endpoint at runtime (see fetchVersion() below) and stored in
+// _pilotVersion. We use 'v-' as a placeholder before the first fetch resolves
+// so the UI renders immediately without a blank version string.
+//
+// Fixed in 1.13.11: the hardcoded '1.12.8' here was the exact bug the 1.13.10
+// CHANGELOG claimed was impossible. The sanity test in
+// src/server/dashboard/__tests__/asset-sanity.test.ts now catches this class
+// of regression permanently.
+let _pilotVersion = 'v-'
 const LS_KEY_PREFIX = STORAGE_KEYS.RIGHT_PANEL_COLLAPSED
 const MCP_POLL_INTERVAL_MS = LIMITS.MCP_POLL_INTERVAL_MS
 
@@ -312,7 +321,7 @@ export function createRightPanel({ container }) {
     return `<div class="rp-instance-block">
       <span class="rp-instance-dot instance-dot">●</span>
       <span class="rp-instance-label">${instanceLabel}</span>
-      <span class="rp-instance-version">v${escHtml(PILOT_VERSION)}</span>
+      <span class="rp-instance-version">${escHtml(_pilotVersion)}</span>
     </div>`
   }
 
@@ -503,8 +512,15 @@ export function createRightPanel({ container }) {
       if (health?.version) {
         _instanceVersion = health.version
       }
+      // /health returns { version: "x.y.z", ... } where version is the plugin
+      // (pilot) version string. This is the same value as PILOT_VERSION in
+      // src/server/constants.ts, but read from the live server so it's always
+      // current regardless of what the browser cached.
+      if (health?.version) {
+        _pilotVersion = `v${health.version}`
+      }
     } catch (_) {
-      // Health probe failed — version stays as "local" placeholder
+      // Health probe failed — version stays as placeholder
     }
   }
 

@@ -7,9 +7,15 @@ import {
   getCurrentProject, isInitialized,
 } from './references.js'
 import { normalizeMessage } from './messages.js'
-import { fetchMessages } from './api.js'
+import { fetchMessages, fetchHealth } from './api.js'
 
-const PILOT_VERSION = '1.12.8'
+// Pilot version is no longer hardcoded here.
+// It is fetched from /health at build-report time so the debug modal always
+// shows the version the live server reports, not a stale constant.
+//
+// Fixed in 1.13.11: the '1.12.8' literal here was caught by the new sanity
+// test in src/server/dashboard/__tests__/asset-sanity.test.ts.
+let _cachedPilotVersion = null
 
 // ── Escape helper ─────────────────────────────────────────────────────────────
 function esc(s) {
@@ -29,6 +35,16 @@ async function buildReport() {
   const state = getState()
   const { activeSession, sessions, statuses, sse } = state
   const dir = getActiveDirectory()
+
+  // Fetch pilot version from /health (cached after first successful call)
+  if (!_cachedPilotVersion) {
+    try {
+      const health = await fetchHealth()
+      if (health?.version) _cachedPilotVersion = health.version
+    } catch (_) {
+      // Health probe failed — leave version as null; report will show 'unknown'
+    }
+  }
 
   // References
   const refsInit = isInitialized()
@@ -55,7 +71,7 @@ async function buildReport() {
   const sseLastEvent = window.__debugSseLastEvent ?? null
 
   return {
-    pilot_version:  PILOT_VERSION,
+    pilot_version:  _cachedPilotVersion ?? 'unknown',
     active_directory: dir ?? '(default)',
     session: {
       active_id:   activeSession ?? '(none)',

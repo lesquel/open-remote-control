@@ -1,6 +1,6 @@
 // main.js — Entry point: resolves auth, bootstraps all modules
 import { resolveToken } from './auth.js'
-import { setState, getActiveDirectory, subscribe } from './state.js'
+import { setState, getActiveDirectory, subscribe, getProjectTabs } from './state.js'
 import { initMarkdown } from './markdown.js'
 import { loadSettings } from './settings.js'
 import { loadMVState, initMultiView, showMultiview } from './multi-view.js'
@@ -30,7 +30,8 @@ import { createFileBrowser } from './file-browser.js'
 import { createCostPanel } from './cost-panel.js'
 import { createPinnedTodos } from './pinned-todos.js'
 import { initConnectModal, openConnectModal } from './connect-modal.js'
-import { createProjectTabs, restoreTabsFromStorage } from './project-tabs.js'
+import { createProjectTabs, restoreTabsFromStorage, addProjectTab as ptAddProjectTab, switchProjectTab as ptSwitchProjectTab } from './project-tabs.js'
+import { resolveDirFromHash, resolveTabAction } from './hash-dir-router.js'
 
 // Expose references refresh globally so command-palette can call it
 window.__refreshReferences = refreshReferences
@@ -111,6 +112,34 @@ async function bootstrap() {
   //     This MUST happen before any API call so api.js appends the right
   //     ?directory= on initial /agents, /providers, /sessions fetches.
   const _restoredActiveTabId = restoreTabsFromStorage()
+
+  // 3.6 Auto-focus project tab from #dir= hash fragment (v1.13.12).
+  //     When the user runs /remote from a project directory, the TUI appends
+  //     #dir=<encoded-cwd> to the URL.  We consume it here — AFTER tabs are
+  //     restored from localStorage so we never duplicate a tab that is already
+  //     open — and then erase the fragment so a page refresh is idempotent.
+  //
+  //     Must run synchronously (before loadSessions) so state.activeDirectory
+  //     is correct for the very first API fetch.
+  ;(function applyDirHash() {
+    try {
+      const parsed = resolveDirFromHash(location.hash)
+      if (!parsed.ok) return
+
+      const tabs = getProjectTabs()
+      const action = resolveTabAction(parsed.dir, tabs)
+      if (action.action === 'activate') {
+        ptSwitchProjectTab(action.tabId)
+      } else {
+        ptAddProjectTab(action.dir, action.label)
+      }
+
+      // Clear the hash so a page refresh doesn't re-trigger with stale state.
+      history.replaceState(null, '', location.pathname + location.search)
+    } catch (_err) {
+      // Never let hash parsing block the rest of the boot sequence.
+    }
+  })()
 
   // Mount the project tabs bar (between header and layout).
   const tabsBarEl = document.getElementById('project-tabs-bar')

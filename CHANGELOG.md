@@ -4,6 +4,142 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.13.12] — 2026-04-20
+
+### Added — dashboard auto-focuses the current project tab when opened via `/remote`
+
+**The problem**
+
+A developer working in `/path/to/projectA` runs `/remote` from OpenCode. The dashboard opens in the browser — but it shows whichever project tab was last active (or the default tab), not `projectA`. With multiple projects open as separate tabs the user had to manually click the right tab every time. If `projectA` had never been opened in the dashboard before, it was not even listed.
+
+**The fix — `#dir=` hash fragment**
+
+The TUI `/remote` command (and its aliases `/dashboard`, `/remote-control`) now appends the current working directory to the dashboard URL as a hash fragment:
+
+```
+Before: http://127.0.0.1:4097/?token=abc
+After:  http://127.0.0.1:4097/?token=abc#dir=%2Fpath%2Fto%2FprojectA
+```
+
+A hash fragment was chosen over a query string deliberately:
+
+- Hash fragments are client-only: they are never sent to the server and survive HTTP redirects without being stripped. Tunnel providers (cloudflared, ngrok) that proxy the dashboard URL occasionally mangle or log query strings; hash fragments are opaque to them.
+- Adding a query param creates a browser history entry; a hash change does not, keeping the back-button behaviour clean.
+- The server-side `?directory=` query param (already used by per-project API endpoints) is a different concern — it routes API calls to the right OpenCode instance. The `#dir=` fragment is purely a client-side tab-focus hint.
+
+**Dashboard boot hook (v1.13.12 addition in `main.js`)**
+
+After `restoreTabsFromStorage()` hydrates the tab strip from localStorage, the boot sequence now calls `applyDirHash()`:
+
+```js
+// 3.6 Auto-focus project tab from #dir= hash fragment
+const parsed = resolveDirFromHash(location.hash)   // parse + validate
+if (parsed.ok) {
+  const tabs = getProjectTabs()
+  const action = resolveTabAction(parsed.dir, tabs) // find or create
+  if (action.action === 'activate') {
+    ptSwitchProjectTab(action.tabId)                // focus existing tab
+  } else {
+    ptAddProjectTab(action.dir, action.label)       // create + focus new tab
+  }
+  history.replaceState(null, '', location.pathname + location.search)
+}
+```
+
+Key properties:
+- Runs **after** `restoreTabsFromStorage()` so a tab that already exists in LS is found by `resolveTabAction` and focused rather than duplicated.
+- Runs **before** `loadSessions()` so `state.activeDirectory` is set correctly for the very first API fetch.
+- The hash is erased via `history.replaceState` so a page refresh doesn't re-trigger the logic with stale state.
+- Any error in hash parsing is silently swallowed — the dashboard always finishes booting normally.
+
+**Server-side validation in `hash-dir-router.js`**
+
+`resolveDirFromHash` rejects:
+- Empty or whitespace-only paths
+- Paths containing `..` (path traversal)
+- Paths containing null bytes
+- Paths longer than 512 characters
+- Malformed percent-encoding sequences
+
+**New pure helpers**
+
+| File | Exported symbol | Purpose |
+|------|-----------------|---------|
+| `src/tui/url-builder.ts` | `buildDashboardUrl(baseUrl, cwd)` | Append `#dir=<encoded>` to dashboard URL |
+| `src/server/dashboard/hash-dir-router.js` | `resolveDirFromHash(hash)` | Parse and validate the fragment |
+| `src/server/dashboard/hash-dir-router.js` | `resolveTabAction(dir, tabs)` | Decide activate vs. create |
+
+---
+
+## [1.13.11] — 2026-04-20
+
+### Fixed — stale state file after crash and 5-second promotion gap in `/remote`
+
+**Bug 1 — stale state file (SIGKILL / crash)**
+
+If the primary pilot process died via `SIGKILL` or a hard crash, `clearState()` never ran. The state file at `~/.opencode-pilot/pilot-state.json` kept pointing at a dead PID. All three TUI commands (`/remote`, `/remote-control`, `/pilot-token`) called `readPilotState()` and trusted the result unconditionally — so `/remote` opened the browser to a dead URL with zero feedback to the user.
+
+The fix adds a `isServerAlive(state)` helper in `src/tui/liveness.ts`:
+
+```ts
+// Same-host case: process.kill(pid, 0) throws ESRCH if the PID is dead.
+// EPERM means the process exists but we don't own it → treat as alive.
+// No pid field (older state files, remote-host case): HTTP HEAD /health with 500ms timeout.
+export async function isServerAlive(state: PilotState): Promise<boolean>
+```
+
+All three slash commands call `isServerAlive` before doing anything with the state. If it returns `false`, they show a clear message and return:
+
+```
+"Pilot server not running — start OpenCode again or wait for another instance to take over."
+```
+
+`writeState()` already wrote `pid: process.pid` (introduced in 1.13.8 alongside the promotion watcher). The `PilotState` type in `src/tui/index.ts` now marks `pid` as optional (`pid?: number`) so older state files still work via the HTTP fallback path.
+
+**Bug 2 — 5-second promotion gap**
+
+After the primary's `clearState()` ran on a clean shutdown, the passive's promotion watcher took up to 5,000 ms to notice the port was free and write new state. During that window `/remote` showed "not running" even though another window was ready to take over within milliseconds.
+
+Fixed by dropping the poll interval from `5000` to `500` ms — see the "Changed" entry below.
+
+### Fixed — hardcoded `PILOT_VERSION` in dashboard JS
+
+The 1.13.10 release note said hardcoded version strings were "structurally impossible". They weren't — the sanity guard in `asset-sanity.test.ts` only checked `src/server/constants.ts`, not dashboard JS files. Both `src/server/dashboard/right-panel.js` and `src/server/dashboard/debug-modal.js` still carried:
+
+```js
+const PILOT_VERSION = '1.12.8'
+```
+
+Which means the right-panel instance badge and the debug-modal's `pilot_version` field both lied after any version bump.
+
+**Fix**: removed the module-level constant from both files. Both now read the version from the `/health` endpoint at runtime:
+
+- `right-panel.js`: `fetchVersion()` (already called on init to fetch `_instanceVersion`) now also populates `_pilotVersion` from `health.version`. Before the fetch resolves, the UI renders `v-` as a placeholder.
+- `debug-modal.js`: `buildReport()` calls `fetchHealth()` on first open and caches the result in `_cachedPilotVersion`.
+
+A new sanity test was added:
+
+```ts
+// src/server/dashboard/__tests__/asset-sanity.test.ts
+test("no dashboard JS file contains a hardcoded PILOT_VERSION string literal", () => {
+  // Scans every *.js under src/server/dashboard/ and fails if any contains:
+  //   PILOT_VERSION = '...' or PILOT_VERSION = "..."
+})
+```
+
+This closes the gap permanently — any future regression in any dashboard JS file is caught before publish.
+
+### Changed — passive promotion poll interval: 5000 ms → 500 ms
+
+```diff
+-  }, 5000)
++  }, 500)
+```
+
+In `src/server/index.ts` — `startPromotionWatcher()`. The `server.start()` probe is a cheap no-op (no side effects when the port is still taken). Reducing the interval from 5 s to 500 ms means after a clean primary shutdown, the surviving passive window promotes itself and writes fresh state in under a second. `/remote` on the promoted window is usable within ~1 s of the primary closing.
+
+---
+
 ## [1.13.10] — 2026-04-20
 
 ### Added — regression guards that block any broken publish

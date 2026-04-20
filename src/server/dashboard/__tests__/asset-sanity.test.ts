@@ -7,7 +7,7 @@
 // comment block and fix the underlying regression.
 
 import { describe, expect, test } from "bun:test"
-import { readFileSync } from "fs"
+import { readFileSync, readdirSync } from "fs"
 import { join } from "path"
 import { fileURLToPath } from "url"
 
@@ -81,5 +81,31 @@ describe("version constants stay in sync", () => {
     )
     expect(match).not.toBeNull()
     expect(match?.[1]).toBe(PACKAGE_JSON.version)
+  })
+})
+
+describe("dashboard JS files must not hardcode PILOT_VERSION", () => {
+  // Bug from 1.13.10: the release claimed hardcoded PILOT_VERSION was
+  // structurally impossible, but the sanity guard only checked
+  // src/server/constants.ts — not dashboard JS files. right-panel.js and
+  // debug-modal.js still had `const PILOT_VERSION = '1.12.8'` hardcoded.
+  // This test scans every *.js file under src/server/dashboard/ and fails
+  // if any contains a hardcoded version literal assigned to PILOT_VERSION.
+  test("no dashboard JS file contains a hardcoded PILOT_VERSION string literal", () => {
+    const DASHBOARD_DIR = join(ROOT, "src/server/dashboard")
+    // Hardcoded-version pattern: PILOT_VERSION = '...' or PILOT_VERSION = "..."
+    const HARDCODED_VERSION_RE = /PILOT_VERSION\s*=\s*['"][0-9]+\.[0-9]+\.[0-9]+['"]/
+
+    const offenders: string[] = []
+    const entries = readdirSync(DASHBOARD_DIR)
+    for (const entry of entries) {
+      if (!entry.endsWith(".js")) continue
+      const content = readFileSync(join(DASHBOARD_DIR, entry), "utf-8")
+      if (HARDCODED_VERSION_RE.test(content)) {
+        offenders.push(entry)
+      }
+    }
+
+    expect(offenders).toEqual([])
   })
 })

@@ -3,6 +3,8 @@ import type { PluginOptions } from "@opencode-ai/plugin"
 import { join } from "path"
 import { existsSync, readFileSync } from "fs"
 import { homedir } from "os"
+import { isServerAlive } from "./liveness"
+import { buildDashboardUrl } from "./url-builder"
 
 // ─── State file reader ───────────────────────────────────────────────────────
 
@@ -11,7 +13,8 @@ interface PilotState {
   port: number
   host: string
   startedAt: number
-  pid: number
+  /** PID of the primary pilot server process. Present as of 1.13.11. */
+  pid?: number
 }
 
 // Search order for the state/banner files:
@@ -70,11 +73,22 @@ const commands = [
     category: "Pilot",
     suggested: true,
     slash: { name: "remote-control", aliases: ["pilot", "rc"] },
-    onSelect: (api: TuiPluginApi) => {
+    onSelect: async (api: TuiPluginApi) => {
       const dir = process.cwd()
       const state = readPilotState(dir)
 
       if (state) {
+        if (!(await isServerAlive(state))) {
+          api.ui.toast({
+            title: "OpenCode Pilot",
+            message:
+              "Pilot server not running — start OpenCode again or wait for another instance to take over.",
+            variant: "warning",
+            duration: 7000,
+          })
+          return
+        }
+
         const url = `http://${state.host}:${state.port}`
         const banner = readBanner(dir)
 
@@ -116,11 +130,22 @@ const commands = [
     description: "Show the full remote control auth token for connecting",
     category: "Pilot",
     slash: { name: "pilot-token" },
-    onSelect: (api: TuiPluginApi) => {
+    onSelect: async (api: TuiPluginApi) => {
       const dir = process.cwd()
       const state = readPilotState(dir)
 
       if (state) {
+        if (!(await isServerAlive(state))) {
+          api.ui.toast({
+            title: "Pilot Token",
+            message:
+              "Pilot server not running — start OpenCode again or wait for another instance to take over.",
+            variant: "warning",
+            duration: 7000,
+          })
+          return
+        }
+
         const url = `http://${state.host}:${state.port}`
         api.ui.toast({
           title: "Pilot Auth Token",
@@ -166,7 +191,19 @@ const commands = [
         return
       }
 
-      const url = `http://${state.host}:${state.port}/?token=${state.token}`
+      if (!(await isServerAlive(state))) {
+        api.ui.toast({
+          title: "OpenCode Pilot — Dashboard",
+          message:
+            "Pilot server not running — start OpenCode again or wait for another instance to take over.",
+          variant: "error",
+          duration: 7000,
+        })
+        return
+      }
+
+      const rawUrl = `http://${state.host}:${state.port}/?token=${state.token}`
+      const url = buildDashboardUrl(rawUrl, dir)
 
       // Platform-specific open command
       let cmd: string[]

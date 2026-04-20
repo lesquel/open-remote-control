@@ -200,7 +200,7 @@ export default {
           promotionTimer = null
           await activatePrimary(true)
         }
-      }, 5000)
+      }, 500)
     }
 
     // ─── Initial boot: try to become primary ───────────────────────────────
