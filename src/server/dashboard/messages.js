@@ -553,6 +553,27 @@ function withErrorBoundary(panelId, renderFn, retryFn) {
 }
 
 /**
+ * Show a "typing…" indicator in the messages pane.
+ * Used when MESSAGE_CREATED (assistant) arrives so streaming deltas can
+ * immediately populate the pane WITHOUT a full loadMessages() wipe.
+ * The indicator is removed automatically by the next loadMessages() call.
+ */
+export function showTypingIndicator() {
+  const box = document.getElementById('messages')
+  if (!box) return
+  // Avoid adding duplicate indicators
+  if (box.querySelector('.typing-indicator')) return
+  const el = document.createElement('div')
+  el.className = 'typing-indicator'
+  el.setAttribute('aria-live', 'polite')
+  el.setAttribute('aria-label', 'Agent is typing')
+  el.innerHTML = '<span></span><span></span><span></span>'
+  box.appendChild(el)
+  // Scroll to bottom so the indicator is visible
+  box.scrollTop = box.scrollHeight
+}
+
+/**
  * Load messages for a session and render them into #messages.
  */
 export async function loadMessages(sessionId) {

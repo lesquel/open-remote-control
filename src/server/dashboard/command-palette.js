@@ -687,7 +687,13 @@ export async function openProjectPicker() {
     }
     closePalette()
     const newDir   = item.kind === 'default' ? null : item.path
-    const newLabel = item.kind === 'default' ? 'default' : (item.label || shortenPath(newDir))
+    // Derive label as the basename of the path so tabs show e.g. "zimna-app"
+    // rather than a full/shortened path. Fallback to item.label then shortenPath.
+    const newLabel = item.kind === 'default'
+      ? 'default'
+      : (newDir
+          ? (newDir.replace(/\\/g, '/').split('/').filter(Boolean).pop() || item.label || shortenPath(newDir))
+          : (item.label || shortenPath(newDir)))
 
     // Use the project-tabs API (v1.11): adds a tab if not present and switches
     // to it. The tab module handles setActiveDirectory, loadSessions, and the

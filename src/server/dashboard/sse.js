@@ -1,7 +1,7 @@
 // sse.js — SSE connection with exponential backoff reconnect
 import { getState, setState, appendPartDelta, clearStreamingMessage, subscribe } from './state.js'
 import { loadSessions, renderSessions, updateHeaderSession, updateInfoBar, refreshSessionMeta } from './sessions.js'
-import { loadMessages, applyStreamingDelta, removeStreamingCursor } from './messages.js'
+import { loadMessages, applyStreamingDelta, removeStreamingCursor, showTypingIndicator } from './messages.js'
 import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from './multi-view.js'
 import { handlePermissionRequested, handlePermissionResolved } from './permissions.js'
 import { onSubagentSpawned } from './subagents.js'
@@ -229,7 +229,22 @@ async function handleEvent(ev) {
     const evtSessionId = d?.sessionId ?? d?.sessionID ?? ev.properties?.sessionID ?? ev.properties?.sessionId ?? null
 
     if (activeSession && !multiviewActive) {
-      loadMessages(activeSession)
+      if (t === EVENTS.MESSAGE_UPDATED) {
+        // Final message: do a full re-render so the complete content is shown.
+        loadMessages(activeSession)
+      } else {
+        // MESSAGE_CREATED: determine role. Null role defaults to assistant.
+        const msgRole = d?.role ?? ev.properties?.role ?? null
+        const isAssistant = msgRole === 'assistant' || msgRole == null
+        if (isAssistant) {
+          // Show a typing indicator so the user sees activity without wiping
+          // the DOM (which would break in-flight streaming deltas).
+          showTypingIndicator()
+        } else {
+          // User message: full render so the sent message appears immediately.
+          loadMessages(activeSession)
+        }
+      }
     }
     if (evtSessionId && mvPanels.has(evtSessionId)) {
       loadMVMessages(evtSessionId)

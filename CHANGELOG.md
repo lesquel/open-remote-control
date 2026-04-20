@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.11.1] — 2026-04-19
+
+Patch release fixing four issues reported after v1.11.0 + three new docs for npm publish, tunnel testing, and configuration.
+
+### Fixed
+
+- **Tab labels showed full path or wrong project name** — `applyProjectChoice` derived the label using `shortenPath()` which returned multi-segment paths like `~/proyectos/zimna-app`. Now uses true basename (`zimna-app`) via `path.split('/').filter(Boolean).pop()`. Falls back to picker label, then `shortenPath`, in that order.
+- **Switching tabs felt frozen — messages pane stuck on previous tab's content** — `switchProjectTab()` only re-rendered when `!tab.loaded`. For previously-loaded tabs, sync happened but no DOM refresh. Added `else` branch that calls `renderSessions()`, `updateHeaderSession()`, `updateInfoBar()`, and `loadMessages(activeSession)` so loaded tabs also get a fresh paint.
+- **SSE appeared to buffer until end of conversation** — root cause was `MESSAGE_CREATED` for assistant messages calling `loadMessages()` which wiped the messages pane to "Loading…", destroying the `[data-part-id]` DOM elements. Subsequent `MESSAGE_PART_UPDATED` events couldn't find their target nodes and silently dropped deltas. Now `MESSAGE_CREATED` shows a typing indicator (3-dot bounce) without wiping the DOM; `MESSAGE_UPDATED` (the final event) triggers the full re-render.
+- **Mobile tab bar appeared to only show "default"** — actually all tabs rendered but the active tab could be off-screen with no visual cue. Added `requestAnimationFrame(() => activeEl?.scrollIntoView(...))` after every render and explicit `overflow-x: auto` + `-webkit-overflow-scrolling: touch` on mobile.
+
+### Added — Typing indicator
+
+- New `showTypingIndicator()` in `messages.js` — appends a 3-dot bounce animation (`.typing-indicator` + CSS keyframes) below the last message when SSE signals an assistant turn started. Disappears when first content arrives.
+
+### Added — Three new docs in `docs/`
+
+- **`PUBLISHING_TO_NPM.md`** — Complete guide for shipping the plugin as a public npm package: account setup, NPM_TOKEN in GitHub Secrets, scoped vs unscoped names, the `package.json::files` array, manual + CI publish flows, pre-publish checklist (typecheck + tests + version sync across 4 files + CHANGELOG entry + tarball smoke test), versioning policy (semver), unpublish/deprecate, and what new users have to do after `npm install opencode-pilot`. Includes a section explaining that `.env` is per-user and NOT replicated.
+- **`TUNNEL_TESTING.md`** — End-to-end verification guide for `cloudflared` and `ngrok` tunnels: install commands per OS, minimum `.env`, step-by-step test (curl `/connect-info`, browser load, phone over cellular, SSE stability >5min, restart re-pair), troubleshooting tables, security checklist, and "when tunnels aren't appropriate".
+- **`CONFIGURATION.md`** — Every environment variable explained, organized by category (server binding, tunnel, permissions, Telegram, Web Push, file browser, dev). Five copy-paste `.env` scenarios from "solo dev localhost" to "full setup with everything on". Includes how `.env` loading works (cwd → plugin dir, shell vars win), VAPID key generation, security notes, how to share setup with teammates (use `.env.example`, never `.env`).
+
+### Changed — SW cache `pilot-v16` → `pilot-v17`
+
+---
+
 ## [1.11.0] — 2026-04-19
 
 ### Added — Multi-project tabs bar (major feature)

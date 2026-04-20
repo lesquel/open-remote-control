@@ -150,6 +150,26 @@ export async function switchProjectTab(id) {
   // Lazy session load: only fetch if this tab hasn't been populated yet.
   if (!tab.loaded) {
     await ensureSessionsLoaded(tab)
+  } else {
+    // Tab was previously loaded — re-render sessions list and messages pane
+    // so the UI reflects the restored tab data immediately (fix for "frozen"
+    // session switch: renderSessions + loadMessages were only called in
+    // ensureSessionsLoaded, which was skipped for already-loaded tabs).
+    try {
+      const { renderSessions, updateHeaderSession, updateInfoBar } = await import('./sessions.js')
+      renderSessions()
+      const { getState } = await import('./state.js')
+      const { activeSession, sessions, statuses } = getState()
+      if (activeSession) {
+        const { loadMessages } = await import('./messages.js')
+        const s = sessions[activeSession]
+        const status = statuses[activeSession] ?? 'idle'
+        const title = s?.title || activeSession.slice(0, 8)
+        updateHeaderSession(title, status)
+        updateInfoBar(activeSession, title, status, s)
+        await loadMessages(activeSession)
+      }
+    } catch (_) {}
   }
 
   renderTabs()
@@ -251,6 +271,13 @@ function renderTabs() {
     : ''
 
   _containerEl.innerHTML = tabsHtml + addBtn + empty
+
+  // Scroll the active tab into view so it stays visible on mobile where the
+  // bar has limited horizontal space. On desktop this is a no-op (tabs fit).
+  requestAnimationFrame(() => {
+    const activeEl = _containerEl.querySelector('.project-tab--active')
+    activeEl?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+  })
 
   // Wire clicks
   _containerEl.querySelectorAll('.project-tab').forEach(el => {
