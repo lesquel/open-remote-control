@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.8.4] — 2026-04-19
+
+### Fixed
+
+- **Sidebar drawer wouldn't open on mobile** — the `☰` button had TWO click handlers competing: `main.js::createMobileDrawer()` (capture phase, opens drawer + shows backdrop) AND `shortcuts.js::toggleSidebar()` (bubble phase, also toggles the `open-overlay` class). They cancelled each other: my handler added the class, the shortcuts handler immediately toggled it OFF. Net effect: drawer flashed and closed, user saw nothing.
+
+  Fix: `e.stopImmediatePropagation()` + `e.preventDefault()` in the capture handler when on mobile, so `shortcuts.js::toggleSidebar()` never fires for that click.
+
+- SW cache `pilot-v12` → `pilot-v13`.
+
+---
+
 ## [1.8.3] — 2026-04-19
 
 ### Removed

@@ -295,11 +295,16 @@ async function bootstrap() {
       backdrop.classList.add('visible')
     }
 
-    // Intercept the sidebar-toggle button to also manage backdrop
+    // Intercept the sidebar-toggle button: on mobile, fully take over so the
+    // shortcuts.js handler doesn't ALSO toggle .open-overlay (its toggle would
+    // cancel ours, leaving the drawer half-open + backdrop visible).
     const sidebarBtn = document.getElementById('sidebar-toggle-btn')
     if (sidebarBtn) {
-      sidebarBtn.addEventListener('click', () => {
+      sidebarBtn.addEventListener('click', (e) => {
         if (window.innerWidth > 768) return
+        // Stop the shortcuts.js handler on the same button from running.
+        e.stopImmediatePropagation()
+        e.preventDefault()
         if (isDrawerOpen()) {
           closeDrawer()
         } else {
