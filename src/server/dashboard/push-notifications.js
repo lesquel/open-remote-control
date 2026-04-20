@@ -11,6 +11,7 @@
 // - Graceful degradation: hides the settings row if Notification API is unavailable.
 
 import { pushPublicKey, pushSubscribe, pushUnsubscribe } from './api.js'
+import { toast } from './toast.js'
 
 const LS_NOTIF_KEY = 'pilot_push_notif_enabled'
 const LS_PUSH_ENDPOINT_KEY = 'pilot_push_endpoint'
@@ -248,6 +249,7 @@ export function createPushNotifications() {
         _setEnabled(true)
         if (testBtn) testBtn.style.display = ''
         _syncCheckbox()
+        toast('Push notifications enabled')
         // Best-effort: also upgrade to Web Push for background delivery
         _enableWebPush().catch((err) => console.warn('[pilot:push] enable failed', err))
       } else {
@@ -257,6 +259,9 @@ export function createPushNotifications() {
         if (result === 'denied') {
           e.target.disabled = true
           e.target.title = 'Notifications blocked by browser. Allow in site settings.'
+          toast('Notifications blocked by browser. Allow in site settings.')
+        } else {
+          toast('Notification permission dismissed')
         }
       }
     })

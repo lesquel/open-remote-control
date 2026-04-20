@@ -3952,3 +3952,125 @@ body {
 }
 
 /* ── End of v1.8.2 mobile UX polish ─────────────────────────────────────── */
+
+/* ── v1.9 polish ─────────────────────────────────────────────────────────── */
+
+/* 4. Multi-view: hide the ⊞ button on mobile — not supported there */
+@media (max-width: 768px) {
+  #multiview-btn {
+    display: none !important;
+  }
+}
+
+/* 5. Agent panel: readable on mobile */
+@media (max-width: 768px) {
+  .agent-panel {
+    max-height: 60vh;
+  }
+  .agent-panel-body {
+    font-size: 13px;
+    padding: 10px 12px;
+    gap: 8px;
+    /* Ensure it fits inside the drawer width */
+    width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden;
+  }
+  .agent-panel-header {
+    font-size: 11px;
+    padding: 8px 12px;
+  }
+  .agent-panel-name {
+    font-size: 14px;
+  }
+  .agent-panel-desc {
+    font-size: 12px;
+  }
+  .agent-panel-row {
+    font-size: 12px;
+    /* Stack label/value vertically for narrow drawer */
+    flex-direction: column;
+    gap: 3px;
+  }
+  .agent-panel-label {
+    font-size: 10px;
+    width: auto;
+  }
+  .agent-panel-value {
+    font-size: 12px;
+    word-break: break-word;
+  }
+  .agent-panel-model {
+    font-size: 12px;
+  }
+  .agent-panel-prompt {
+    font-size: 11px;
+    word-break: break-word;
+    max-height: 120px;
+  }
+  .agent-panel-tool-chip {
+    font-size: 11px;
+    padding: 1px 6px;
+  }
+  .agent-panel-empty {
+    font-size: 12px;
+  }
+}
+
+/* 6. Project switcher: header badge showing current project */
+.header-project-badge {
+  display: none; /* desktop: hide — too crowded */
+}
+
+@media (max-width: 768px) {
+  /* Show a tappable project badge in the header on mobile */
+  .header-project-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1px 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    max-width: 100px;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    touch-action: manipulation;
+  }
+  .header-project-badge:active {
+    background: var(--surface2);
+    color: var(--accent);
+  }
+}
+
+/* Desktop: show the project badge only in the sidebar header for quick switch */
+#sessions-project-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  max-width: 80px;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+#sessions-project-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── End of v1.9 polish ───────────────────────────────────────────────────── */

@@ -9,6 +9,7 @@ import { isFileEditingToolEvent } from './files-changed.js'
 import { debouncedRefreshFilesChanged } from './files-changed-bridge.js'
 import { buildApiUrl } from './api.js'
 import { EVENTS, LIMITS } from './constants.js'
+import { playNotifySound } from './notif-sound.js'
 
 let eventSource = null
 let reconnectTimer = null
@@ -183,6 +184,40 @@ async function handleEvent(ev) {
         // Remove blinking cursor if present
         if (sessionId === activeSession) {
           removeStreamingCursor(messageId)
+        }
+      }
+    }
+
+    // ── v1.9: sound + browser notification on assistant turn completion ──────
+    if (t === EVENTS.MESSAGE_UPDATED) {
+      const msgRole = d?.role ?? ev.properties?.role ?? null
+      const isAssistant = msgRole === 'assistant' || msgRole == null  // null = assume assistant
+      if (isAssistant && document.hidden) {
+        const { settings } = getState()
+        // Sound notification
+        if (settings.sound) {
+          playNotifySound()
+        }
+        // Browser notification
+        if (settings.notif && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          try {
+            const sessionId = d?.sessionId ?? ev.properties?.sessionID ?? null
+            const { sessions } = getState()
+            const sessionTitle = sessionId ? (sessions[sessionId]?.title ?? null) : null
+            const body = sessionTitle ? `Response ready in "${sessionTitle}"` : 'Agent response ready'
+            const n = new Notification('OpenCode Pilot', {
+              body,
+              icon: './icons/icon.svg',
+              tag: 'pilot-msg-' + (sessionId ?? Date.now()),
+            })
+            n.onclick = () => {
+              window.focus()
+              if (sessionId) {
+                import('./sessions.js').then(m => m.selectSession(sessionId)).catch(() => {})
+              }
+              n.close()
+            }
+          } catch (_) {}
         }
       }
     }

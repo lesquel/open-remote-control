@@ -43,6 +43,7 @@
       <span class="bc-sep">│</span>
       <span class="bc-session" id="header-session-label">No session</span>
       <span class="badge badge-idle" id="header-status-badge" style="display:none"></span>
+      <button class="header-project-badge" id="header-project-badge" title="Switch project" aria-label="Switch project">▤ <span id="header-project-label">default</span></button>
     </div>
 
     <!-- SSE connection indicator -->
@@ -89,6 +90,7 @@
     <div id="sessions-panel">
       <div id="sessions-header">
         <span>Sessions</span>
+        <button id="sessions-project-btn" title="Switch project (Open Project in palette)" aria-label="Switch project">▤ <span id="sessions-project-label">project</span></button>
         <button class="btn btn-icon" id="multiview-btn" title="Multi-view" style="font-size:10px;padding:1px 5px;min-height:18px;border-radius:2px">⊞</button>
       </div>
       <button id="new-session-big">+ New Session</button>
@@ -333,6 +335,7 @@
 <!-- Mobile kebab popover -->
 <div id="mobile-kebab-popover" class="mobile-kebab-popover" role="menu" aria-label="Mobile actions">
   <button class="mkp-item" id="mkp-palette" role="menuitem">Open command palette</button>
+  <button class="mkp-item" id="mkp-switch-project" role="menuitem">Switch project</button>
   <button class="mkp-item" id="mkp-shortcuts" role="menuitem">Keyboard shortcuts</button>
   <button class="mkp-item" id="mkp-connect" role="menuitem">Connect from phone</button>
   <button class="mkp-item" id="mkp-right-panel" role="menuitem">Toggle info panel</button>

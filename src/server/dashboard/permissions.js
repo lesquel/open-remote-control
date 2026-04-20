@@ -1,7 +1,7 @@
 // permissions.js — Permission banner and approve/deny logic
 import { getState, setState } from './state.js'
 import { fetchPermissions, respondPermission } from './api.js'
-import { playBeep } from './settings.js'
+import { playNotifySound } from './notif-sound.js'
 import { toast } from './toast.js'
 
 export async function loadPermissions() {
@@ -27,7 +27,7 @@ export function showNextPerm() {
       p.description ?? p.command ?? p.tool ?? JSON.stringify(p)
     banner.classList.add('visible')
 
-    if (settings.sound) playBeep()
+    if (settings.sound) playNotifySound()
     if (settings.notif && Notification.permission === 'granted') {
       new Notification('Permission requested', { body: p.description ?? p.tool ?? '' })
     }

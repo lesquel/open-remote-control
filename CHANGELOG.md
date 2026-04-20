@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.9.0] — 2026-04-19
+
+Polish release responding to user feedback after v1.8.4. Six items.
+
+### Added — Notifications actually work now
+
+- **Sound notification** (`s-sound` toggle) — generates a soft two-tone beep via Web Audio API (800Hz → 1000Hz, 80ms each, 0.15 volume). No audio file dependency. Plays when an assistant turn completes AND the page is not focused. Also plays on permission requests. New file `notif-sound.js`.
+- **Browser notification** (`s-notif` toggle) — `new Notification('OpenCode Pilot', { body: 'Response ready in "<session>"' })` when MESSAGE_UPDATED fires AND `document.hidden` AND permission granted. Click on the notification focuses the window and selects that session.
+- **Push notification toggle** (`s-push-notif`) was already wired but silent. Now shows a toast for the result of the permission prompt (granted / dismissed / error) so the user knows it actually happened.
+
+### Added — Project switcher visible everywhere
+
+The "Open Project" action existed only inside the command palette. Now there are three discoverable entry points:
+
+- **Sidebar button** next to "Sessions" header (always visible): `▤ <project name>` — tap to open project picker.
+- **Mobile header badge** in the breadcrumb (visible on phones): same icon + label, tap to switch.
+- **Mobile kebab menu** (`⋮`) — new "Switch project" row.
+
+All three call the same `openProjectPicker()` (now exported from `command-palette.js`). The label syncs via `subscribe('project-label', ...)` whenever directory changes.
+
+### Changed — Multi-view hidden on mobile (per user request)
+
+User said: *"en móvil no pongamos eso porque, o sea, como que dar a un diseño más minimalista en móvil"*. Done:
+
+- `#multiview-btn` hidden under `@media (max-width: 768px)`.
+- `initMultiView()` early-returns the toggle handler on mobile.
+- `exitMultiviewIfMobile()` runs on init AND on window resize, forcing single-view if user shrinks past 768px.
+
+Multi-view remains fully functional on desktop (≥769px).
+
+### Changed — Agent panel readable on mobile
+
+The agent context panel was unreadable on phone (cut-off rows, tiny font). Mobile rules added:
+- Body font-size 13px, padding 10px 12px
+- Rows stack vertically (no horizontal overflow)
+- Word-break on long values
+- Agent name 14px, descriptions 12px, chips 11px
+- Max-height 60vh so it scrolls inside the drawer
+
+### Changed — SW cache `pilot-v13` → `pilot-v14`
+
+Forces fresh download on next visit (notif-sound.js added to PRECACHE).
+
+### Things left untouched (per user's explicit "don't touch" list)
+
+- Theme toggle ✓
+- Show tools toggle ✓
+- Default reasoning toggle ✓
+- Command palette ✓
+- Delete session ✓
+- Rename session ✓
+
+---
+
 ## [1.8.4] — 2026-04-19
 
 ### Fixed

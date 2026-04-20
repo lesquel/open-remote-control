@@ -1,6 +1,6 @@
 // main.js — Entry point: resolves auth, bootstraps all modules
 import { resolveToken } from './auth.js'
-import { setState, setActiveDirectory } from './state.js'
+import { setState, setActiveDirectory, getActiveDirectory, subscribe } from './state.js'
 import { initMarkdown } from './markdown.js'
 import { loadSettings } from './settings.js'
 import { loadMVState, initMultiView, showMultiview } from './multi-view.js'
@@ -9,7 +9,7 @@ import { loadPermissions, initPermissions } from './permissions.js'
 import { initSettings } from './settings.js'
 import { initShortcuts } from './shortcuts.js'
 import { connect as sseConnect } from './sse.js'
-import { initCommandPalette } from './command-palette.js'
+import { initCommandPalette, openProjectPicker } from './command-palette.js'
 import {
   getConnection,
   saveConnection,
@@ -390,9 +390,36 @@ async function bootstrap() {
       closeKebab()
       document.getElementById('right-panel')?.classList.toggle('right-panel--hidden')
     })
+
+    document.getElementById('mkp-switch-project')?.addEventListener('click', () => {
+      closeKebab()
+      openProjectPicker().catch(() => {})
+    })
   }
 
   createMobileKebab()
+
+  // ── Project switcher: sidebar button + header badge ──────────────────────
+  function openProjectPickerUI() {
+    openProjectPicker().catch(() => {})
+  }
+
+  function _refreshProjectLabel() {
+    const dir = getActiveDirectory()
+    const label = dir ? (dir.split('/').filter(Boolean).pop() ?? 'project') : 'default'
+    const sidebarLabel = document.getElementById('sessions-project-label')
+    const headerLabel  = document.getElementById('header-project-label')
+    if (sidebarLabel) sidebarLabel.textContent = label
+    if (headerLabel)  headerLabel.textContent  = label
+  }
+
+  document.getElementById('sessions-project-btn')?.addEventListener('click', openProjectPickerUI)
+  document.getElementById('header-project-badge')?.addEventListener('click', openProjectPickerUI)
+
+  // Subscribe to state changes to keep project label current
+  subscribe('project-label', _refreshProjectLabel)
+  // Initial label
+  _refreshProjectLabel()
 
   // Alt+I — toggle right panel
   document.addEventListener('keydown', (e) => {

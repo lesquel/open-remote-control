@@ -273,16 +273,45 @@ function openSessionPicker() {
   import('./shortcuts.js').then(m => m.openSessionPicker())
 }
 
+// ── Mobile guard ──────────────────────────────────────────────────────────
+
+function isMobile() {
+  return window.matchMedia('(max-width: 768px)').matches
+}
+
+function exitMultiviewIfMobile() {
+  if (!isMobile()) return
+  const { multiviewActive } = getState()
+  if (!multiviewActive) return
+  setState({ multiviewActive: false })
+  const btn = document.getElementById('multiview-btn')
+  if (btn) btn.style.background = ''
+  hideMultiview()
+  saveMVState()
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 
 export function initMultiView() {
-  document.getElementById('multiview-btn').addEventListener('click', () => {
+  const btn = document.getElementById('multiview-btn')
+
+  btn.addEventListener('click', () => {
+    // On mobile, multi-view is not supported — no-op
+    if (isMobile()) return
     const { multiviewActive } = getState()
     const next = !multiviewActive
     setState({ multiviewActive: next })
-    document.getElementById('multiview-btn').style.background = next ? 'rgba(0,217,255,.15)' : ''
+    btn.style.background = next ? 'rgba(0,217,255,.15)' : ''
     if (next) showMultiview()
     else hideMultiview()
     saveMVState()
   })
+
+  // If user resizes from desktop → mobile while in multi-view, exit it
+  window.addEventListener('resize', () => {
+    exitMultiviewIfMobile()
+  }, { passive: true })
+
+  // On init, if we're on mobile and state has multiviewActive (restored from sessionStorage), exit it
+  exitMultiviewIfMobile()
 }

@@ -506,7 +506,7 @@ function openModelPicker() {
  * Switching a project sets activeDirectory which routes all subsequent API calls
  * to that project's instance via ?directory= query param.
  */
-async function openProjectPicker() {
+export async function openProjectPicker() {
   let projects = []
   try {
     const res = await fetchProjects()
