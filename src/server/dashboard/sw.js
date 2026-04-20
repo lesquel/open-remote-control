@@ -1,5 +1,5 @@
 // sw.js — Service Worker: app shell caching, never caches API calls
-const CACHE_NAME = "pilot-v17"
+const CACHE_NAME = "pilot-v18"
 const PRECACHE = [
   "./",
   "./index.html",
@@ -68,6 +68,7 @@ self.addEventListener("fetch", (event) => {
     "/project",
     "/push",
     "/fs",
+    "/settings",
   ]
   const isApiCall = apiPaths.some((p) => url.pathname.startsWith(p))
   if (isApiCall) return // Pass through, browser handles natively

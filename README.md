@@ -140,9 +140,27 @@ Modifier:
 
 ---
 
-## Configuration
+## Configuration — two ways
 
-All variables documented in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md). Quick reference:
+Since **v1.12** you can configure the plugin two ways (or both):
+
+### Easy: the Settings UI
+
+1. Open the dashboard
+2. Click the gear icon (⚙) in the header
+3. Go to **Plugin configuration**
+4. Edit port, host, tunnel, Telegram token, VAPID keys, permission timeout,
+   and the glob opener toggle
+5. Click **Save** — values are written to `~/.opencode-pilot/config.json`
+   and survive restarts
+
+Some fields (port, host, tunnel, VAPID keys) require an OpenCode restart to take effect — the UI shows an inline warning for those. A **Generate VAPID keys** button calls the server to create a key pair in one click.
+
+Each field shows a small badge telling you where its current value comes from: `saved` (UI), `.env`, `shell`, or `default`. Fields set via shell env vars are locked from the UI — you must unset the shell var to override.
+
+### Power user: `.env` file
+
+Full env-var reference with example `.env` files for common scenarios lives in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md). Quick overview:
 
 | Variable | Default | What |
 |----------|---------|------|
@@ -155,8 +173,18 @@ All variables documented in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md). Qu
 | `PILOT_VAPID_PUBLIC_KEY` | (off) | Web Push public key (`bunx web-push generate-vapid-keys`) |
 | `PILOT_VAPID_PRIVATE_KEY` | (off) | Web Push private key |
 | `PILOT_ENABLE_GLOB_OPENER` | `false` | Enable `/fs/glob` for the dashboard's glob search |
+| `PILOT_FETCH_TIMEOUT_MS` | `10000` | Timeout for outbound HTTP calls (Telegram, push) |
 
-The `.env` file is searched in: (1) `process.cwd()/.env` then (2) the plugin's install dir. Shell env vars always win over `.env` values.
+### Priority (highest wins)
+
+```
+1. Shell env vars                         e.g. PILOT_PORT=5000 opencode
+2. ~/.opencode-pilot/config.json          written by the Settings UI
+3. .env file (process.cwd or plugin dir)  power-user file-based config
+4. Hardcoded defaults                     fallback
+```
+
+The `.env` file is searched in: (1) `process.cwd()/.env` then (2) the plugin's install dir. Shell env vars always win over both `.env` and the Settings UI.
 
 ---
 
@@ -184,7 +212,7 @@ If you want the deep version, see the [`docs/`](docs/) folder.
 - **Server**: Bun + TypeScript (strict)
 - **Dashboard**: vanilla ES modules, plain CSS, ~9000 LOC. No React, no build step.
 - **Optional deps**: `cloudflared` / `ngrok` (tunnel), `@modelcontextprotocol/sdk` (MCP), `web-push` (push notifications)
-- **Tests**: 146 (Bun test runner), all green
+- **Tests**: 181 (Bun test runner), all green
 
 ---
 

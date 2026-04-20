@@ -5,6 +5,7 @@
     "": {
       "name": "opencode-pilot",
       "dependencies": {
+        "@lesquel/opencode-pilot": "^1.11.3",
         "@opencode-ai/plugin": "latest",
         "qrcode-terminal": "^0.12.0",
         "web-push": "^3.6.7",
@@ -17,6 +18,8 @@
     },
   },
   "packages": {
+    "@lesquel/opencode-pilot": ["@lesquel/opencode-pilot@1.11.3", "", { "dependencies": { "@opencode-ai/plugin": "latest", "qrcode-terminal": "^0.12.0", "web-push": "^3.6.7" } }, "sha512-G5ZdTQibq9A9b2OpByaVhbn57+JHtzpiesRMgZdQhqMkr1LRcjO+HTEwsDZevt4MQ7G9y6GqrAS/I1TNjl5TpA=="],
+
     "@msgpackr-extract/msgpackr-extract-darwin-arm64": ["@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-QZHtlVgbAdy2zAqNA9Gu1UpIuI8Xvsd1v8ic6B2pZmeFnFcMWiPLfWXh7TVw4eGEZ/C9TH281KwhVoeQUKbyjw=="],
 
     "@msgpackr-extract/msgpackr-extract-darwin-x64": ["@msgpackr-extract/msgpackr-extract-darwin-x64@3.0.3", "", { "os": "darwin", "cpu": "x64" }, "sha512-mdzd3AVzYKuUmiWOQ8GNhl64/IoFGol569zNRdkLReh6LRLHOXxU4U8eq0JwaD8iFHdVGqSy4IjFL4reoWCDFw=="],
@@ -124,5 +127,9 @@
     "yaml": ["yaml@2.8.3", "", { "bin": { "yaml": "bin.mjs" } }, "sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg=="],
 
     "zod": ["zod@4.1.8", "", {}, "sha512-5R1P+WwQqmmMIEACyzSvo4JXHY5WiAFHRMg+zBZKgKS+Q1viRa0C1hmUKtHltoIFKtIdki3pRxkmpP74jnNYHQ=="],
+
+    "@lesquel/opencode-pilot/@opencode-ai/plugin": ["@opencode-ai/plugin@1.14.18", "", { "dependencies": { "@opencode-ai/sdk": "1.14.18", "effect": "4.0.0-beta.48", "zod": "4.1.8" }, "peerDependencies": { "@opentui/core": ">=0.1.100", "@opentui/solid": ">=0.1.100" }, "optionalPeers": ["@opentui/core", "@opentui/solid"] }, "sha512-oF1U7Aipz8A93WGllrwxYugopeL4ml/zd6ywoFIyuF2gbvEhOGFomAvqt1E5YjLN0wEL8nCPwFine3l7pqgNUA=="],
+
+    "@lesquel/opencode-pilot/@opencode-ai/plugin/@opencode-ai/sdk": ["@opencode-ai/sdk@1.14.18", "", { "dependencies": { "cross-spawn": "7.0.6" } }, "sha512-E0QiiB+9rv/TPH0a1GunKl6LnuXDRHDiJaIFHOPaBL364rQx+3ClHwHkz78/KBsjhjeLrC2CaLgK+CoxV/XUIQ=="],
   }
 }

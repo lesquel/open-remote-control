@@ -143,6 +143,7 @@ function buildDeps(port: number): RouteDeps {
     dev: false,
     vapid: null,
     enableGlobOpener: false,
+    fetchTimeoutMs: 10_000,
   }
 
   const eventBus = createEventBus()
@@ -151,6 +152,12 @@ function buildDeps(port: number): RouteDeps {
   const audit = createNoopAudit()
   const logger = createNoopLogger()
   const push = createPushService({ config, audit, logger })
+  const settingsStore = {
+    load: () => ({}),
+    save: () => ({}),
+    reset: () => {},
+    filePath: () => "/tmp/pilot-test-config.json",
+  }
 
   const deps: RouteDeps = {
     client: createClientMock(),
@@ -169,6 +176,9 @@ function buildDeps(port: number): RouteDeps {
     telegram,
     push,
     logger,
+    settingsStore,
+    shellEnv: {},
+    envFileApplied: [],
   }
   return deps
 }

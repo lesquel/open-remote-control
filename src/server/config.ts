@@ -2,8 +2,20 @@
 // Single source of truth for all env-var configuration.
 // Validates at startup and throws ConfigError with clear messages.
 // index.ts catches ConfigError, logs a warning, and falls back to defaults.
+//
+// Priority (highest wins):
+//   1. Shell env vars               → source: "shell-env"
+//   2. ~/.opencode-pilot/config.json (via SettingsStore) → source: "settings-store"
+//   3. .env file values             → source: "env-file"
+//   4. Hardcoded defaults           → source: "default"
+//
+// .env values are merged into process.env *without overriding* shell vars
+// (see util/dotenv.ts). That leaves us with "env-file or shell-env" keys
+// in process.env, so config resolution passes the original shell snapshot
+// separately (`shellEnv`) to distinguish the two.
 
 import { DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT } from "./constants"
+import type { PilotSettings } from "./services/settings-store"
 
 export type TunnelProvider = "off" | "cloudflared" | "ngrok"
 
@@ -30,7 +42,18 @@ export interface Config {
   vapid: VapidConfig | null
   /** Opt-in flag for the glob file opener endpoints. Disabled by default. */
   enableGlobOpener: boolean
+  /** Timeout (ms) for outbound HTTP calls (Telegram, push). */
+  fetchTimeoutMs: number
 }
+
+export type ConfigSource = "default" | "env-file" | "settings-store" | "shell-env"
+
+/**
+ * Provenance map: for each UI-editable setting, where did its effective value
+ * come from? Used by the Settings UI to badge inputs and disable fields whose
+ * values come from shell-env (since those cannot be overridden by the store).
+ */
+export type ConfigSources = Record<keyof PilotSettings, ConfigSource>
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -51,6 +74,60 @@ function parseTunnelProvider(raw: string | undefined): TunnelProvider {
   throw new ConfigError(
     `Invalid PILOT_TUNNEL value "${raw}". Must be one of: off, cloudflared, ngrok`,
   )
+}
+
+// ─── Mapping: env var name ↔ PilotSettings key ───────────────────────────────
+// Used to both (a) detect whether a value came from the shell-env and (b)
+// translate stored settings into the env-var shape that loadConfig understands.
+
+const ENV_KEY_MAP: Record<keyof PilotSettings, string> = {
+  port: "PILOT_PORT",
+  host: "PILOT_HOST",
+  permissionTimeoutMs: "PILOT_PERMISSION_TIMEOUT",
+  tunnel: "PILOT_TUNNEL",
+  telegramToken: "PILOT_TELEGRAM_TOKEN",
+  telegramChatId: "PILOT_TELEGRAM_CHAT_ID",
+  vapidPublicKey: "PILOT_VAPID_PUBLIC_KEY",
+  vapidPrivateKey: "PILOT_VAPID_PRIVATE_KEY",
+  vapidSubject: "PILOT_VAPID_SUBJECT",
+  enableGlobOpener: "PILOT_ENABLE_GLOB_OPENER",
+  fetchTimeoutMs: "PILOT_FETCH_TIMEOUT_MS",
+}
+
+export function envKeyFor(field: keyof PilotSettings): string {
+  return ENV_KEY_MAP[field]
+}
+
+/**
+ * Serialize a PilotSettings value into the string form expected by env-var
+ * parsing. Kept in sync with loadConfig() parsing logic.
+ */
+function stringifySetting<K extends keyof PilotSettings>(
+  key: K,
+  value: NonNullable<PilotSettings[K]>,
+): string {
+  if (typeof value === "boolean") return value ? "true" : "false"
+  return String(value)
+}
+
+/**
+ * Merge stored settings into an env-like object, without overriding keys that
+ * were already set in `shellEnv` (those always win). Returns a NEW object.
+ */
+export function mergeStoredSettings(
+  baseEnv: NodeJS.ProcessEnv,
+  shellEnv: NodeJS.ProcessEnv,
+  stored: PilotSettings,
+): NodeJS.ProcessEnv {
+  const out = { ...baseEnv }
+  for (const key of Object.keys(ENV_KEY_MAP) as Array<keyof PilotSettings>) {
+    const envKey = ENV_KEY_MAP[key]
+    const storedValue = stored[key]
+    if (storedValue === undefined || storedValue === null) continue
+    if (shellEnv[envKey] !== undefined && shellEnv[envKey] !== "") continue
+    out[envKey] = stringifySetting(key, storedValue as NonNullable<PilotSettings[typeof key]>)
+  }
+  return out
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -80,6 +157,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       : null
 
   const enableGlobOpener = env.PILOT_ENABLE_GLOB_OPENER === "true"
+  const fetchTimeoutMs = parseIntOrDefault(env.PILOT_FETCH_TIMEOUT_MS, 10_000)
 
   return {
     port,
@@ -90,6 +168,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dev,
     vapid,
     enableGlobOpener,
+    fetchTimeoutMs,
   }
 }
 
@@ -111,3 +190,70 @@ export function loadConfigSafe(
     throw err
   }
 }
+
+// ─── Source resolution ──────────────────────────────────────────────────────
+
+/**
+ * Compute the provenance of each UI-editable setting.
+ *
+ * Inputs:
+ *   - `shellEnv`: snapshot of env BEFORE dotenv + settings-store were applied.
+ *     A key present here means the user exported it in their shell.
+ *   - `envFileApplied`: list of env vars written by .env (loadDotEnv.applied).
+ *   - `stored`: current SettingsStore content.
+ *
+ * Anything not from shell-env, env-file, or settings-store is classified as
+ * "default" (the value from constants.ts / loadConfig).
+ */
+export function resolveSources(
+  shellEnv: NodeJS.ProcessEnv,
+  envFileApplied: string[],
+  stored: PilotSettings,
+): ConfigSources {
+  const out = {} as ConfigSources
+  const envFileSet = new Set(envFileApplied)
+  for (const key of Object.keys(ENV_KEY_MAP) as Array<keyof PilotSettings>) {
+    const envKey = ENV_KEY_MAP[key]
+    if (shellEnv[envKey] !== undefined && shellEnv[envKey] !== "") {
+      out[key] = "shell-env"
+    } else if (stored[key] !== undefined && stored[key] !== null) {
+      out[key] = "settings-store"
+    } else if (envFileSet.has(envKey)) {
+      out[key] = "env-file"
+    } else {
+      out[key] = "default"
+    }
+  }
+  return out
+}
+
+/**
+ * Project the effective Config down to the PilotSettings shape the UI expects.
+ * Used by GET /settings so the client can display a single structured object.
+ */
+export function projectConfigToSettings(config: Config): Required<PilotSettings> {
+  return {
+    port: config.port,
+    host: config.host,
+    permissionTimeoutMs: config.permissionTimeoutMs,
+    tunnel: config.tunnel,
+    telegramToken: config.telegram?.token ?? "",
+    telegramChatId: config.telegram?.chatId ?? "",
+    vapidPublicKey: config.vapid?.publicKey ?? "",
+    vapidPrivateKey: config.vapid?.privateKey ?? "",
+    vapidSubject: config.vapid?.subject ?? "",
+    enableGlobOpener: config.enableGlobOpener,
+    fetchTimeoutMs: config.fetchTimeoutMs,
+  }
+}
+
+/** Settings that cannot be applied at runtime — require plugin restart. */
+export const RESTART_REQUIRED_FIELDS: ReadonlyArray<keyof PilotSettings> = [
+  "port",
+  "host",
+  "tunnel",
+  "vapidPublicKey",
+  "vapidPrivateKey",
+  "vapidSubject",
+  "enableGlobOpener",
+]

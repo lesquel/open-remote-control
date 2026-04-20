@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { loadConfigSafe } from "./config"
+import { loadConfigSafe, mergeStoredSettings, resolveSources } from "./config"
 import { loadDotEnv } from "./util/dotenv"
 import { generateToken } from "./util/auth"
 import { createAuditLog } from "./services/audit"
@@ -7,6 +7,7 @@ import { createEventBus } from "./services/event-bus"
 import { createPermissionQueue } from "./services/permission-queue"
 import { createTelegramBot } from "./services/telegram"
 import { createPushService } from "./services/push"
+import { createSettingsStore } from "./services/settings-store"
 import { startTunnel } from "./services/tunnel"
 import { writeState, clearState } from "./services/state"
 import { writeBanner } from "./services/banner"
@@ -18,6 +19,11 @@ import { createLogger } from "./util/logger"
 export default {
   id: "opencode-pilot",
   server: (async (ctx) => {
+    // Snapshot the shell environment BEFORE .env and settings-store touch
+    // process.env. This is what tells us which variables came from the user's
+    // shell (highest priority) vs layered overlays.
+    const shellEnv: NodeJS.ProcessEnv = { ...process.env }
+
     // OpenCode does not auto-load the plugin's .env into process.env, so we
     // do it ourselves before reading config. Variables already set in the
     // shell environment win over .env values.
@@ -34,13 +40,19 @@ export default {
         .catch(() => {})
     }
 
-    const config = loadConfigSafe(process.env, (msg) => {
+    const logger = createLogger(ctx.client, "opencode-pilot")
+
+    // Load persistent settings from ~/.opencode-pilot/config.json and merge
+    // them into the env snapshot, respecting shell-env as the top priority.
+    const settingsStore = createSettingsStore({ logger })
+    const storedSettings = settingsStore.load()
+    const mergedEnv = mergeStoredSettings(process.env, shellEnv, storedSettings)
+
+    const config = loadConfigSafe(mergedEnv, (msg) => {
       ctx.client.app
         .log({ body: { service: "opencode-pilot", level: "warn", message: msg } })
         .catch(() => {})
     })
-
-    const logger = createLogger(ctx.client, "opencode-pilot")
 
     let currentToken = generateToken()
     const audit = createAuditLog(ctx)
@@ -72,6 +84,9 @@ export default {
       telegram,
       push,
       logger,
+      settingsStore,
+      shellEnv,
+      envFileApplied: dotenv.applied,
     }
 
     const server = createRemoteServer(deps)

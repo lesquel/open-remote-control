@@ -4,6 +4,77 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.12.0] — 2026-04-20
+
+Major UX release: configure the plugin from the dashboard Settings UI instead of editing `.env` files. The `.env` flow still works (power users); the UI is the new easy path.
+
+### Added — Settings UI for env vars (the headline)
+
+Open the dashboard → click the gear (⚙) → scroll to **Plugin configuration**. Five collapsible groups:
+
+- **Server** — port, host
+- **Tunnel** — provider dropdown (off / cloudflared / ngrok)
+- **Notifications** — Telegram (token + chat id), VAPID keys (with **Generate VAPID keys** button), VAPID subject
+- **Permissions** — timeout in ms
+- **Advanced** — enableGlobOpener, fetchTimeoutMs
+
+Each field shows a badge (`saved`, `.env`, `shell`, `default`) so you know where the current value comes from. Fields set via shell env vars are locked from the UI (you'd have to unset the shell var to override). Restart-required fields show an inline warning. Password fields (Telegram token, VAPID private key) have a show/hide eye toggle.
+
+**Generate VAPID keys** calls a new server endpoint that runs `web-push.generateVAPIDKeys()` and fills both inputs in one click — no more `bunx web-push`.
+
+**Reset to defaults** deletes `~/.opencode-pilot/config.json` after a confirm dialog.
+
+### Added — Persistent settings store
+
+- New `src/server/services/settings-store.ts` — atomic file write to `~/.opencode-pilot/config.json` (write to `.tmp`, then rename, so a crash can never leave a corrupt file).
+- Sanitize on load AND save: drops unknown keys, validates types.
+- Survives plugin restarts. Doesn't touch your `.env`.
+
+### Added — Settings HTTP endpoints
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/settings` | required | Returns current effective settings + per-field source + restartRequired list |
+| `PATCH` | `/settings` | required | Validates, merges with stored settings, writes to file. Returns 409 `SHELL_ENV_PINNED` for fields set via shell env |
+| `POST` | `/settings/reset` | required | Deletes `~/.opencode-pilot/config.json` |
+| `POST` | `/settings/vapid/generate` | required | Returns a fresh `{ publicKey, privateKey, subject }` pair |
+
+All wired into the route table; `/settings*` added to `apiPaths` in the service worker.
+
+### Changed — Config priority
+
+Now (highest wins):
+
+```
+1. Shell env vars                e.g. PILOT_PORT=5000 opencode
+2. ~/.opencode-pilot/config.json  written by the Settings UI
+3. .env file                      power-user file-based config
+4. Hardcoded defaults
+```
+
+Implementation: `mergeStoredSettings()` + `resolveSources()` in `src/server/config.ts`. `index.ts` snapshots `process.env` BEFORE `.env` and settings-store touch it, so we know which fields are truly "from shell" vs overlays.
+
+### Fixed — Self-reference in package.json
+
+A previous edit added `@lesquel/opencode-pilot` to its own `dependencies` (self-reference), which would have broken `npm install` on fresh clones. Removed.
+
+### Added — Tests
+
+35 new tests (`146 → 181` pass / 0 fail):
+- `services/settings-store.test.ts` — 10 tests (load / save / merge / reset / corrupt-file / atomic-tmp-cleanup)
+- `config.test.ts` — 13 new tests (mergeStoredSettings / resolveSources / projectConfigToSettings)
+- `http/settings.test.ts` — 12 tests (GET/PATCH/RESET, 400/409 cases, source classification)
+
+### Documentation
+
+- `README.md` — new "Configuration — two ways" section. Explains UI flow + env-var table + priority diagram.
+- `docs/CONFIGURATION.md` — top-of-file rewrite explaining UI vs `.env`, "Using the Settings UI (v1.12+)" walkthrough, priority block.
+- `CLAUDE.md` — route table, structure tree, config section updated.
+
+### Changed — SW cache `pilot-v17` → `pilot-v18`
+
+---
+
 ## [1.11.3] — 2026-04-20
 
 ### Changed — npm metadata + README rewrite for users

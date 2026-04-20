@@ -12,13 +12,21 @@ import {
   validatePromptBody,
   validatePushSubscribe,
   validatePushTest,
+  validateSettingsPatch,
 } from "./validators"
 import { generateToken } from "../util/auth"
 import { updateStateToken } from "../services/state"
 import { getLocalIP } from "../util/network"
 import { getTunnelInfo } from "../services/tunnel"
 import { PILOT_VERSION } from "../constants"
+import {
+  RESTART_REQUIRED_FIELDS,
+  envKeyFor,
+  projectConfigToSettings,
+  resolveSources,
+} from "../config"
 import type { PushSubscriptionJson } from "../services/push"
+import type { PilotSettings } from "../services/settings-store"
 import type {
   Agent,
   LspStatus,
@@ -1052,6 +1060,123 @@ export async function readFileAbs({ url, deps }: RouteContext): Promise<Response
     const message = err instanceof Error ? err.message : String(err)
     deps.logger.error("fs read failed", { error: message, path: safe.resolved })
     return jsonError("READ_ERROR", "Failed to read file", 500, CORS_HEADERS)
+  }
+}
+
+// ─── Settings API ────────────────────────────────────────────────────────────
+//
+// Exposes the layered configuration (defaults → .env → settings-store → shell)
+// so the dashboard can display and edit it. Writes go to the JSON store; shell
+// env vars cannot be overridden from the UI (409 on conflict).
+//
+// Sensitive fields (telegram token, VAPID private key) are returned as-is via
+// HTTPS/localhost — the transport is already trusted and the UI needs them to
+// show "previously saved" state.
+
+function buildSettingsResponse(deps: RouteContext["deps"]): {
+  settings: Required<PilotSettings>
+  sources: ReturnType<typeof resolveSources>
+  restartRequired: ReadonlyArray<keyof PilotSettings>
+  configFilePath: string
+} {
+  const stored = deps.settingsStore.load()
+  return {
+    settings: projectConfigToSettings(deps.config),
+    sources: resolveSources(deps.shellEnv, deps.envFileApplied, stored),
+    restartRequired: RESTART_REQUIRED_FIELDS,
+    configFilePath: deps.settingsStore.filePath(),
+  }
+}
+
+export async function getSettings({ deps }: RouteContext): Promise<Response> {
+  return json(buildSettingsResponse(deps), 200, CORS_HEADERS)
+}
+
+export async function patchSettings({ req, deps }: RouteContext): Promise<Response> {
+  let rawBody: unknown
+  try {
+    rawBody = await req.json()
+  } catch {
+    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+  }
+
+  const validation = validateSettingsPatch(rawBody)
+  if (!validation.ok) {
+    deps.audit.log("validation.failed", {
+      endpoint: "PATCH /settings",
+      reason: validation.error,
+    })
+    return jsonError("VALIDATION_FAILED", validation.error, 400, CORS_HEADERS)
+  }
+
+  // Reject fields that are pinned by shell-env — we cannot override those.
+  const conflicts: string[] = []
+  for (const key of Object.keys(validation.data) as Array<keyof PilotSettings>) {
+    const envKey = envKeyFor(key)
+    if (deps.shellEnv[envKey] !== undefined && deps.shellEnv[envKey] !== "") {
+      conflicts.push(key)
+    }
+  }
+  if (conflicts.length > 0) {
+    return jsonError(
+      "SHELL_ENV_PINNED",
+      `Cannot override: ${conflicts.join(", ")} (set via shell env). Unset the env var and retry.`,
+      409,
+      CORS_HEADERS,
+    )
+  }
+
+  deps.settingsStore.save(validation.data)
+  deps.audit.log("settings.saved", {
+    keys: Object.keys(validation.data),
+  })
+
+  return json(buildSettingsResponse(deps), 200, CORS_HEADERS)
+}
+
+export async function resetSettings({ deps }: RouteContext): Promise<Response> {
+  deps.settingsStore.reset()
+  deps.audit.log("settings.reset", {})
+  return json({ ok: true, configFilePath: deps.settingsStore.filePath() }, 200, CORS_HEADERS)
+}
+
+/**
+ * Generate a fresh VAPID key pair. Does NOT auto-save — the UI shows the keys
+ * and lets the user decide. Requires web-push to be installed.
+ */
+export async function generateVapidKeys({ deps }: RouteContext): Promise<Response> {
+  try {
+    const mod = (await import("web-push")) as unknown as
+      | { generateVAPIDKeys?: () => { publicKey: string; privateKey: string } }
+      | { default: { generateVAPIDKeys?: () => { publicKey: string; privateKey: string } } }
+    const wp =
+      "default" in (mod as Record<string, unknown>) &&
+      typeof (mod as { default: unknown }).default === "object"
+        ? (mod as { default: { generateVAPIDKeys?: () => { publicKey: string; privateKey: string } } }).default
+        : (mod as { generateVAPIDKeys?: () => { publicKey: string; privateKey: string } })
+    if (typeof wp.generateVAPIDKeys !== "function") {
+      return jsonError(
+        "WEB_PUSH_UNAVAILABLE",
+        "web-push module does not expose generateVAPIDKeys",
+        500,
+        CORS_HEADERS,
+      )
+    }
+    const { publicKey, privateKey } = wp.generateVAPIDKeys()
+    deps.audit.log("settings.vapid.generated", {})
+    return json(
+      {
+        publicKey,
+        privateKey,
+        subject: "mailto:admin@opencode-pilot.local",
+      },
+      200,
+      CORS_HEADERS,
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.logger.error("generateVapidKeys failed", { error: message })
+    return jsonError("WEB_PUSH_UNAVAILABLE", "web-push module not installed", 503, CORS_HEADERS)
   }
 }
 

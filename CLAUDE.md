@@ -37,6 +37,7 @@ src/server/
 │   ├── telegram.ts         # Telegram bot (createTelegramBot)
 │   ├── qr.ts               # QR code generation
 │   ├── banner.ts           # Banner file generation (writeBanner)
+│   ├── settings-store.ts   # Persistent JSON config (~/.opencode-pilot/config.json) — v1.12
 │   └── notifications.ts    # Unified notification pipeline (createNotificationService)
 └── util/
     ├── auth.ts             # Token generation (generateToken)
@@ -57,13 +58,18 @@ src/tui/
 - Typed errors: `PilotError` base class, `jsonError()` for HTTP errors
 
 ## Config
+Priority (highest wins): shell env > `~/.opencode-pilot/config.json` > `.env` > defaults.
 - `PILOT_PORT` (default: 4097)
 - `PILOT_HOST` (default: 127.0.0.1)
 - `PILOT_PERMISSION_TIMEOUT` (default: 300000ms)
 - `PILOT_TUNNEL` (default: off) — `cloudflared` or `ngrok` to expose via public tunnel
 - `PILOT_TELEGRAM_TOKEN` + `PILOT_TELEGRAM_CHAT_ID` — optional Telegram bot
+- `PILOT_VAPID_PUBLIC_KEY` + `PILOT_VAPID_PRIVATE_KEY` + `PILOT_VAPID_SUBJECT` — Web Push
+- `PILOT_ENABLE_GLOB_OPENER` (default: false) — enable `/fs/glob` + `/fs/read`
 - `PILOT_DEV` (default: false) — when true, dashboard HTML is re-read on each request
 - `PILOT_FETCH_TIMEOUT_MS` (default: 10000) — timeout for external HTTP calls (Telegram API)
+
+Editable from the dashboard Settings UI (writes to `~/.opencode-pilot/config.json`): everything except `PILOT_DEV`. See `services/settings-store.ts`.
 
 ## Event Types (PilotEvent discriminated union)
 - `pilot.connected` — SSE client connected
@@ -104,5 +110,11 @@ src/tui/
 | GET | /projects | required |
 | GET | /project/current | required |
 | GET | /lsp/status | required |
+| GET | /settings | required |
+| PATCH | /settings | required |
+| POST | /settings/reset | required |
+| POST | /settings/vapid/generate | required |
 
 **Multi-project routing**: per-project endpoints (`/sessions*`, `/agents`, `/providers`, `/mcp/status`, `/project/current`, `/lsp/status`, `/tools`) accept an optional `?directory=<path>` query param that OpenCode uses to auto-boot an instance context for that worktree. Path traversal (`..`) and overlong paths (>512 chars) return 400.
+
+**Plugin settings (v1.12)**: `/settings*` endpoints read and write `~/.opencode-pilot/config.json`. Priority is shell env > config.json > `.env` > defaults. Shell-env-pinned fields return 409 on PATCH (cannot be overridden from the UI). See `docs/CONFIGURATION.md`.

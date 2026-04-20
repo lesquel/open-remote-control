@@ -294,3 +294,45 @@ export async function pushTest(endpoint) {
 export async function fetchConnectInfo() {
   return request('GET', '/connect-info')
 }
+
+// ── Plugin settings (v1.12) ───────────────────────────────────────────────
+
+/**
+ * Fetch current effective plugin settings + their provenance.
+ * Shape: { settings, sources, restartRequired, configFilePath }.
+ */
+export async function fetchPluginSettings() {
+  return request('GET', '/settings')
+}
+
+/**
+ * Patch plugin settings — writes to ~/.opencode-pilot/config.json.
+ * Shell-env-pinned fields will return 409 SHELL_ENV_PINNED.
+ */
+export async function patchPluginSettings(patch) {
+  const url = buildUrl('/settings')
+  const r = await fetch(url, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(patch),
+  })
+  if (!r.ok) {
+    let payload = null
+    try { payload = await r.json() } catch (_) {}
+    const err = new Error(payload?.error?.message || `${r.status}`)
+    err.status = r.status
+    err.code = payload?.error?.code
+    throw err
+  }
+  return r.json()
+}
+
+/** Delete the stored config.json — returns { ok: true, configFilePath }. */
+export async function resetPluginSettings() {
+  return request('POST', '/settings/reset')
+}
+
+/** Generate a fresh VAPID key pair (no auto-save). */
+export async function generateVapidKeys() {
+  return request('POST', '/settings/vapid/generate')
+}

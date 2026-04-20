@@ -5,6 +5,7 @@ import type { EventBus } from "../services/event-bus"
 import type { PermissionQueue } from "../services/permission-queue"
 import type { TelegramBot } from "../services/telegram"
 import type { PushService } from "../services/push"
+import type { SettingsStore } from "../services/settings-store"
 import type { Logger } from "../util/logger"
 
 /** Auth requirements for a route. */
@@ -37,6 +38,15 @@ export interface RouteDeps {
   telegram: TelegramBot
   push: PushService
   logger: Logger
+  /** Persistent settings store (~/.opencode-pilot/config.json). */
+  settingsStore: SettingsStore
+  /**
+   * Snapshot of process.env taken BEFORE .env and the settings-store were
+   * layered on top. Used by /settings to classify each field's source.
+   */
+  shellEnv: NodeJS.ProcessEnv
+  /** Keys that the .env loader wrote into process.env (provenance). */
+  envFileApplied: string[]
 }
 
 export interface RouteContext {
@@ -91,6 +101,10 @@ import {
   testPush,
   globFiles,
   readFileAbs,
+  getSettings,
+  patchSettings,
+  resetSettings,
+  generateVapidKeys,
 } from "./handlers"
 
 /**
@@ -210,6 +224,11 @@ export const routes: Route[] = [
   // Glob file opener — gated by config.enableGlobOpener
   { method: "GET", pattern: /^\/fs\/glob$/, auth: "required", handler: globFiles },
   { method: "GET", pattern: /^\/fs\/read$/, auth: "required", handler: readFileAbs },
+  // Plugin settings — editable from the dashboard, persisted to ~/.opencode-pilot/config.json
+  { method: "GET", pattern: /^\/settings$/, auth: "required", handler: getSettings },
+  { method: "PATCH", pattern: /^\/settings$/, auth: "required", handler: patchSettings },
+  { method: "POST", pattern: /^\/settings\/reset$/, auth: "required", handler: resetSettings },
+  { method: "POST", pattern: /^\/settings\/vapid\/generate$/, auth: "required", handler: generateVapidKeys },
 ]
 
 /** Match the first route whose method and pattern match. */

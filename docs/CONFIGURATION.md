@@ -1,8 +1,33 @@
-# Configuration — environment variables for opencode-pilot
+# Configuration — opencode-pilot
 
-Each user of opencode-pilot configures the plugin via environment variables in
-their own `.env` file. Variables are NOT shared across users — your
-configuration stays on your machine.
+Since v1.12 there are **two ways** to configure the plugin:
+
+1. **From the dashboard Settings UI** (easy path) — open the dashboard, click the
+   gear icon, go to *Plugin configuration*, edit fields, click Save. Values
+   are persisted to `~/.opencode-pilot/config.json`.
+2. **Via environment variables / `.env` file** (power-user path) — documented
+   below. Works the same as it has since v1.0.
+
+Both can coexist. The UI writes to `config.json`; the `.env` file is still
+read on startup. Shell environment variables always win over both.
+
+## Priority (highest wins)
+
+```
+1. Shell env vars               e.g. PILOT_PORT=5000 opencode
+2. ~/.opencode-pilot/config.json (written by the Settings UI)
+3. .env files                    (process.cwd()/.env or plugin install dir)
+4. Hardcoded defaults            (constants.ts)
+```
+
+Two consequences worth internalizing:
+
+- **Shell vars cannot be overridden from the UI.** The Settings UI disables
+  those inputs with a "shell" badge. If you want to edit a field from the UI,
+  unset the shell variable first.
+- **The UI doesn't touch your `.env`.** It writes to `config.json`. If you
+  want to share config with a teammate, share the `.env` (or hand them a
+  sanitized `config.json`).
 
 ## How the plugin loads `.env`
 
@@ -19,6 +44,25 @@ This means you can override any setting per-launch:
 ```bash
 PILOT_PORT=5000 opencode    # uses port 5000 just for this run
 ```
+
+## Using the Settings UI (v1.12+)
+
+From the dashboard:
+
+1. Click the gear icon in the header to open Settings
+2. Scroll to **Plugin configuration**
+3. Each field shows a badge indicating its source:
+   - `saved` — written by the UI, stored in `~/.opencode-pilot/config.json`
+   - `.env` — came from a `.env` file
+   - `shell` — set via shell environment (input is disabled)
+   - `default` — unset, using the built-in default
+4. Edit fields and click **Save**. A toast confirms success.
+5. Some fields (port, host, tunnel, VAPID keys, enableGlobOpener) require an
+   OpenCode restart to take effect — the UI shows an inline warning.
+6. **Reset to defaults** deletes `~/.opencode-pilot/config.json`. Doesn't
+   affect the current running plugin; takes effect on restart.
+7. **Generate VAPID keys** runs `web-push.generateVAPIDKeys()` on the server
+   and fills the two key fields. You still have to click Save to persist.
 
 ## Quick start `.env`
 
