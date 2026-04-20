@@ -90,8 +90,11 @@ function ensurePackageInstalled(configDir: string, installer: string): boolean {
     )
   }
 
-  const args =
-    installer === "bun" ? ["add", PACKAGE_NAME] : ["install", PACKAGE_NAME]
+  // Always pin @latest so re-running init upgrades a stale install. Without
+  // this, bun add / npm install of an already-installed package is a no-op
+  // and users miss our new releases.
+  const spec = `${PACKAGE_NAME}@latest`
+  const args = installer === "bun" ? ["add", spec] : ["install", spec]
   const r = spawnSync(installer, args, { cwd: configDir, stdio: "inherit" })
   if (r.status !== 0) {
     console.error(`\n${installer} ${args.join(" ")} failed (exit ${r.status})`)

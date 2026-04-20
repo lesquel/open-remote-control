@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.12.4] — 2026-04-20
+
+### Fixed — `init` command no longer silently uses stale install
+
+Re-running `npx @lesquel/opencode-pilot init` when the package was already installed used to be a no-op (because `bun add @lesquel/opencode-pilot` skips if already present). That made the v1.12.x bug fixes invisible to users who had v1.11.x installed.
+
+Init now installs `@lesquel/opencode-pilot@latest` explicitly, forcing an upgrade on every run.
+
+If you already installed via `init`, also run:
+
+```bash
+cd ~/.config/opencode
+bun add @lesquel/opencode-pilot@latest
+```
+
+### Where to find OpenCode logs (FYI)
+
+If the plugin doesn't seem to load, check the log directory:
+
+- **Linux**: `~/.local/share/opencode/log/<timestamp>.log`
+- **macOS**: `~/Library/Logs/opencode/<timestamp>.log`
+- **Windows**: `%LOCALAPPDATA%\opencode\log\<timestamp>.log`
+
+Look for lines like `service=tui.plugin path=...opencode-pilot... loading tui plugin`. If you see "loading" but no toast appears in the TUI, the plugin loaded but didn't initialize correctly — open an issue with the log lines.
+
+---
+
 ## [1.12.3] — 2026-04-20
 
 ### Fixed — TUI plugin id collided with server plugin id (slash commands silently dropped)
