@@ -9,7 +9,7 @@ import {
 import { normalizeMessage } from './messages.js'
 import { fetchMessages } from './api.js'
 
-const PILOT_VERSION = '1.10.0'
+const PILOT_VERSION = '1.11.0'
 
 // ── Escape helper ─────────────────────────────────────────────────────────────
 function esc(s) {
@@ -101,14 +101,36 @@ function ensureModal() {
   `
   document.body.appendChild(el)
 
-  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open') })
-  document.getElementById('debug-close-btn').addEventListener('click', () => el.classList.remove('open'))
-  document.getElementById('debug-copy-btn').addEventListener('click', () => {
-    const text = document.getElementById('debug-json-output')?.textContent ?? ''
-    navigator.clipboard?.writeText(text).then(() => {
-      const btn = document.getElementById('debug-copy-btn')
-      if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy JSON' }, 1500) }
-    })
+  // v1.11: delegate clicks on the overlay so the close button keeps working
+  // even if the button element is re-rendered or the direct listener was
+  // lost. Previously the modal had no CSS either, so closing was invisible.
+  el.addEventListener('click', (e) => {
+    const t = e.target
+    if (!t) return
+    // Click on backdrop (the overlay itself, not its children) → close
+    if (t === el) { el.classList.remove('open'); return }
+    // Click inside the close button (or its descendants) → close
+    if (t.closest && t.closest('#debug-close-btn')) {
+      e.preventDefault()
+      e.stopPropagation()
+      el.classList.remove('open')
+      return
+    }
+    // Click inside the copy button → copy
+    if (t.closest && t.closest('#debug-copy-btn')) {
+      const text = document.getElementById('debug-json-output')?.textContent ?? ''
+      navigator.clipboard?.writeText(text).then(() => {
+        const btn = document.getElementById('debug-copy-btn')
+        if (btn) { btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy JSON' }, 1500) }
+      })
+    }
+  })
+
+  // Global Escape key to close when open
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && el.classList.contains('open')) {
+      el.classList.remove('open')
+    }
   })
 }
 

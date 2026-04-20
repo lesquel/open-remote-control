@@ -502,9 +502,13 @@ function openModelPicker() {
 }
 
 /**
- * Open a project picker. Lists all projects from /projects.
- * Switching a project sets activeDirectory which routes all subsequent API calls
- * to that project's instance via ?directory= query param.
+ * Open a project picker. Lists all projects from /projects with a search
+ * box, full paths, and last-modified timestamps. Selecting a project adds
+ * (or switches to) a tab in the project tabs bar.
+ *
+ * v1.11: previously this set activeDirectory directly; now it goes through
+ * the tabs API so opening a project creates a real tab you can switch back
+ * to without refetching.
  */
 export async function openProjectPicker() {
   let projects = []
@@ -516,11 +520,6 @@ export async function openProjectPicker() {
     return
   }
 
-  if (!projects.length) {
-    toast('No projects found')
-    return
-  }
-
   const overlay = document.getElementById('command-palette')
   if (!overlay) return
   overlay.classList.add('open')
@@ -529,103 +528,231 @@ export async function openProjectPicker() {
   const listEl = document.getElementById('palette-list')
   if (!listEl) return
 
-  let selIdx = 0
+  // Normalize and sort projects: put most-recently-modified first when we have
+  // timestamp info, otherwise keep original order.
+  const normalized = projects.map(p => {
+    const path = p.path ?? p.root ?? p.directory ?? null
+    const labelRaw = p.name ?? (path ? shortenPath(path) : '(project)')
+    const modified = p.time?.updated ?? p.updated ?? p.lastModified ?? p.mtime ?? null
+    return { label: labelRaw, path, modified, raw: p }
+  })
+  normalized.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0))
 
-  // Read current active directory from state
+  // Split into Recent (top 5 with modified timestamp) + All known
+  const withTime = normalized.filter(p => p.modified)
+  const recent   = withTime.slice(0, 5)
+  const recentSet = new Set(recent.map(p => p.path))
+  const allKnown = normalized.filter(p => !recentSet.has(p.path))
+
   const currentDir = getActiveDirectory()
 
-  // Build items: "Open custom folder…" first, then "Default", then known projects
-  const items = [
-    { label: 'Open custom folder…', path: null, isCustom: true, isDefault: false },
-    { label: 'Default (back to OpenCode instance)', path: null, isDefault: true },
-    ...projects.map(p => ({
-      label:     p.name ?? shortenPath(p.path ?? p.root ?? ''),
-      path:      p.path ?? p.root ?? null,
-      isDefault: false,
-    })),
-  ]
+  let query = ''
+  let selIdx = 0
+  let flatItems = [] // items available for keyboard nav after filtering
 
-  const renderProjectList = () => {
-    listEl.innerHTML = `<div class="palette-section">
-      <div class="palette-section-label">Open Project (routes all API calls)</div>
-      ${items.map((it, i) => {
-        const isActive = it.isDefault ? !currentDir : (!it.isCustom && currentDir === it.path)
-        const icon = it.isCustom ? '…' : (isActive ? '✓' : '▤')
-        return `<div class="palette-item${i === selIdx ? ' selected' : ''}" data-proj-idx="${i}">
-          <span class="palette-item-icon">${icon}</span>
-          <span class="palette-item-label">${escHtml(it.label)}</span>
-          ${it.path ? `<span class="palette-item-folder">${escHtml(shortenPath(it.path))}</span>` : ''}
-        </div>`
-      }).join('')}
-    </div>`
+  const render = () => {
+    const q = query.trim().toLowerCase()
+    const match = (p) => {
+      if (!q) return true
+      return (p.label ?? '').toLowerCase().includes(q)
+        || (p.path  ?? '').toLowerCase().includes(q)
+    }
 
-    listEl.querySelectorAll('.palette-item[data-proj-idx]').forEach(el => {
+    // Build sections
+    const staticItems = [
+      { kind: 'custom',  label: 'Open custom folder…', path: null, icon: '…' },
+      { kind: 'default', label: 'Default (back to OpenCode instance)', path: null, icon: '✓' },
+    ].filter(it => match({ label: it.label, path: '' }))
+
+    const recentFiltered = recent.filter(match)
+    const allFiltered    = allKnown.filter(match)
+
+    flatItems = [
+      ...staticItems,
+      ...recentFiltered.map(p => ({ kind: 'project', ...p })),
+      ...allFiltered.map(p   => ({ kind: 'project', ...p })),
+    ]
+
+    if (selIdx >= flatItems.length) selIdx = Math.max(0, flatItems.length - 1)
+
+    const staticHtml = staticItems.map((it, i) => {
+      const globalIdx = i
+      const selClass = globalIdx === selIdx ? ' selected' : ''
+      return `<div class="palette-project-row${selClass}" data-proj-idx="${globalIdx}">
+        <div class="palette-project-row-top">
+          <span class="palette-project-row-icon">${it.icon}</span>
+          <span class="palette-project-row-label">${escHtml(it.label)}</span>
+        </div>
+      </div>`
+    }).join('')
+
+    const projectRow = (p, globalIdx) => {
+      const active = p.path && currentDir === p.path
+      const icon = active ? '✓' : '▤'
+      const selClass = globalIdx === selIdx ? ' selected' : ''
+      const activeClass = active ? ' palette-project-row-active' : ''
+      const modHtml = p.modified
+        ? `<span class="palette-project-row-time">${timeAgo(p.modified)}</span>`
+        : ''
+      return `<div class="palette-project-row${selClass}${activeClass}" data-proj-idx="${globalIdx}">
+        <div class="palette-project-row-top">
+          <span class="palette-project-row-icon">${icon}</span>
+          <span class="palette-project-row-label">${escHtml(p.label ?? '(project)')}</span>
+          ${modHtml}
+        </div>
+        ${p.path ? `<div class="palette-project-row-path">${escHtml(p.path)}</div>` : ''}
+      </div>`
+    }
+
+    let recentHtml = ''
+    if (recentFiltered.length) {
+      const startIdx = staticItems.length
+      recentHtml = `<div class="palette-section">
+        <div class="palette-section-label">Recent projects</div>
+        ${recentFiltered.map((p, i) => projectRow(p, startIdx + i)).join('')}
+      </div>`
+    }
+
+    let allHtml = ''
+    if (allFiltered.length) {
+      const startIdx = staticItems.length + recentFiltered.length
+      allHtml = `<div class="palette-section">
+        <div class="palette-section-label">All known projects</div>
+        ${allFiltered.map((p, i) => projectRow(p, startIdx + i)).join('')}
+      </div>`
+    }
+
+    const emptyHtml = (!staticItems.length && !recentFiltered.length && !allFiltered.length)
+      ? `<div class="palette-empty">No projects match "${escHtml(q)}"</div>`
+      : ''
+
+    listEl.innerHTML = `
+      <div class="palette-project-search">
+        <input id="project-picker-search" type="search" placeholder="Filter by name or path…"
+               autocomplete="off" spellcheck="false" value="${escHtml(query)}">
+      </div>
+      <div class="palette-section">
+        <div class="palette-section-label">Open Project</div>
+        ${staticHtml}
+      </div>
+      ${recentHtml}
+      ${allHtml}
+      ${emptyHtml}
+    `
+
+    // Wire row clicks
+    listEl.querySelectorAll('.palette-project-row[data-proj-idx]').forEach(el => {
       el.addEventListener('click', () => {
         const idx = parseInt(el.dataset.projIdx, 10)
-        if (!isNaN(idx) && items[idx]) applyProjectChoice(items[idx])
+        if (!isNaN(idx) && flatItems[idx]) applyProjectChoice(flatItems[idx])
       })
     })
+
+    // Wire the filter input — don't fight the outer keyHandler; just update
+    // `query` and re-render on `input` events.
+    const searchInput = listEl.querySelector('#project-picker-search')
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        query = e.target.value || ''
+        selIdx = 0
+        render()
+        // Re-focus the search input after the re-render wipes it
+        const again = listEl.querySelector('#project-picker-search')
+        if (again) {
+          again.focus()
+          // Put cursor at end
+          const val = again.value
+          again.setSelectionRange(val.length, val.length)
+        }
+      })
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === 'Escape') {
+          // Let the outer keyHandler deal with these — it's on the main palette input
+          // but we're focused on the inline search, so handle here too.
+          e.preventDefault()
+          if (e.key === 'ArrowDown') { selIdx = (selIdx + 1) % Math.max(1, flatItems.length); render(); return }
+          if (e.key === 'ArrowUp')   { selIdx = (selIdx - 1 + Math.max(1, flatItems.length)) % Math.max(1, flatItems.length); render(); return }
+          if (e.key === 'Enter')     { if (flatItems[selIdx]) applyProjectChoice(flatItems[selIdx]); return }
+          if (e.key === 'Escape')    { closePalette(); return }
+        }
+      })
+    }
   }
 
   const applyProjectChoice = async (item) => {
-    if (item.isCustom) {
+    if (item.kind === 'custom') {
       closePalette()
       openCustomFolderModal()
       return
     }
     closePalette()
-    const newDir = item.isDefault ? null : item.path
+    const newDir   = item.kind === 'default' ? null : item.path
+    const newLabel = item.kind === 'default' ? 'default' : (item.label || shortenPath(newDir))
 
-    // 1. Update state — this makes api.js append ?directory= to all subsequent calls
-    setActiveDirectory(newDir)
-
-    // 2. Persist to localStorage
+    // Use the project-tabs API (v1.11): adds a tab if not present and switches
+    // to it. The tab module handles setActiveDirectory, loadSessions, and the
+    // "auto-create a session when new folder is empty" UX fix.
     try {
-      if (newDir) localStorage.setItem(LS_ACTIVE_DIR_KEY, newDir)
-      else        localStorage.removeItem(LS_ACTIVE_DIR_KEY)
-    } catch (_) {}
+      const tabsMod = await import('./project-tabs.js')
+      await tabsMod.addProjectTab(newDir, newLabel)
+    } catch (err) {
+      // Fallback: old direct path if project-tabs.js isn't loaded for some reason
+      setActiveDirectory(newDir)
+      try {
+        if (newDir) localStorage.setItem(LS_ACTIVE_DIR_KEY, newDir)
+        else        localStorage.removeItem(LS_ACTIVE_DIR_KEY)
+      } catch (_) {}
+      setState({ activeSession: null, sessions: {}, statuses: {} })
+      try {
+        const { refreshFilesChanged } = await import('./files-changed-bridge.js')
+        refreshFilesChanged(null)
+      } catch (_) {}
+      try { await window.__refreshReferences?.() } catch (_) {}
+      await loadSessions(true)
+      const state = getState()
+      if (!Object.keys(state.sessions).length) {
+        const { createSession } = await import('./sessions.js')
+        await createSession()
+      }
+      window.__refreshRightPanel?.()
+      window.__refreshLabelStrip?.()
+    }
 
-    // 3. Clear active session (it belongs to the old project)
-    setState({ activeSession: null, sessions: {}, statuses: {} })
-
-    // 3b. Clear the files-changed panel (belonged to the old session/project)
-    try {
-      const { refreshFilesChanged } = await import('./files-changed-bridge.js')
-      refreshFilesChanged(null)
-    } catch (_) {}
-
-    // 4. Re-fetch references (agents / providers / MCP / project) for new directory — AWAIT it
-    try {
-      await window.__refreshReferences?.()
-    } catch (_) {}
-
-    // 5. Re-fetch sessions for the new directory (after references are ready)
-    await loadSessions()
-
-    // 6. Refresh right panel and label strip to reflect new path/model
-    window.__refreshRightPanel?.()
-    window.__refreshLabelStrip?.()
-
-    // 7. Toast
     const shortLabel = newDir ? shortenPath(newDir) : 'default instance'
-    toast(`Switched to: ${shortLabel}`)
+    toast(`Opened: ${shortLabel}`)
   }
 
-  renderProjectList()
+  render()
 
   const input = document.getElementById('palette-input')
   input.value = ''
   input.placeholder = 'Select project…'
-  input.focus()
+  // Move focus to the inline search input
+  setTimeout(() => {
+    const searchInput = listEl.querySelector('#project-picker-search')
+    searchInput?.focus()
+  }, 30)
 
   const keyHandler = (e) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); selIdx = (selIdx + 1) % items.length; renderProjectList() }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); selIdx = (selIdx - 1 + items.length) % items.length; renderProjectList() }
-    if (e.key === 'Enter')     { e.preventDefault(); if (items[selIdx]) applyProjectChoice(items[selIdx]); input.removeEventListener('keydown', keyHandler) }
+    // If the inline search input handled it, skip
+    if (document.activeElement?.id === 'project-picker-search') return
+    if (e.key === 'ArrowDown') { e.preventDefault(); selIdx = (selIdx + 1) % Math.max(1, flatItems.length); render() }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); selIdx = (selIdx - 1 + Math.max(1, flatItems.length)) % Math.max(1, flatItems.length); render() }
+    if (e.key === 'Enter')     { e.preventDefault(); if (flatItems[selIdx]) applyProjectChoice(flatItems[selIdx]); input.removeEventListener('keydown', keyHandler) }
     if (e.key === 'Escape')    { e.preventDefault(); closePalette(); input.removeEventListener('keydown', keyHandler) }
     e.stopImmediatePropagation()
   }
   input.addEventListener('keydown', keyHandler)
+}
+
+// ── Local helper: short relative time ──────────────────────────────────
+function timeAgo(ts) {
+  if (!ts) return ''
+  const d = Math.floor((Date.now() - ts) / 1000)
+  if (d < 60) return `${d}s`
+  if (d < 3600) return `${Math.floor(d / 60)}m`
+  if (d < 86400) return `${Math.floor(d / 3600)}h`
+  return `${Math.floor(d / 86400)}d`
 }
 
 /**
@@ -968,37 +1095,34 @@ export function openCustomFolderModal() {
     hideError()
     close()
 
-    // 1. Update state — all subsequent API calls will append ?directory=
-    setActiveDirectory(path)
-
-    // 2. Persist
-    try {
-      localStorage.setItem(LS_ACTIVE_DIR_KEY, path)
-    } catch (_) {}
-
-    // 3. Clear active session (belongs to old project)
-    setState({ activeSession: null, sessions: {}, statuses: {} })
-
-    // 4. Clear files-changed
-    try {
-      const { refreshFilesChanged } = await import('./files-changed-bridge.js')
-      refreshFilesChanged(null)
-    } catch (_) {}
-
-    // 5. Refresh references
-    try {
-      await window.__refreshReferences?.()
-    } catch (_) {}
-
-    // 6. Reload sessions
-    const { loadSessions } = await import('./sessions.js')
-    await loadSessions()
-
-    // 7. Refresh panels
-    window.__refreshRightPanel?.()
-    window.__refreshLabelStrip?.()
-
+    // v1.11: delegate to the project-tabs API. It handles setActiveDirectory,
+    // references refresh, loadSessions(true), AND auto-creates a session when
+    // the new folder has none (fix for bug #2 — previously the composer was
+    // left disabled and the user was stuck).
     const label = path.split('/').filter(Boolean).pop() ?? path
+    try {
+      const tabsMod = await import('./project-tabs.js')
+      await tabsMod.addProjectTab(path, label)
+    } catch (_err) {
+      // Fallback: old direct path if project-tabs.js isn't loaded for some reason
+      setActiveDirectory(path)
+      try { localStorage.setItem(LS_ACTIVE_DIR_KEY, path) } catch (_) {}
+      setState({ activeSession: null, sessions: {}, statuses: {} })
+      try {
+        const { refreshFilesChanged } = await import('./files-changed-bridge.js')
+        refreshFilesChanged(null)
+      } catch (_) {}
+      try { await window.__refreshReferences?.() } catch (_) {}
+      const { loadSessions, createSession } = await import('./sessions.js')
+      await loadSessions(true)
+      const state = getState()
+      if (!Object.keys(state.sessions).length) {
+        try { await createSession() } catch (_) {}
+      }
+      window.__refreshRightPanel?.()
+      window.__refreshLabelStrip?.()
+    }
+
     toast(`Opened: ${label}`)
   }
 

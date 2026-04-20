@@ -78,6 +78,9 @@ export const STORAGE_KEYS = Object.freeze({
   COST_BUDGET_WARNED:     'pilot_cost_budget_warned',
   // Feature: pinned TODOs
   PINNED_TODOS:           'pilot_pinned_todos',
+  // Feature: project tabs (multi-project simultaneous)
+  PROJECT_TABS:           'pilot_project_tabs',
+  ACTIVE_PROJECT_ID:      'pilot_active_project_id',
 })
 
 // ── Color / style constants ───────────────────────────────────────────────────

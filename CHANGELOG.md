@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.11.0] — 2026-04-19
+
+### Added — Multi-project tabs bar (major feature)
+
+- New `project-tabs.js` module + `state.js` `projectTabs`/`activeProjectId` + `addProjectTab`/`removeProjectTab`/`switchProjectTab` helpers.
+- Horizontal tabs bar between header and layout. Each tab = one open project directory with its own cached `sessions`, `statuses`, `sessionMeta`, `activeSession`.
+- Switching tabs is **instant** — no refetch. Each tab holds its own state; the top-level `state.sessions/…` slots are a live mirror of the active tab.
+- **Persistence**: tabs saved to `localStorage.pilot_project_tabs` (lite: id/directory/label) + `pilot_active_project_id`. Restored on reload; the active tab's sessions are lazy-loaded.
+- **UI**: Active tab visually distinct, close `×` always visible, `+` button opens the project picker. Min-height 44px on mobile; horizontal scroll when many tabs; labels truncate to 20 chars on smaller viewports.
+- The project picker and custom-folder modal both go through `addProjectTab()` — so opening a project or a custom folder always creates or focuses a real tab.
+
+### Fixed — Opening a custom folder left the user stuck with a disabled composer
+
+- After `openCustomFolderModal()` confirmed a path, if the new folder had NO sessions, `activeSession` stayed `null` and the composer was disabled. User couldn't send anything.
+- Fix: the new tab API calls `loadSessions(true)` (autoselect) AND auto-creates a fresh session when none exist — so the composer is always usable after opening a folder.
+- Same fix applies to `applyProjectChoice` (picker path).
+
+### Fixed — Debug Info modal Close button did nothing visible
+
+- Root cause: `.modal-overlay` and `.modal-box` CSS classes were **never defined** in styles.css. The JS correctly toggled `.open`, but with no CSS rules the class change was invisible — so clicking Close appeared to do nothing.
+- Fix: added proper modal CSS (`display:none` default; `.open` → `display:flex`, backdrop, centered box). Also switched close-button handling to event delegation on the overlay so clicks on the `×` icon / label inside the button always hit. Added global Escape-to-close.
+
+### Added — Project picker is more descriptive
+
+- Live search/filter input at the top of the picker (filters by name OR path).
+- Each row shows: project name (bold) + full path (muted) + relative last-modified time (e.g. `3h`, `2d`) when available.
+- Two sections: "Recent projects" (top 5 by mtime) and "All known projects".
+- Still includes "Open custom folder…" and "Default (back to OpenCode instance)" at the top.
+
+### Changed — SW cache `pilot-v15` → `pilot-v16`
+
+- New `project-tabs.js` added to precache; bumping cache forces clients to pick up the new tab bar CSS, the debug-modal CSS, and the new modules.
+
+---
+
 ## [1.10.0] — 2026-04-19
 
 ### Discovered — "Plan mode" is an AGENT, not a multi-choice prompt

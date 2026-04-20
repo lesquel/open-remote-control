@@ -1,6 +1,6 @@
 // main.js — Entry point: resolves auth, bootstraps all modules
 import { resolveToken } from './auth.js'
-import { setState, setActiveDirectory, getActiveDirectory, subscribe } from './state.js'
+import { setState, getActiveDirectory, subscribe } from './state.js'
 import { initMarkdown } from './markdown.js'
 import { loadSettings } from './settings.js'
 import { loadMVState, initMultiView, showMultiview } from './multi-view.js'
@@ -30,6 +30,7 @@ import { createFileBrowser } from './file-browser.js'
 import { createCostPanel } from './cost-panel.js'
 import { createPinnedTodos } from './pinned-todos.js'
 import { initConnectModal, openConnectModal } from './connect-modal.js'
+import { createProjectTabs, restoreTabsFromStorage } from './project-tabs.js'
 
 // Expose references refresh globally so command-palette can call it
 window.__refreshReferences = refreshReferences
@@ -106,11 +107,16 @@ async function bootstrap() {
   const app = document.getElementById('app')
   app.style.display = 'flex'
 
-  // 3.5 Restore active directory from localStorage (must happen before any API call)
-  try {
-    const savedDir = localStorage.getItem('pilot_active_directory')
-    if (savedDir) setActiveDirectory(savedDir)
-  } catch (_) {}
+  // 3.5 Restore project tabs + active directory from localStorage (v1.11).
+  //     This MUST happen before any API call so api.js appends the right
+  //     ?directory= on initial /agents, /providers, /sessions fetches.
+  const _restoredActiveTabId = restoreTabsFromStorage()
+
+  // Mount the project tabs bar (between header and layout).
+  const tabsBarEl = document.getElementById('project-tabs-bar')
+  if (tabsBarEl) {
+    createProjectTabs({ container: tabsBarEl })
+  }
 
   // 4. Init references FIRST (agents, models, MCP servers, project) — must
   //    complete before any module that uses getAgent/getModel/getMcpServers.
@@ -458,8 +464,31 @@ async function bootstrap() {
     })
   })
 
-  // 6. Load initial data
-  await loadSessions()
+  // 6. Load initial data.
+  //    If a tab was restored from storage, its state.activeDirectory is already
+  //    set; loadSessions() will fetch for that tab. If no tab was restored,
+  //    we first create a "default" tab so that state.activeProjectId is set
+  //    before loadSessions writes results into state — that way setState
+  //    correctly mirrors into the tab's cache.
+  const stateMod = await import('./state.js')
+  if (!_restoredActiveTabId && !stateMod.getActiveProjectTab?.()) {
+    // Fresh install / no legacy data: open a "default" tab synchronously
+    // (stateAddTab + stateSwitchTab, not the async project-tabs wrapper)
+    // so loadSessions below writes into it via the setState mirroring.
+    const defaultTab = stateMod.addProjectTab(null, 'default')
+    stateMod.switchProjectTab(defaultTab.id)
+  }
+
+  await loadSessions(true)
+
+  // Mark the active tab as loaded and mirror the fetched data into its cache
+  // so switching away and back doesn't refetch.
+  const activeTab = stateMod.getActiveProjectTab?.() ?? null
+  if (activeTab) {
+    activeTab.loaded = true
+    stateMod.syncStateToActiveTab?.()
+  }
+
   await loadPermissions()
 
   // 7. Connect SSE

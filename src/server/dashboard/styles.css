@@ -4231,3 +4231,300 @@ body {
 }
 
 /* ── End of v1.9 polish ───────────────────────────────────────────────────── */
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * v1.11 — Project tabs bar
+ * Horizontal tabs between the header and the main layout. Each tab is one
+ * open project. The + at the end opens the project picker.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+#project-tabs-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-height: 32px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 8px 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+  scrollbar-width: thin;
+  white-space: nowrap;
+}
+#project-tabs-bar:empty { display: none; }
+
+#project-tabs-bar::-webkit-scrollbar { height: 4px; }
+#project-tabs-bar::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+.project-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 10px;
+  background: var(--surface);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 240px;
+  height: 28px;
+  flex-shrink: 0;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.project-tab:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+.project-tab--active {
+  background: var(--bg);
+  color: var(--accent);
+  border-color: var(--border2);
+  border-bottom: 1px solid var(--bg);
+  margin-bottom: -1px;
+  z-index: 1;
+}
+.project-tab--loading .project-tab-label {
+  opacity: .7;
+  font-style: italic;
+}
+
+.project-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  user-select: none;
+}
+
+.project-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.project-tab-close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+.project-tab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  margin-left: 2px;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-family: var(--mono);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: border-color .15s, color .15s;
+}
+.project-tab-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  border-style: solid;
+}
+
+.project-tab-empty {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* Tablet / smaller desktop: tighter tabs */
+@media (max-width: 1024px) and (min-width: 769px) {
+  .project-tab { max-width: 180px; }
+  .project-tab-label { max-width: 140px; }
+}
+
+/* Mobile: tabs get taller (touch targets), horizontal scroll enabled */
+@media (max-width: 768px) {
+  #project-tabs-bar {
+    min-height: 44px;
+    padding: 4px 6px 0 6px;
+  }
+  .project-tab {
+    height: 40px;
+    padding: 4px 8px 4px 12px;
+    max-width: 160px;
+  }
+  .project-tab-label {
+    max-width: 120px;
+  }
+  .project-tab-close {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    font-size: 16px;
+  }
+  .project-tab-add {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+}
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * v1.11 — Debug modal CSS (was missing — Close button couldn't actually hide)
+ * The modal uses .modal-overlay + .open to toggle visibility.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal-overlay.open {
+  display: flex;
+}
+.modal-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0,0,0,.5);
+  max-width: 520px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text);
+}
+.modal-box--wide { max-width: 680px; }
+
+.modal-header {
+  flex-shrink: 0;
+}
+
+/* Debug modal inline buttons (.btn--secondary / .btn--ghost) */
+.btn.btn--secondary {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  cursor: pointer;
+}
+.btn.btn--secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+.btn.btn--ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  cursor: pointer;
+}
+.btn.btn--ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * v1.11 — Project picker: search + rich rows
+ * ───────────────────────────────────────────────────────────────────────── */
+
+.palette-project-search {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.palette-project-search input {
+  flex: 1;
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  outline: none;
+}
+.palette-project-search input:focus {
+  border-color: var(--accent);
+}
+
+.palette-project-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+.palette-project-row:hover,
+.palette-project-row.selected {
+  background: var(--surface2);
+  border-left-color: var(--accent);
+}
+.palette-project-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.palette-project-row-label {
+  color: var(--text);
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-project-row-icon {
+  color: var(--text-muted);
+  font-size: 11px;
+  width: 12px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.palette-project-row-path {
+  color: var(--text-muted);
+  font-size: 10px;
+  padding-left: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-project-row-time {
+  color: var(--text-dim);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.palette-project-row-active {
+  color: var(--accent);
+}
+
+/* ── End v1.11 additions ─────────────────────────────────────────────────── */
+
