@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.12.5] — 2026-04-20
+
+### Fixed — `init` now upgrades `@opencode-ai/plugin` SDK too
+
+OpenCode releases new SDK versions frequently (we saw `1.3.17 → 1.14.18` in a short window). When the SDK in `~/.config/opencode/node_modules/@opencode-ai/plugin` is stale, our plugin loads against an outdated API and the TUI silently fails to register slash commands.
+
+`init` now installs `@opencode-ai/plugin@latest` alongside `@lesquel/opencode-pilot@latest` on every run, so the SDK keeps pace with whatever OpenCode binary the user is running.
+
+If you hit "no slash commands" after upgrading to a new OpenCode release, re-run:
+
+```bash
+npx @lesquel/opencode-pilot init
+```
+
+That fixes it.
+
+---
+
 ## [1.12.4] — 2026-04-20
 
 ### Fixed — `init` command no longer silently uses stale install

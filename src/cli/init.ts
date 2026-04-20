@@ -93,8 +93,12 @@ function ensurePackageInstalled(configDir: string, installer: string): boolean {
   // Always pin @latest so re-running init upgrades a stale install. Without
   // this, bun add / npm install of an already-installed package is a no-op
   // and users miss our new releases.
-  const spec = `${PACKAGE_NAME}@latest`
-  const args = installer === "bun" ? ["add", spec] : ["install", spec]
+  //
+  // We also bump @opencode-ai/plugin to @latest because OpenCode releases
+  // new SDK versions frequently (1.3 → 1.14 in a short period) and a stale
+  // SDK in node_modules makes our plugin fail silently at TUI load time.
+  const specs = [`${PACKAGE_NAME}@latest`, `@opencode-ai/plugin@latest`]
+  const args = installer === "bun" ? ["add", ...specs] : ["install", ...specs]
   const r = spawnSync(installer, args, { cwd: configDir, stdio: "inherit" })
   if (r.status !== 0) {
     console.error(`\n${installer} ${args.join(" ")} failed (exit ${r.status})`)
