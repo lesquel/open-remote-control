@@ -1,7 +1,10 @@
 {
-  "name": "opencode-pilot",
-  "version": "1.11.1",
+  "name": "@lesquel/opencode-pilot",
+  "version": "1.11.2",
   "description": "Remote control plugin for OpenCode — monitor sessions, send prompts, approve permissions, and get Telegram notifications from anywhere",
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "exports": {
     "./server": "./src/server/index.ts",
@@ -25,7 +28,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/lesquel/open-remote-control"
+    "url": "git+https://github.com/lesquel/open-remote-control.git"
   },
   "bugs": {
     "url": "https://github.com/lesquel/open-remote-control/issues"

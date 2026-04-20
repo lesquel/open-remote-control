@@ -1,12 +1,12 @@
-# Publishing opencode-pilot to npm
+# Publishing @lesquel/opencode-pilot to npm
 
 This guide walks through publishing the plugin so other people can install it
-with `npm install opencode-pilot` (or `bun add opencode-pilot`) into their own
+with `npm install @lesquel/opencode-pilot` (or `bun add @lesquel/opencode-pilot`) into their own
 OpenCode setup.
 
 ## What "npm publish" actually means for this project
 
-opencode-pilot is a **plugin**, not a standalone app. When someone installs it
+@lesquel/opencode-pilot is a **plugin**, not a standalone app. When someone installs it
 via npm, they get the source files (`src/`, `package.json`, `README.md`,
 `LICENSE`, `CHANGELOG.md`). They then load it into OpenCode by adding it to
 their `opencode.json` plugins array.
@@ -16,16 +16,27 @@ Variables you set on your machine are NOT replicated. Each user configures
 their own `PILOT_PORT`, `PILOT_HOST`, `PILOT_TUNNEL`, etc. (more on this in
 the `.env` section below).
 
+## Why the package is scoped (`@lesquel/...`)
+
+The unscoped name `opencode-pilot` was already taken on npm (by an unrelated
+project from `@athal7` — an automation daemon). Rather than fight for a name,
+we publish under your scope: `@lesquel/opencode-pilot`. This is permanently
+yours and never collides.
+
+Scoped packages require `--access public` on first publish (handled
+automatically via the `publishConfig.access` field in `package.json`). Users
+install with `npm install @lesquel/opencode-pilot`.
+
 ## One-time setup: your npm account
 
 1. Create an npm account at https://www.npmjs.com/signup if you don't have one.
 2. Verify your email — npm requires this before publishing.
 3. Choose your package name strategy:
-   - **Unscoped** (`opencode-pilot`) — current name. Must be globally unique on npm.
-   - **Scoped** (`@lesquel/opencode-pilot`) — namespaced under your username,
+   - **Unscoped** (`@lesquel/opencode-pilot`) — current name. Must be globally unique on npm.
+   - **Scoped** (`@lesquel/@lesquel/opencode-pilot`) — namespaced under your username,
      never collides. Requires `--access public` on first publish.
 
-   Check availability: `npm view opencode-pilot` — if it returns "404", the
+   Check availability: `npm view @lesquel/opencode-pilot` — if it returns "404", the
    name is free. If it returns metadata, someone already published it.
 
 4. Generate an npm token for CI:
@@ -44,7 +55,7 @@ Open `package.json` and verify:
 
 ```jsonc
 {
-  "name": "opencode-pilot",          // or "@lesquel/opencode-pilot"
+  "name": "@lesquel/opencode-pilot",          // or "@lesquel/@lesquel/opencode-pilot"
   "version": "1.11.0",                // bumped per release
   "type": "module",
   "exports": {
@@ -97,8 +108,12 @@ npm version major    # 1.11.0 → 2.0.0
 bun test
 bun run typecheck
 
-# Publish. For unscoped: just `npm publish`. For scoped, --access public:
-npm publish --access public
+# Publish. publishConfig.access in package.json takes care of --access public:
+npm publish
+
+# If you have npm 2FA enabled, npm will prompt for an OTP code:
+# npm publish --otp=123456
+# (or use an Automation token — see "NPM_TOKEN with 2FA bypass" below)
 
 # Push the version commit and tag to GitHub
 git push origin main --tags
@@ -107,10 +122,34 @@ git push origin main --tags
 After this, anyone can install:
 
 ```bash
-npm install opencode-pilot
+npm install @lesquel/opencode-pilot
 # or
-bun add opencode-pilot
+bun add @lesquel/opencode-pilot
 ```
+
+## NPM_TOKEN with 2FA bypass (for CI and one-shot publishes)
+
+If you have 2FA enabled on your npm account (recommended), `npm publish` will
+prompt for an OTP code on every publish. Two ways to handle this:
+
+**Option A — pass OTP each time:**
+
+```bash
+npm publish --otp=123456    # use the 6-digit code from your authenticator app
+```
+
+**Option B — use an Automation token with bypass:**
+
+1. Go to https://www.npmjs.com/settings/{your-username}/tokens
+2. "Generate New Token" → **type "Automation"**
+3. Automation tokens **bypass 2FA** for `npm publish` (designed for CI)
+4. Use it via env var: `NPM_TOKEN=npm_xxx npm publish` or store in GitHub Secrets
+
+Granular access tokens with the "Bypass 2FA" checkbox also work but require
+more setup.
+
+For your `403 Forbidden – Two-factor authentication ... required` error
+above, Option A is the fastest fix.
 
 ## Automated publish via GitHub Actions
 
@@ -144,21 +183,21 @@ workflow also creates a GitHub Release with the changelog body.
 To smoke test the tarball before public publish:
 
 ```bash
-npm pack                              # creates opencode-pilot-1.11.0.tgz
+npm pack                              # creates @lesquel/opencode-pilot-1.11.0.tgz
 mkdir /tmp/test-install && cd /tmp/test-install
 npm init -y
-npm install /path/to/opencode-pilot-1.11.0.tgz
-# Inspect node_modules/opencode-pilot/ — is everything there?
+npm install /path/to/@lesquel/opencode-pilot-1.11.0.tgz
+# Inspect node_modules/@lesquel/opencode-pilot/ — is everything there?
 ```
 
 ## What new users have to do (write this in your README)
 
-After they `npm install opencode-pilot`, they need:
+After they `npm install @lesquel/opencode-pilot`, they need:
 
 1. Add the plugin to their `opencode.json`:
    ```jsonc
    {
-     "plugins": ["opencode-pilot"]
+     "plugins": ["@lesquel/opencode-pilot"]
    }
    ```
 2. Create a `.env` file in their OpenCode project root (or wherever they launch
@@ -209,10 +248,10 @@ If you publish a broken version:
 
 ```bash
 # Within 72 hours of publish, you can unpublish:
-npm unpublish opencode-pilot@1.11.0
+npm unpublish @lesquel/opencode-pilot@1.11.0
 
 # After 72 hours, you can only deprecate (mark as broken, install warns user):
-npm deprecate opencode-pilot@1.11.0 "broken — use 1.11.1+"
+npm deprecate @lesquel/opencode-pilot@1.11.0 "broken — use 1.11.1+"
 ```
 
 Unpublishing is discouraged because it breaks anyone who depends on that
@@ -232,7 +271,7 @@ version. Always prefer to publish a fix as a new version.
 
 Once published, your users can find your package at:
 
-- https://www.npmjs.com/package/opencode-pilot
+- https://www.npmjs.com/package/@lesquel/opencode-pilot
 - Stats: install count, dependents, weekly downloads
 - Issues: route through your GitHub Issues (linked in package.json)
 

@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.11.2] — 2026-04-20
+
+### Changed — Package renamed to `@lesquel/opencode-pilot`
+
+The unscoped name `opencode-pilot` was already taken on npm (by an unrelated automation daemon by @athal7). Renamed to the scoped `@lesquel/opencode-pilot` so the name is permanently yours and never collides. `publishConfig.access: "public"` added so `npm publish` works without explicit `--access public`.
+
+**Users now install via**: `npm install @lesquel/opencode-pilot` or `bun add @lesquel/opencode-pilot`.
+
+The plugin id (`opencode-pilot` in `opencode.json`) is unchanged.
+
+### Fixed — Project picker showed `(project)` instead of real names
+
+The OpenCode SDK's `Project` shape is `{ id, worktree, vcsDir?, vcs?, time: { created, initialized? } }` — no `name` or `path` field. Our picker was looking for `p.name ?? p.path ?? p.root ?? p.directory` and falling through to the literal string `(project)`. Now reads `p.worktree` first and derives the basename for the label. Modified time falls back through `time.initialized → time.created` instead of `time.updated` (which doesn't exist on Project).
+
+### Added — `publishConfig` and 2FA documentation
+
+- `package.json::publishConfig.access = "public"` so scoped publish works without flag.
+- `docs/PUBLISHING_TO_NPM.md` updated: package name, why we're scoped, NPM_TOKEN with 2FA bypass via Automation tokens, `--otp=` flag for one-shot publishes.
+
+---
+
 ## [1.11.1] — 2026-04-19
 
 Patch release fixing four issues reported after v1.11.0 + three new docs for npm publish, tunnel testing, and configuration.

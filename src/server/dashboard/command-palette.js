@@ -528,12 +528,15 @@ export async function openProjectPicker() {
   const listEl = document.getElementById('palette-list')
   if (!listEl) return
 
-  // Normalize and sort projects: put most-recently-modified first when we have
-  // timestamp info, otherwise keep original order.
+  // Normalize and sort projects. The OpenCode SDK Project shape is:
+  //   { id, worktree, vcsDir?, vcs?, time: { created, initialized? } }
+  // Older versions / external tooling might use { name, path, directory, ... }
+  // so we accept both. Label = basename of worktree (or path), NOT the full path.
   const normalized = projects.map(p => {
-    const path = p.path ?? p.root ?? p.directory ?? null
-    const labelRaw = p.name ?? (path ? shortenPath(path) : '(project)')
-    const modified = p.time?.updated ?? p.updated ?? p.lastModified ?? p.mtime ?? null
+    const path = p.worktree ?? p.path ?? p.root ?? p.directory ?? null
+    const basename = path ? (path.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? '') : ''
+    const labelRaw = p.name ?? (basename || (path ? shortenPath(path) : '(project)'))
+    const modified = p.time?.initialized ?? p.time?.updated ?? p.time?.created ?? p.updated ?? p.lastModified ?? p.mtime ?? null
     return { label: labelRaw, path, modified, raw: p }
   })
   normalized.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0))
