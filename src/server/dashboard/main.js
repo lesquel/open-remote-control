@@ -332,14 +332,6 @@ async function bootstrap() {
 
   createMobileDrawer()
 
-  // ── Mobile FAB: new session ──────────────────────────────────────────────
-  const mobileFab = document.getElementById('mobile-fab-new')
-  if (mobileFab) {
-    mobileFab.addEventListener('click', () => {
-      import('./sessions.js').then(m => m.createSession()).catch(() => {})
-    })
-  }
-
   // ── Mobile kebab menu ────────────────────────────────────────────────────
   function createMobileKebab() {
     const kebabBtn  = document.getElementById('mobile-kebab-btn')

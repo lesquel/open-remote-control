@@ -3872,40 +3872,6 @@ body {
 
 /* ── v1.8.2 Mobile UX Polish ─────────────────────────────────────────────── */
 
-/* ── Problem 1: FAB for new session (mobile only) ──────────────────────── */
-.mobile-fab {
-  display: none; /* hidden on desktop */
-}
-
-@media (max-width: 768px) {
-  .mobile-fab {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: fixed;
-    bottom: 80px;
-    right: 16px;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: #fff;
-    font-size: 28px;
-    font-weight: 300;
-    line-height: 1;
-    border: none;
-    cursor: pointer;
-    z-index: 100;
-    box-shadow: 0 4px 16px rgba(0,0,0,.4);
-    touch-action: manipulation;
-    font-family: var(--mono);
-    /* no transition — instant feedback on mobile */
-  }
-  .mobile-fab:active {
-    opacity: 0.85;
-  }
-}
-
 /* ── Problem 3: Mobile kebab button — desktop hidden, mobile visible ─── */
 .mobile-kebab-btn {
   display: none;

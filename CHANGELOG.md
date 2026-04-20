@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.8.3] — 2026-04-19
+
+### Removed
+
+- **Mobile FAB for new session** removed — user reported it was redundant with the existing `+ New` button in the header. The `☰` (sidebar toggle) opens the drawer with the full sessions list and the "+ New Session" button inside, so two `+` buttons stacked together on mobile was noise.
+
+### Changed
+
+- Service worker cache `pilot-v11` → `pilot-v12` so the FAB element is dropped from cached pages on next visit.
+
+---
+
 ## [1.8.2] — 2026-04-19
 
 ### Added — Mobile UX polish (6 fixes)
