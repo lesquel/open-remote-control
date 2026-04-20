@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.12.6] — 2026-04-20
+
+### Fixed — highlight.js threw "module is not defined" in browser
+
+Dashboard loaded `highlight.js@11.10.0/lib/core.min.js` and seven `lib/languages/*.min.js` scripts. These are CommonJS internals meant for bundlers (webpack/vite) — they reference `module.exports` and crash with `Uncaught ReferenceError: module is not defined` when loaded directly via `<script>` in a browser.
+
+**Fix**: replaced the 9 `lib/...` script tags with a single UMD bundle from `/build`:
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/build/highlight.min.js"></script>
+```
+
+The `/build` bundle is proper UMD and includes ~190 languages out of the box (~1.2 MB minified). One file, no MIME errors, syntax highlighting works.
+
+### How to spot this on your install
+
+If you see in the browser console (after a hard reload):
+
+```
+Uncaught ReferenceError: module is not defined
+    <anonymous> core.js:2595
+Uncaught SyntaxError: redeclaration of const IDENT_RE
+```
+
+You're on the bad version. Upgrade and SW cache will rotate automatically (`pilot-v18` → `pilot-v19`).
+
+### About the 401 errors
+
+The 401s in the same console output were a separate issue: when you restart the plugin, a fresh token is generated. Browsers with cached tokens from the previous session get 401s. Hard reload + re-scan the QR (or re-open the URL from the new banner) to pick up the new token.
+
+---
+
 ## [1.12.5] — 2026-04-20
 
 ### Fixed — `init` now upgrades `@opencode-ai/plugin` SDK too
