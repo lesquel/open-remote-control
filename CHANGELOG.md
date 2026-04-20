@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.12.3] — 2026-04-20
+
+### Fixed — TUI plugin id collided with server plugin id (slash commands silently dropped)
+
+The TUI plugin module exported `id: "opencode-pilot"` — same as the server plugin. OpenCode loads server and tui modules separately, but with the same id one of them gets silently overwritten/skipped. The server (loaded first) won, the TUI (loaded second) was dropped — no slash commands appeared.
+
+**Fix**: TUI module now exports `id: "opencode-pilot-tui"`. Distinct id avoids the collision. Both modules now register independently.
+
+If you were on v1.12.0 / v1.12.1 / v1.12.2 and slash commands didn't show up despite `npx @lesquel/opencode-pilot init` succeeding, this is the cause. After upgrading, the toast "OpenCode Pilot — Remote control plugin loaded" should appear when you start OpenCode, and `/remo<tab>` should autocomplete to `/remote`, `/remote-control`, `/dashboard`.
+
+### Fixed — Self-reference in dependencies (third time)
+
+Removed `@lesquel/opencode-pilot` from `dependencies` again. Keeps coming back when `bun add` is run from the plugin's own directory. Need to remember: NEVER run `bun add` inside the plugin repo's root.
+
+### Notes for users
+
+To upgrade:
+
+```bash
+cd ~/.config/opencode    # or your XDG OpenCode config dir
+bun update @lesquel/opencode-pilot
+```
+
+Then **fully quit and restart OpenCode** (close ALL sessions, not just refresh — plugins load only at startup).
+
+---
+
 ## [1.12.2] — 2026-04-20
 
 ### Fixed — TUI slash commands didn't load (only the server did)

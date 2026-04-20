@@ -268,6 +268,9 @@ const tui: TuiPlugin = async (
 }
 
 export default {
-  id: "opencode-pilot",
+  // Distinct id from the server plugin's "opencode-pilot" id. OpenCode loads
+  // server and tui modules separately; sharing an id can cause one of them
+  // to be silently overwritten or skipped depending on load order.
+  id: "opencode-pilot-tui",
   tui,
 }
