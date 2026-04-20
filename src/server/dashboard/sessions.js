@@ -180,6 +180,23 @@ export async function loadSessions(autoSelectMostRecent) {
   }
 }
 
+/**
+ * Re-fetch last-message meta for a single session and update state + re-render
+ * its row in the sessions list. Called from sse.js on MESSAGE_UPDATED so the
+ * session list always shows fresh model/provider info without a full loadSessions.
+ */
+export async function refreshSessionMeta(sessionId) {
+  if (!sessionId) return
+  const { sessions, sessionMeta } = getState()
+  const s = sessions[sessionId]
+  if (!s) return
+  try {
+    const meta = await fetchSessionLastMeta(sessionId, s.directory)
+    setState({ sessionMeta: { ...sessionMeta, [sessionId]: meta } })
+    renderSessions()
+  } catch (_) {}
+}
+
 function autoSelect() {
   const { sessions } = getState()
   const ids = Object.keys(sessions)
@@ -308,7 +325,10 @@ function wireSessionEvents(list) {
   })
 }
 
-export function renderSessions() {
+// ── Debounced render: coalesce rapid SSE bursts into one frame ─────────────
+let _pendingRender = null
+
+function _renderSessionsImpl() {
   const { sessions, statuses, activeSession, mvPanels, agentFilter, sessionMeta } = getState()
   const list = document.getElementById('sessions-list')
   let ids = Object.keys(sessions)
@@ -348,6 +368,18 @@ export function renderSessions() {
   list.scrollTop = scrollTop
 
   wireSessionEvents(list)
+}
+
+/**
+ * Debounced public wrapper: coalesces rapid SSE bursts (e.g. streaming)
+ * into a single render ~1 frame later, preventing flicker.
+ */
+export function renderSessions() {
+  if (_pendingRender) return
+  _pendingRender = setTimeout(() => {
+    _pendingRender = null
+    _renderSessionsImpl()
+  }, 16)
 }
 
 /**

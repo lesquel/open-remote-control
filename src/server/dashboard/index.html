@@ -62,6 +62,8 @@
       <button class="btn btn-icon" id="sidebar-toggle-btn" title="Toggle sidebar (alt+b)">☰</button>
       <button class="btn btn-icon" id="info-toggle-btn" title="Toggle info panel (alt+i)">i</button>
       <button class="btn btn-icon" id="settings-btn" title="Settings">⚙</button>
+      <!-- Mobile kebab menu — reveals commands not accessible without keyboard -->
+      <button class="btn btn-icon mobile-kebab-btn" id="mobile-kebab-btn" title="More actions" aria-label="More actions" aria-haspopup="true" aria-expanded="false">⋮</button>
       <button class="btn btn-primary" id="header-new-btn" style="flex-shrink:0">+<span class="btn-text"> New</span></button>
     </div>
   </div>
@@ -167,11 +169,11 @@
             <button class="btn-send" id="send-btn" title="Send (Enter)">↑</button>
           </div>
           <div class="input-label-strip" id="input-label-strip">
-            <span class="lbl-agent" id="lbl-agent">Build</span>
+            <span class="lbl-agent" id="lbl-agent"></span>
             <span class="lbl-sep">·</span>
-            <span class="lbl-model" id="lbl-model">Claude Opus 4.5</span>
+            <span class="lbl-model" id="lbl-model"></span>
             <span class="lbl-sep">·</span>
-            <span class="lbl-provider" id="lbl-provider">OpenCode</span>
+            <span class="lbl-provider" id="lbl-provider"></span>
           </div>
         </div>
       </div>
@@ -327,6 +329,17 @@
     <div id="palette-list"></div>
   </div>
 </div>
+
+<!-- Mobile kebab popover -->
+<div id="mobile-kebab-popover" class="mobile-kebab-popover" role="menu" aria-label="Mobile actions">
+  <button class="mkp-item" id="mkp-palette" role="menuitem">Open command palette</button>
+  <button class="mkp-item" id="mkp-shortcuts" role="menuitem">Keyboard shortcuts</button>
+  <button class="mkp-item" id="mkp-connect" role="menuitem">Connect from phone</button>
+  <button class="mkp-item" id="mkp-right-panel" role="menuitem">Toggle info panel</button>
+</div>
+
+<!-- Mobile FAB: New Session (visible only on mobile, fixed bottom-right) -->
+<button class="mobile-fab" id="mobile-fab-new" aria-label="New session" title="New session">+</button>
 
 <div id="toast"></div>
 

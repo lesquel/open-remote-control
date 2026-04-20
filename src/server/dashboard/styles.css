@@ -3185,12 +3185,8 @@ body {
   }
 }
 
-/* ── 5. Hide label strip below 480px ─────────────────────────────────────── */
-@media (max-width: 480px) {
-  .input-label-strip {
-    display: none;
-  }
-}
+/* ── 5. Label strip on mobile: compact but visible (was display:none — fixed v1.8.2) */
+/* See override block at bottom of file. Kept empty to not lose cascade position. */
 
 /* ── 6. Multi-view: horizontal scroll-snap ───────────────────────────────── */
 @media (max-width: 768px) {
@@ -3873,3 +3869,120 @@ body {
 }
 #connect-phone-btn:hover { color: var(--accent); }
 #connect-phone-btn svg { display: block; }
+
+/* ── v1.8.2 Mobile UX Polish ─────────────────────────────────────────────── */
+
+/* ── Problem 1: FAB for new session (mobile only) ──────────────────────── */
+.mobile-fab {
+  display: none; /* hidden on desktop */
+}
+
+@media (max-width: 768px) {
+  .mobile-fab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    bottom: 80px;
+    right: 16px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 28px;
+    font-weight: 300;
+    line-height: 1;
+    border: none;
+    cursor: pointer;
+    z-index: 100;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    touch-action: manipulation;
+    font-family: var(--mono);
+    /* no transition — instant feedback on mobile */
+  }
+  .mobile-fab:active {
+    opacity: 0.85;
+  }
+}
+
+/* ── Problem 3: Mobile kebab button — desktop hidden, mobile visible ─── */
+.mobile-kebab-btn {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .mobile-kebab-btn {
+    display: inline-flex;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Mobile kebab popover */
+.mobile-kebab-popover {
+  display: none;
+  position: fixed;
+  top: var(--header-h);
+  right: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  z-index: 500;
+  min-width: 210px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+  overflow: hidden;
+}
+
+.mobile-kebab-popover.open {
+  display: block;
+}
+
+.mkp-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 14px 18px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  touch-action: manipulation;
+  min-height: 48px;
+}
+.mkp-item:last-child {
+  border-bottom: none;
+}
+.mkp-item:hover, .mkp-item:active {
+  background: rgba(94,158,255,.08);
+  color: var(--accent);
+}
+
+/* ── Problem 4: Show label-strip on mobile (was display:none below 480px) */
+@media (max-width: 480px) {
+  /* Override the v1.8.0 rule that hid the label-strip */
+  .input-label-strip {
+    display: flex !important;
+    font-size: 11px;
+    padding: 2px 10px 4px;
+    gap: 5px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .input-label-strip .lbl-agent,
+  .input-label-strip .lbl-model,
+  .input-label-strip .lbl-provider {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 28vw;
+  }
+}
+
+/* ── End of v1.8.2 mobile UX polish ─────────────────────────────────────── */

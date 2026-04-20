@@ -16,7 +16,7 @@ import { normalizeMessage } from './messages.js'
 import { LIMITS, STORAGE_KEYS } from './constants.js'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const PILOT_VERSION = '1.8.1'
+const PILOT_VERSION = '1.8.2'
 const LS_KEY_PREFIX = STORAGE_KEYS.RIGHT_PANEL_COLLAPSED
 const MCP_POLL_INTERVAL_MS = LIMITS.MCP_POLL_INTERVAL_MS
 
@@ -139,6 +139,11 @@ export function createRightPanel({ container }) {
   // Cache last fetched messages
   let _lastMsgs = []
   let _loadingUsage = false
+  // Last rendered usage state — skip re-render when data is identical (anti-flicker)
+  let _lastRenderedUsage = null
+  // Throttle: only one refresh per 250ms during streaming
+  let _refreshThrottleTimer = null
+  let _refreshPending = false
   // MCP poll state
   let _mcpPollTimer = null
   let _lastMcpSnapshot = null
@@ -329,6 +334,21 @@ export function createRightPanel({ container }) {
     const { activeSession } = getState()
     const { inputTokens = 0, percentUsed = 0, cumulativeCost = 0, tooltipHtml = '', loading = false } = usageState ?? {}
 
+    // Skip re-render if usage data is identical (prevents flicker during streaming)
+    if (!loading && _lastRenderedUsage) {
+      const last = _lastRenderedUsage
+      if (
+        last.inputTokens === inputTokens &&
+        last.percentUsed === percentUsed &&
+        last.cumulativeCost === cumulativeCost &&
+        last.activeSession === activeSession
+      ) {
+        updateFooterUsage(inputTokens, percentUsed)
+        return
+      }
+    }
+    _lastRenderedUsage = { inputTokens, percentUsed, cumulativeCost, activeSession }
+
     container.innerHTML = `
       <div class="rp-inner">
         <button class="rp-close-btn" id="rp-close-btn" type="button" title="Hide panel (alt+i)" aria-label="Hide right panel">×</button>
@@ -380,9 +400,9 @@ export function createRightPanel({ container }) {
     })
   }
 
-  // ── Async refresh with usage fetch ────────────────────────────────────────
+  // ── Async refresh with usage fetch (throttled to 250ms) ──────────────────
 
-  async function refresh() {
+  async function _refreshImpl() {
     const { activeSession } = getState()
 
     // Render immediately with what we have (may be stale or zero)
@@ -412,6 +432,28 @@ export function createRightPanel({ container }) {
     }
   }
 
+  /**
+   * Throttled public refresh — at most one full re-fetch per 250ms.
+   * During SSE streaming this fires many times/second; the throttle keeps
+   * the UI responsive without choking on network requests or causing flicker.
+   * Callers that need an immediate refresh (session switch) call _refreshImpl directly.
+   */
+  function refresh() {
+    if (_refreshThrottleTimer) {
+      // A refresh is already scheduled — mark pending so we run one more after
+      _refreshPending = true
+      return
+    }
+    _refreshImpl()
+    _refreshThrottleTimer = setTimeout(() => {
+      _refreshThrottleTimer = null
+      if (_refreshPending) {
+        _refreshPending = false
+        refresh()
+      }
+    }, 250)
+  }
+
   // ── Subscriptions ──────────────────────────────────────────────────────────
 
   let _lastDirectory = null
@@ -419,7 +461,9 @@ export function createRightPanel({ container }) {
   _unsub = subscribe('right-panel', (state) => {
     if (state.activeSession !== _lastSessionId) {
       _lastSessionId = state.activeSession
-      refresh()
+      // Session switch: clear cached usage so we don't skip on first render
+      _lastRenderedUsage = null
+      _refreshImpl()
     }
   })
 
@@ -429,7 +473,8 @@ export function createRightPanel({ container }) {
     if (dir !== _lastDirectory) {
       _lastDirectory = dir
       // Refresh fetches messages via fetchMessages(activeSession) and recomputes usage
-      refresh()
+      _lastRenderedUsage = null
+      _refreshImpl()
     }
   })
 

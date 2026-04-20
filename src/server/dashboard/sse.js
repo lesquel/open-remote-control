@@ -1,6 +1,6 @@
 // sse.js — SSE connection with exponential backoff reconnect
 import { getState, setState, appendPartDelta, clearStreamingMessage, subscribe } from './state.js'
-import { loadSessions, renderSessions, updateHeaderSession, updateInfoBar } from './sessions.js'
+import { loadSessions, renderSessions, updateHeaderSession, updateInfoBar, refreshSessionMeta } from './sessions.js'
 import { loadMessages, applyStreamingDelta, removeStreamingCursor } from './messages.js'
 import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from './multi-view.js'
 import { handlePermissionRequested, handlePermissionResolved } from './permissions.js'
@@ -204,6 +204,10 @@ async function handleEvent(ev) {
       window.__refreshLabelStrip?.()
       window.__refreshUsageIndicator?.()
       window.__agentPanel?.refresh?.()
+    }
+    // Refresh session meta for this session so sessions list shows fresh model/cost
+    if (t === EVENTS.MESSAGE_UPDATED && evtSessionId) {
+      refreshSessionMeta(evtSessionId)
     }
   }
 

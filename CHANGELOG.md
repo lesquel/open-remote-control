@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.8.2] — 2026-04-19
+
+### Added — Mobile UX polish (6 fixes)
+
+- **Floating + button on mobile** to create a new session without opening the drawer. 56×56 round, fixed bottom-right above composer. Visible only at ≤768px.
+- **Kebab menu (`⋮`) in header on mobile** opens a popover with: Open command palette, Keyboard shortcuts, Connect from phone, Toggle info panel. The way to access keyboard-only commands when there's no keyboard.
+- **Label-strip visible on mobile** showing real `agent · model · provider`. Tighter style (11px font, ellipsis if too long, max 28vw per span). Was previously hidden below 480px in v1.8.0.
+- **Service worker cache bumped** `pilot-v10` → `pilot-v11` so the new mobile CSS reaches phones with stale caches.
+
+### Fixed
+
+- **Hardcoded placeholder labels gone** — `index.html` had `lbl-agent="Build"`, `lbl-model="Claude Opus 4.5"`, `lbl-provider="OpenCode"` baked in, so users saw those defaults until label-strip.js fetched the real values (~100-200ms). Spans now start empty; populated on first refresh.
+- **Right panel data was stale during streaming** — `refresh()` is now throttled to one call per 250ms (trailing-edge call ensures last update lands). Renders short-circuit when `inputTokens / percentUsed / cumulativeCost / activeSession` are all identical to the previous render — no flicker.
+- **Sessions list flicker on SSE bursts** — `renderSessions()` is now a debounced wrapper (16ms / one frame). Multiple SSE events within a frame coalesce into one DOM write.
+- **Session row stayed stale after a message arrived** — new `refreshSessionMeta(sessionId)` re-fetches just that one session's last-message meta and re-renders. Called from `sse.js` on every `MESSAGE_UPDATED` event. Sessions list now shows updated `model · provider` without a full `loadSessions()`.
+
+### Known minor
+
+- The `·` separators in the label-strip are visible briefly when spans are empty (sub-200ms boot window). Cosmetic only — the values populate as soon as references load.
+
+---
+
 ## [1.8.1] — 2026-04-19
 
 ### Fixed

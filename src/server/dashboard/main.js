@@ -332,6 +332,71 @@ async function bootstrap() {
 
   createMobileDrawer()
 
+  // ── Mobile FAB: new session ──────────────────────────────────────────────
+  const mobileFab = document.getElementById('mobile-fab-new')
+  if (mobileFab) {
+    mobileFab.addEventListener('click', () => {
+      import('./sessions.js').then(m => m.createSession()).catch(() => {})
+    })
+  }
+
+  // ── Mobile kebab menu ────────────────────────────────────────────────────
+  function createMobileKebab() {
+    const kebabBtn  = document.getElementById('mobile-kebab-btn')
+    const popover   = document.getElementById('mobile-kebab-popover')
+    if (!kebabBtn || !popover) return
+
+    function openKebab() {
+      popover.classList.add('open')
+      kebabBtn.setAttribute('aria-expanded', 'true')
+    }
+
+    function closeKebab() {
+      popover.classList.remove('open')
+      kebabBtn.setAttribute('aria-expanded', 'false')
+    }
+
+    function toggleKebab() {
+      if (popover.classList.contains('open')) closeKebab()
+      else openKebab()
+    }
+
+    kebabBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      toggleKebab()
+    })
+
+    // Dismiss on outside tap
+    document.addEventListener('click', (e) => {
+      if (popover.classList.contains('open') && !popover.contains(e.target) && e.target !== kebabBtn) {
+        closeKebab()
+      }
+    })
+
+    // Wire kebab actions
+    document.getElementById('mkp-palette')?.addEventListener('click', () => {
+      closeKebab()
+      import('./command-palette.js').then(m => m.openPalette()).catch(() => {})
+    })
+
+    document.getElementById('mkp-shortcuts')?.addEventListener('click', () => {
+      closeKebab()
+      document.getElementById('keymap-modal')?.classList.add('open')
+    })
+
+    document.getElementById('mkp-connect')?.addEventListener('click', () => {
+      closeKebab()
+      window.__openConnectModal?.()
+    })
+
+    document.getElementById('mkp-right-panel')?.addEventListener('click', () => {
+      closeKebab()
+      document.getElementById('right-panel')?.classList.toggle('right-panel--hidden')
+    })
+  }
+
+  createMobileKebab()
+
   // Alt+I — toggle right panel
   document.addEventListener('keydown', (e) => {
     if (e.altKey && (e.key === 'i' || e.key === 'I')) {
