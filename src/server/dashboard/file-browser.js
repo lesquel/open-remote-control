@@ -172,6 +172,79 @@ export function createFileBrowser({ container }) {
     refreshTree()
   })
 
+  // ── Live substring filter (works without PILOT_ENABLE_GLOB_OPENER) ──────
+  /**
+   * Filter the visible file tree by substring match on node names.
+   * Operates on the cached flat node list (all levels) — no server call.
+   * Clears automatically when the input is emptied.
+   */
+  let _liveFilterText = ''
+
+  function applyLiveFilter(text) {
+    _liveFilterText = text.trim().toLowerCase()
+    if (!_liveFilterText) {
+      // Restore full tree if not in glob mode
+      if (!globMode) renderTree()
+      return
+    }
+    if (globMode) return  // glob mode takes precedence
+
+    // Collect all nodes from cache (flat list across all directories)
+    const allNodes = []
+    for (const nodes of childrenCache.values()) {
+      for (const n of nodes) {
+        if (!n.ignored || showIgnored) allNodes.push(n)
+      }
+    }
+
+    const matches = allNodes.filter(n =>
+      String(n.name ?? '').toLowerCase().includes(_liveFilterText)
+    )
+
+    if (!matches.length) {
+      treeEl.innerHTML = '<div class="file-tree-empty">No matches</div>'
+      return
+    }
+
+    const html = matches.map(n => {
+      const depth = 0  // flatten results — no indentation
+      const isDir = n.type === 'directory'
+      const ignoredClass = n.ignored ? ' file-tree-item--ignored' : ''
+      const dirClass = isDir ? ' file-tree-item--dir' : ''
+      // Highlight matching substring
+      const name = String(n.name ?? '')
+      const idx = name.toLowerCase().indexOf(_liveFilterText)
+      let nameHtml = esc(name)
+      if (idx >= 0) {
+        nameHtml = esc(name.slice(0, idx))
+          + `<mark class="fb-filter-match">${esc(name.slice(idx, idx + _liveFilterText.length))}</mark>`
+          + esc(name.slice(idx + _liveFilterText.length))
+      }
+      return `<div class="file-tree-item${ignoredClass}${dirClass} file-tree-item--filtered"
+        data-path="${esc(n.path)}"
+        data-absolute="${esc(n.absolute)}"
+        data-type="${esc(n.type)}"
+        data-ignored="${n.ignored}"
+        data-depth="0"
+        data-expanded="false"
+        title="${esc(n.absolute)}">
+        <span class="file-tree-icon">${isDir ? '▸' : ''}</span>
+        <span class="file-tree-name">${nameHtml}</span>
+        <span class="file-tree-meta fb-filter-path">${esc(n.path)}</span>
+      </div>`
+    }).join('')
+
+    treeEl.innerHTML = html
+    wireClicks()
+  }
+
+  // Debounce helper
+  let _filterTimer = null
+  function debouncedFilter(text) {
+    clearTimeout(_filterTimer)
+    _filterTimer = setTimeout(() => applyLiveFilter(text), 200)
+  }
+
   // ── Glob search wiring ──────────────────────────────────────────────────
   async function runGlob() {
     const pattern = (globInput.value || '').trim()
@@ -239,15 +312,34 @@ export function createFileBrowser({ container }) {
 
   function exitGlobMode() {
     globMode = false
+    _liveFilterText = ''
+    clearTimeout(_filterTimer)
     if (globInput) globInput.value = ''
     if (globClear) globClear.style.display = 'none'
     renderTree()
   }
 
+  // Live substring filter fires on every keystroke (debounced 200ms)
+  globInput?.addEventListener('input', (e) => {
+    const val = e.target.value || ''
+    // If the pattern looks like a glob (contains * or ?), don't live-filter
+    if (/[*?{}\[\]]/.test(val)) return
+    debouncedFilter(val)
+    // Show/hide clear button
+    if (globClear) globClear.style.display = val ? '' : 'none'
+  })
+
   globInput?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      runGlob()
+      clearTimeout(_filterTimer)
+      const val = globInput.value || ''
+      // If pattern has glob chars, run server glob; otherwise apply local filter immediately
+      if (/[*?{}\[\]]/.test(val)) {
+        runGlob()
+      } else {
+        applyLiveFilter(val)
+      }
     } else if (e.key === 'Escape') {
       exitGlobMode()
     }

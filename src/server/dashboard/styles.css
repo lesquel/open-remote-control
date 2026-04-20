@@ -3005,6 +3005,26 @@ body {
   color: var(--text);
 }
 
+/* ── Live filter results ─────────────────────────────────────────────────── */
+
+.fb-filter-match {
+  background: var(--warning);
+  color: var(--bg);
+  border-radius: 1px;
+  padding: 0 1px;
+}
+
+.fb-filter-path {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
 /* ── Mobile Responsive Pass (v1.8.0) — max-width: 768px ─────────────────── */
 /* All rules below are additive — desktop CSS above is untouched.             */
 
@@ -3470,6 +3490,101 @@ body {
 
 /* ── File viewer modal ───────────────────────────────────────────────────── */
 
+/* ── Custom folder modal ─────────────────────────────────────────────────── */
+
+.custom-folder-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 9100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.custom-folder-box {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+}
+.custom-folder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.custom-folder-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-dim);
+}
+.custom-folder-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+.custom-folder-close:hover { color: var(--text); background: var(--surface2); }
+.custom-folder-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.custom-folder-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.custom-folder-input {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+  width: 100%;
+}
+.custom-folder-input:focus { border-color: var(--accent); }
+.custom-folder-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+.custom-folder-footer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--border);
+  justify-content: flex-end;
+}
+
+/* ── lbl-agent-btn (compose bar agent quick-switch) ─────────────────────── */
+
+.lbl-agent-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+.lbl-agent-btn:hover .lbl-agent { text-decoration: underline; }
+
+/* ── File viewer modal (pre-existing, keep below) ─────────────────────────── */
+
 .file-viewer-modal {
   position: fixed;
   inset: 0;
@@ -3572,6 +3687,48 @@ body {
 }
 .reasoning-block.reasoning-expanded .reasoning-body { display: block; }
 .reasoning-block.reasoning-expanded .reasoning-toggle { transform: rotate(90deg); display: inline-block; }
+
+/* ── Agent transition part ───────────────────────────────────────────────── */
+
+.agent-transition {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin: 6px 0;
+  border-left: 2px solid var(--border2);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.agent-transition-icon { font-size: 10px; color: var(--accent); }
+.agent-transition-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+
+/* ── Step dividers ───────────────────────────────────────────────────────── */
+
+.step-divider {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 10px;
+  letter-spacing: .04em;
+}
+
+/* ── Retry / compaction notices ──────────────────────────────────────────── */
+
+.retry-notice {
+  font-size: 10px;
+  color: var(--warning);
+  padding: 3px 10px;
+  border-left: 2px solid var(--warning);
+  margin: 4px 0;
+}
+.compaction-notice {
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 3px 10px;
+  border-left: 2px solid var(--border2);
+  margin: 4px 0;
+  font-style: italic;
+}
 
 /* ── Streaming cursor ────────────────────────────────────────────────────── */
 

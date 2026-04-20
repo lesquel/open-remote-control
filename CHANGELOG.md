@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.10.0] — 2026-04-19
+
+### Discovered — "Plan mode" is an AGENT, not a multi-choice prompt
+
+Investigation finding: in OpenCode, "plan mode" is the agent named `"plan"` (siblings: `build`, `general`, `explore`). The SDK does NOT emit multi-choice option prompts. The interactive feeling some users get is from the `agent` part type (`type: 'agent'`) being emitted when the agent transitions mid-session — and we were silently dropping it. Plus four other part types we ignored: `step-start`, `step-finish`, `retry`, `compaction`.
+
+### Added — Conversation rendering for previously-ignored part types
+
+- `messages.js::renderPart` now handles:
+  - **`agent`** — renders an inline agent-transition badge in the conversation flow
+  - **`step-start` / `step-finish`** — subtle TUI-style notice line
+  - **`retry`** — same, marked as retry
+  - **`compaction`** — same, indicates context compaction happened
+- Previously these were `''` returns → invisible.
+
+### Added — Switch agent button next to compose bar label
+
+- The `lbl-agent` span in the composer footer is now wrapped in a clickable `lbl-agent-btn` button (≥44px tap target on mobile).
+- Click opens the existing agent picker (`openAgentPicker`) so users can switch to plan/build/general/explore mid-session without keyboard shortcuts.
+
+### Added — "Open custom folder…" in project picker
+
+- First item in `openProjectPicker()` opens an inline modal (not `window.prompt()` which is blocked on iOS).
+- Validates path: must start with `/` (Linux/Mac) or `[A-Z]:\` (Windows).
+- Calls `setActiveDirectory(path)` + reloads sessions + refreshes references — same flow as switching to a known project.
+- Accessible from sidebar `▤ project` button, mobile header badge, and mobile kebab "Switch project" row.
+
+### Fixed — File browser filter wasn't filtering on type
+
+- The glob input only fired on Enter. Users expected typing to filter immediately.
+- Now: **live substring filter** (debounced 200ms) on every keystroke — fast, no server call, works without `PILOT_ENABLE_GLOB_OPENER`.
+- Glob server search still triggers on **Enter** when the pattern contains glob chars (`* ? { } [ ]`); 403 returns the existing error message about enabling the opt-in.
+
+### Changed — SW cache `pilot-v14` → `pilot-v15`
+
+### Test prompt to verify plan mode rendering
+
+Click the agent name in the compose bar (now a button) → switch to "plan" → send:
+
+> Plan a 3-step refactor of the auth flow and show me your plan before making any changes.
+
+You should see the agent-transition badge appear in the conversation when the agent switches, and step-start/step-finish notices as the plan agent works through its steps.
+
+---
+
 ## [1.9.0] — 2026-04-19
 
 Polish release responding to user feedback after v1.8.4. Six items.

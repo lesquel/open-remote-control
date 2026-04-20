@@ -9,7 +9,7 @@ import { loadPermissions, initPermissions } from './permissions.js'
 import { initSettings } from './settings.js'
 import { initShortcuts } from './shortcuts.js'
 import { connect as sseConnect } from './sse.js'
-import { initCommandPalette, openProjectPicker } from './command-palette.js'
+import { initCommandPalette, openProjectPicker, openCustomFolderModal } from './command-palette.js'
 import {
   getConnection,
   saveConnection,
@@ -145,6 +145,16 @@ async function bootstrap() {
     // Expose refresh so SSE handler can call it on message.updated
     window.__refreshLabelStrip = labelStrip.refresh
   }
+
+  // Agent quick-switch: clicking the agent label in the compose bar opens agent picker
+  document.getElementById('lbl-agent-btn')?.addEventListener('click', () => {
+    import('./command-palette.js').then(m => {
+      // openAgentPicker is not exported — go via togglePalette + programmatic search
+      // Use the exported palette with a pre-filled query workaround:
+      // We expose a dedicated __openAgentPicker global from initCommandPalette
+      window.__openAgentPicker?.()
+    }).catch(() => {})
+  })
 
   // Mount usage indicator in TUI header (right side)
   const headerEl = document.getElementById('tui-header')

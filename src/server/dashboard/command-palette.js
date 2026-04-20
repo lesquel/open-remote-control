@@ -534,8 +534,9 @@ export async function openProjectPicker() {
   // Read current active directory from state
   const currentDir = getActiveDirectory()
 
-  // Build items: "Default (back to OpenCode default)" at top + one per project
+  // Build items: "Open custom folder…" first, then "Default", then known projects
   const items = [
+    { label: 'Open custom folder…', path: null, isCustom: true, isDefault: false },
     { label: 'Default (back to OpenCode instance)', path: null, isDefault: true },
     ...projects.map(p => ({
       label:     p.name ?? shortenPath(p.path ?? p.root ?? ''),
@@ -548,9 +549,10 @@ export async function openProjectPicker() {
     listEl.innerHTML = `<div class="palette-section">
       <div class="palette-section-label">Open Project (routes all API calls)</div>
       ${items.map((it, i) => {
-        const isActive = it.isDefault ? !currentDir : (currentDir === it.path)
+        const isActive = it.isDefault ? !currentDir : (!it.isCustom && currentDir === it.path)
+        const icon = it.isCustom ? '…' : (isActive ? '✓' : '▤')
         return `<div class="palette-item${i === selIdx ? ' selected' : ''}" data-proj-idx="${i}">
-          <span class="palette-item-icon">${isActive ? '✓' : '▤'}</span>
+          <span class="palette-item-icon">${icon}</span>
           <span class="palette-item-label">${escHtml(it.label)}</span>
           ${it.path ? `<span class="palette-item-folder">${escHtml(shortenPath(it.path))}</span>` : ''}
         </div>`
@@ -566,6 +568,11 @@ export async function openProjectPicker() {
   }
 
   const applyProjectChoice = async (item) => {
+    if (item.isCustom) {
+      closePalette()
+      openCustomFolderModal()
+      return
+    }
     closePalette()
     const newDir = item.isDefault ? null : item.path
 
@@ -888,4 +895,125 @@ export function initCommandPalette() {
   overlay.addEventListener('click', e => {
     if (e.target === overlay) closePalette()
   })
+
+  // Expose agent picker globally so the compose-bar agent button can trigger it
+  window.__openAgentPicker = openAgentPicker
+}
+
+// ── Custom folder modal ────────────────────────────────────────────────────
+/**
+ * Show a small modal prompting the user for an absolute path to open.
+ * Validates the path (must be absolute) then calls setActiveDirectory + reloads sessions.
+ * Exported so main.js can wire it to the project picker and kebab menu.
+ */
+export function openCustomFolderModal() {
+  // Remove any existing modal
+  document.getElementById('custom-folder-modal')?.remove()
+
+  const modal = document.createElement('div')
+  modal.id = 'custom-folder-modal'
+  modal.className = 'custom-folder-modal'
+  modal.setAttribute('role', 'dialog')
+  modal.setAttribute('aria-modal', 'true')
+  modal.setAttribute('aria-label', 'Open custom folder')
+  modal.innerHTML = `
+    <div class="custom-folder-box">
+      <div class="custom-folder-header">
+        <span class="custom-folder-title">Open folder</span>
+        <button class="custom-folder-close" id="custom-folder-close" title="Close (Esc)">✕</button>
+      </div>
+      <div class="custom-folder-body">
+        <label for="custom-folder-input" class="custom-folder-label">Absolute path to folder:</label>
+        <input type="text" id="custom-folder-input" class="custom-folder-input"
+          placeholder="/home/user/my-project"
+          autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off">
+        <div class="custom-folder-error" id="custom-folder-error" style="display:none"></div>
+      </div>
+      <div class="custom-folder-footer">
+        <button class="btn btn-primary" id="custom-folder-ok">Open</button>
+        <button class="btn" id="custom-folder-cancel">Cancel</button>
+      </div>
+    </div>
+  `
+
+  document.body.appendChild(modal)
+
+  const inputEl  = modal.querySelector('#custom-folder-input')
+  const errorEl  = modal.querySelector('#custom-folder-error')
+
+  function close() {
+    modal.remove()
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg
+    errorEl.style.display = ''
+  }
+
+  function hideError() {
+    errorEl.style.display = 'none'
+  }
+
+  async function applyPath(raw) {
+    const path = raw.trim()
+    if (!path) { showError('Path cannot be empty'); return }
+
+    // Validate absolute path: starts with / (Linux/Mac) or letter+colon+backslash (Windows)
+    const isAbsolute = path.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(path)
+    if (!isAbsolute) {
+      showError('Path must be absolute (start with / on Linux/Mac or C:\\ on Windows)')
+      return
+    }
+
+    hideError()
+    close()
+
+    // 1. Update state — all subsequent API calls will append ?directory=
+    setActiveDirectory(path)
+
+    // 2. Persist
+    try {
+      localStorage.setItem(LS_ACTIVE_DIR_KEY, path)
+    } catch (_) {}
+
+    // 3. Clear active session (belongs to old project)
+    setState({ activeSession: null, sessions: {}, statuses: {} })
+
+    // 4. Clear files-changed
+    try {
+      const { refreshFilesChanged } = await import('./files-changed-bridge.js')
+      refreshFilesChanged(null)
+    } catch (_) {}
+
+    // 5. Refresh references
+    try {
+      await window.__refreshReferences?.()
+    } catch (_) {}
+
+    // 6. Reload sessions
+    const { loadSessions } = await import('./sessions.js')
+    await loadSessions()
+
+    // 7. Refresh panels
+    window.__refreshRightPanel?.()
+    window.__refreshLabelStrip?.()
+
+    const label = path.split('/').filter(Boolean).pop() ?? path
+    toast(`Opened: ${label}`)
+  }
+
+  modal.querySelector('#custom-folder-ok')?.addEventListener('click', () => {
+    applyPath(inputEl.value)
+  })
+  modal.querySelector('#custom-folder-cancel')?.addEventListener('click', close)
+  modal.querySelector('#custom-folder-close')?.addEventListener('click', close)
+  modal.addEventListener('click', e => { if (e.target === modal) close() })
+
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); applyPath(inputEl.value) }
+    if (e.key === 'Escape') { e.preventDefault(); close() }
+  })
+
+  // Focus input after a tick
+  setTimeout(() => inputEl?.focus(), 30)
 }

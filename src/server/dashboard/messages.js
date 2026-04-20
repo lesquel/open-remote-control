@@ -112,6 +112,33 @@ export function renderPart(p) {
     return renderReasoningPart(p)
   }
 
+  // ── Agent transition part — emitted when the active agent changes mid-session ──
+  if (p.type === 'agent') {
+    return renderAgentTransitionPart(p)
+  }
+
+  // ── Step-start / step-finish — show as subtle divider ────────────────────
+  if (p.type === 'step-start') {
+    return `<div class="step-divider step-divider--start" aria-hidden="true">~ step</div>`
+  }
+  if (p.type === 'step-finish') {
+    const reason = p.reason ? ` · ${escapeHtml(p.reason)}` : ''
+    return `<div class="step-divider step-divider--finish" aria-hidden="true">~ done${reason}</div>`
+  }
+
+  // ── Retry part — show as warning notice ──────────────────────────────────
+  if (p.type === 'retry') {
+    const attempt = p.attempt ?? 1
+    const errMsg = p.error?.message ?? p.error ?? ''
+    return `<div class="retry-notice" aria-label="Retry attempt ${attempt}">~ retry #${attempt}${errMsg ? ': ' + escapeHtml(String(errMsg).slice(0, 120)) : ''}</div>`
+  }
+
+  // ── Compaction part — show as info notice ────────────────────────────────
+  if (p.type === 'compaction') {
+    const auto = p.auto ? ' (auto)' : ''
+    return `<div class="compaction-notice" aria-label="Session compacted">~ session compacted${auto}</div>`
+  }
+
   return ''
 }
 
@@ -165,6 +192,29 @@ function renderReasoningPart(p) {
 // Expose reasoning toggle globally (called from inline onclick in rendered HTML)
 window.__toggleReasoning = function(id) {
   document.getElementById(id)?.classList.toggle('reasoning-expanded')
+}
+
+// ── Agent transition part renderer ──────────────────────────────────────────
+/**
+ * Render an AgentPart — emitted by OpenCode when the active named agent changes
+ * (e.g. switching from "build" to "plan").
+ *
+ * Shape: { type: 'agent', name: string, source?: { value, start, end } }
+ */
+function renderAgentTransitionPart(p) {
+  const name = escapeHtml(p.name ?? 'unknown')
+  // Derive color from the agent badge system if available
+  let badge = ''
+  try {
+    badge = renderAgentBadge(p.name ?? '')
+  } catch (_) {
+    badge = `<span class="agent-badge agent-badge--custom">${name}</span>`
+  }
+  return `<div class="agent-transition" aria-label="Agent: ${name}">
+    <span class="agent-transition-icon" aria-hidden="true">◈</span>
+    <span class="agent-transition-label">agent:</span>
+    ${badge}
+  </div>`
 }
 
 // ── Feature B: Streaming delta DOM updaters ──────────────────────────────────
