@@ -143,15 +143,22 @@ function ensureOpencodeJsonPluginEntry(configDir: string): {
   }
 
   const arr = Array.isArray(cfg.plugin) ? (cfg.plugin as string[]) : null
-  // Accept any entry that mentions our package — with or without @latest, scoped or unscoped
-  const entryRegex = /(^|\/)opencode-pilot(@|$)/i
-  const alreadyListed = (arr ?? []).some((e) => entryRegex.test(e))
-  if (alreadyListed) return { changed: false }
 
-  // Add a fresh entry (using the package name so OpenCode also loads it via npm
-  // resolution as a backup to the wrapper file).
-  const next = (arr ?? []).slice()
-  next.push(`${PACKAGE_NAME}@latest`)
+  // OpenCode loads ONE export per plugin entry. The package's main is the
+  // server module; the TUI lives at the /tui sub-export. We need BOTH listed
+  // separately so server (banner, dashboard) AND tui (slash commands) load.
+  const wantedEntries = [`${PACKAGE_NAME}@latest`, `${PACKAGE_NAME}/tui`]
+  const existing = arr ?? []
+  const entryRegex = /(^|\/)opencode-pilot(@|\/|$)/i
+  const next = existing.filter((e) => !entryRegex.test(e))
+  next.push(...wantedEntries)
+
+  // No-op if exactly the same set is already there
+  const sameAsBefore =
+    existing.length === next.length &&
+    existing.every((e, i) => e === next[i])
+  if (sameAsBefore) return { changed: false }
+
   cfg.plugin = next
   writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
   return { changed: true }

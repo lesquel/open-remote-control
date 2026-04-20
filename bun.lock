@@ -5,8 +5,8 @@
     "": {
       "name": "opencode-pilot",
       "dependencies": {
-        "@lesquel/opencode-pilot": "^1.12.4",
-        "@opencode-ai/plugin": "latest",
+        "@lesquel/opencode-pilot": "^1.12.7",
+        "@opencode-ai/plugin": "^1.4.6",
         "qrcode-terminal": "^0.12.0",
         "web-push": "^3.6.7",
       },
@@ -18,7 +18,7 @@
     },
   },
   "packages": {
-    "@lesquel/opencode-pilot": ["@lesquel/opencode-pilot@1.12.4", "", { "dependencies": { "@opencode-ai/plugin": "latest", "qrcode-terminal": "^0.12.0", "web-push": "^3.6.7" }, "bin": { "opencode-pilot": "src/cli/init.ts" } }, "sha512-dXPA/gXhBWbJYh5DJnFyRfoSLcyfDpL6BjWKbloTalZn+F/3ciNFRGchClbkwzcpmr+74pPEYNc4rbv6x2h23w=="],
+    "@lesquel/opencode-pilot": ["@lesquel/opencode-pilot@1.12.7", "", { "dependencies": { "@opencode-ai/plugin": "latest", "qrcode-terminal": "^0.12.0", "web-push": "^3.6.7" }, "bin": { "opencode-pilot": "src/cli/init.ts" } }, "sha512-9qebh7M2BD0MTe3TKIsiqItww65dZ7NgL0M2RhutAVG3z9X/O773CeC6zj3C8CUzzZeWPllnYhkzyIdjBuXcgw=="],
 
     "@msgpackr-extract/msgpackr-extract-darwin-arm64": ["@msgpackr-extract/msgpackr-extract-darwin-arm64@3.0.3", "", { "os": "darwin", "cpu": "arm64" }, "sha512-QZHtlVgbAdy2zAqNA9Gu1UpIuI8Xvsd1v8ic6B2pZmeFnFcMWiPLfWXh7TVw4eGEZ/C9TH281KwhVoeQUKbyjw=="],
 
