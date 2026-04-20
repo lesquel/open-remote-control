@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.12.1] — 2026-04-20
+
+### Added — One-command installer
+
+```bash
+npx @lesquel/opencode-pilot init
+```
+
+That's it. The installer locates your OpenCode config dir (XDG / `~/.config/opencode` / `%APPDATA%`), installs the plugin there with `bun` or `npm`, drops a wrapper file at `<config>/plugins/opencode-pilot.ts` so OpenCode loads it reliably, and adds the plugin to `opencode.json` if it isn't already. New `src/cli/init.ts`, registered as the `opencode-pilot` bin in package.json.
+
+### Why this exists
+
+The previous "manual install" path (install package → edit `opencode.json` → restart) had a failure mode where OpenCode's plugin-array resolution for scoped packages (`@scope/name`) didn't trigger the load. Result: package installed correctly, listed in config correctly, but no banner printed. Engram and other community plugins solve this by dropping a `.ts` wrapper file in `~/.config/opencode/plugins/` — we now do the same automatically.
+
+The wrapper file is a single line that re-exports the plugin from `node_modules`, so `bun update @lesquel/opencode-pilot` still works for upgrades.
+
+### Changed — README install section rewritten
+
+One-command flow first, manual install second (collapsed for power users).
+
+---
+
 ## [1.12.0] — 2026-04-20
 
 Major UX release: configure the plugin from the dashboard Settings UI instead of editing `.env` files. The `.env` flow still works (power users); the UI is the new easy path.

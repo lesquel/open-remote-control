@@ -28,38 +28,44 @@ All from one keyboard shortcut (`?` opens the command palette).
 
 ---
 
-## Quick Start (3 steps)
+## Quick Start
 
-### 1. Install
+### One command (recommended, since v1.12.1)
 
 ```bash
-npm install @lesquel/opencode-pilot
+npx @lesquel/opencode-pilot init
 # or
+bunx @lesquel/opencode-pilot init
+```
+
+That's it. The installer:
+1. Locates your OpenCode config dir (`~/.config/opencode` or your XDG path / `%APPDATA%`).
+2. Installs the plugin there.
+3. Drops a wrapper file in `<config>/plugins/opencode-pilot.ts` so OpenCode loads it reliably.
+4. Adds the plugin to `opencode.json` if it isn't already.
+
+Restart OpenCode. The banner prints with URL + token + QR. Done.
+
+> **Configuration is done from the dashboard** (gear icon → Plugin configuration). You do NOT need to create a `.env` — though you still can if you prefer.
+
+### Manual install (if you want to)
+
+```bash
+# 1. Install in your OpenCode config dir
+cd ~/.config/opencode    # or your XDG_CONFIG_HOME path
 bun add @lesquel/opencode-pilot
-# or
-pnpm add @lesquel/opencode-pilot
+
+# 2. Drop a wrapper at plugins/opencode-pilot.ts:
+mkdir -p plugins
+cat > plugins/opencode-pilot.ts << 'EOF'
+export { default } from "@lesquel/opencode-pilot/server"
+EOF
+
+# 3. (Optional, for redundancy) add to opencode.json:
+#    "plugin": ["@lesquel/opencode-pilot@latest"]
 ```
 
-### 2. Add to your `opencode.json`
-
-```jsonc
-{
-  "plugins": ["opencode-pilot"]
-}
-```
-
-> Note: the plugin id is `opencode-pilot` (without the scope), the npm package name is `@lesquel/opencode-pilot`. The scope is only for npm namespacing.
-
-### 3. (Optional) Create a `.env`
-
-Minimum config — only needed if you want to override defaults:
-
-```bash
-PILOT_PORT=4097           # default port
-PILOT_HOST=127.0.0.1      # localhost only; use 0.0.0.0 for LAN access
-```
-
-Run `opencode` from your project directory. Banner prints with URL + token + QR.
+Run `opencode` from any project directory. Banner prints with URL + token + QR.
 
 ---
 
