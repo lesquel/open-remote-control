@@ -21,16 +21,31 @@ import { spawnSync } from "node:child_process"
 
 const PACKAGE_NAME = "@lesquel/opencode-pilot"
 const PLUGIN_ID = "opencode-pilot"
-const WRAPPER_FILENAME = "opencode-pilot.ts"
-const WRAPPER_CONTENT = `// opencode-pilot — auto-generated wrapper.
-// Created by \`npx ${PACKAGE_NAME} init\`. Loads the plugin from node_modules.
+
+// OpenCode separates server and TUI plugins (PluginModule.tui = never,
+// TuiPluginModule.server = never). We ship two wrappers — one for each.
+const WRAPPERS: ReadonlyArray<{ filename: string; content: string }> = [
+  {
+    filename: "opencode-pilot.ts",
+    content: `// opencode-pilot — auto-generated server wrapper.
+// Created by \`npx ${PACKAGE_NAME} init\`. Loads the HTTP+SSE dashboard.
 export { default } from "${PACKAGE_NAME}/server"
-`
+`,
+  },
+  {
+    filename: "opencode-pilot-tui.ts",
+    content: `// opencode-pilot-tui — auto-generated TUI wrapper.
+// Created by \`npx ${PACKAGE_NAME} init\`. Loads the slash commands
+// (/remote, /pilot, /dashboard, /pilot-token).
+export { default } from "${PACKAGE_NAME}/tui"
+`,
+  },
+]
 
 interface InitResult {
   configDir: string
   pluginsDir: string
-  wrapperPath: string
+  wrapperPaths: string[]
   installed: boolean
   installer: string | null
 }
@@ -85,11 +100,15 @@ function ensurePackageInstalled(configDir: string, installer: string): boolean {
   return existsSync(pkgPath)
 }
 
-function writeWrapper(pluginsDir: string): string {
+function writeWrappers(pluginsDir: string): string[] {
   if (!existsSync(pluginsDir)) mkdirSync(pluginsDir, { recursive: true })
-  const wrapperPath = join(pluginsDir, WRAPPER_FILENAME)
-  writeFileSync(wrapperPath, WRAPPER_CONTENT)
-  return wrapperPath
+  const written: string[] = []
+  for (const { filename, content } of WRAPPERS) {
+    const wrapperPath = join(pluginsDir, filename)
+    writeFileSync(wrapperPath, content)
+    written.push(wrapperPath)
+  }
+  return written
 }
 
 function ensureOpencodeJsonPluginEntry(configDir: string): {
@@ -155,8 +174,10 @@ function main(): InitResult {
   }
 
   const pluginsDir = join(configDir, "plugins")
-  const wrapperPath = writeWrapper(pluginsDir)
-  console.log(`  Wrote wrapper:      ${wrapperPath}`)
+  const wrapperPaths = writeWrappers(pluginsDir)
+  for (const p of wrapperPaths) {
+    console.log(`  Wrote wrapper:      ${p}`)
+  }
 
   const cfgUpdate = ensureOpencodeJsonPluginEntry(configDir)
   if (cfgUpdate.changed) {
@@ -175,7 +196,7 @@ function main(): InitResult {
   return {
     configDir,
     pluginsDir,
-    wrapperPath,
+    wrapperPaths,
     installed,
     installer,
   }

@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.12.2] — 2026-04-20
+
+### Fixed — TUI slash commands didn't load (only the server did)
+
+The init wrapper only loaded the server plugin, not the TUI plugin — so `/remote`, `/pilot`, `/dashboard`, `/pilot-token` weren't available even after a successful install. Root cause: OpenCode's SDK separates `PluginModule` (server) and `TuiPluginModule` (tui) as mutually exclusive types — they CANNOT be combined into one file. We need TWO wrappers in `~/.config/opencode/plugins/`.
+
+The init CLI now writes both:
+
+- `plugins/opencode-pilot.ts` — server (HTTP + dashboard + banner)
+- `plugins/opencode-pilot-tui.ts` — tui (slash commands)
+
+Re-run `npx @lesquel/opencode-pilot init` to upgrade. Or manually create the second wrapper:
+
+```bash
+cat > ~/.config/opencode/plugins/opencode-pilot-tui.ts << 'EOF'
+export { default } from "@lesquel/opencode-pilot/tui"
+EOF
+```
+
+Then restart OpenCode.
+
+### Fixed — Self-reference snuck back into dependencies
+
+Removed `@lesquel/opencode-pilot` from its own `dependencies` again (must have been added by an editor / `bun add` with `--save` typo). Same fix as v1.12.0.
+
+---
+
 ## [1.12.1] — 2026-04-20
 
 ### Added — One-command installer

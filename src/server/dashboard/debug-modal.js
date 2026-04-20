@@ -9,7 +9,7 @@ import {
 import { normalizeMessage } from './messages.js'
 import { fetchMessages } from './api.js'
 
-const PILOT_VERSION = '1.12.1'
+const PILOT_VERSION = '1.12.2'
 
 // ── Escape helper ─────────────────────────────────────────────────────────────
 function esc(s) {
