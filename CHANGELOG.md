@@ -4,6 +4,392 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.13.10] — 2026-04-20
+
+### Added — regression guards that block any broken publish
+
+Six sanity tests in `src/server/dashboard/__tests__/asset-sanity.test.ts` that `bun test` now runs by default. Any of these failing aborts the publish:
+
+1. `index.html` **must not** reference highlight.js CommonJS `/lib/core.min.js` / `/lib/languages/*.min.js` (the `module is not defined` bug that rode from 1.11.x through 1.13.8 because a fix claimed in the CHANGELOG never landed in the file).
+2. `index.html` **must** load `/build/highlight.min.js` (the UMD bundle).
+3. `index.html` **must** contain the self-heal cleanup script (`pilot:asset-gen`, `getRegistrations`, `caches.keys`) so returning users on any pre-1.13.9 install get flushed automatically on first load.
+4. The self-heal `GEN` marker **must** match `package.json::version`. If you bump the package version but forget to bump the marker, the self-heal won't fire and users stay stuck on the old bundle.
+5. `sw.js` **must** use `CACHE_NAME = "pilot-vNN"` — the `activate` handler depends on this shape to evict previous precaches.
+6. `src/server/constants.ts::PILOT_VERSION` **must** match `package.json::version`. PILOT_VERSION was hardcoded at `1.12.8` through 1.13.5 because nobody bumped it in sync; the dashboard's `/health` response and right-panel label lied about what the user was running, making bug reports confusing.
+
+### Changed — `prepublishOnly` now runs guard + typecheck + full test suite
+
+```json
+"prepublishOnly": "bun scripts/prepublish-guard.ts && tsc --noEmit && bun test"
+```
+
+Before, only the self-ref/SDK guard ran. Now `npm publish` aborts if:
+
+- A self-reference or pinned SDK was silently re-injected into `package.json` by an upstream hook.
+- `tsc --noEmit` reports any type error.
+- Any of the 187 tests fails — including the six regression guards above.
+
+No broken release reaches npm. The "CHANGELOG said fixed but the edit never landed" class of bug is structurally impossible from this point forward.
+
+---
+
+## [1.13.9] — 2026-04-20
+
+### Fixed — `Uncaught ReferenceError: module is not defined` on dashboard load (highlight.js CommonJS)
+
+The dashboard's `index.html` loaded nine scripts from `highlight.js@11.10.0/lib/*` — `lib/core.min.js` + eight `lib/languages/*.min.js`. Those files are the **CommonJS internals** shipped for bundlers (webpack, vite, etc.) and contain literal `module.exports` references + redeclared `const` bindings. Loading them directly via `<script>` tags in a browser throws:
+
+```
+Uncaught ReferenceError: module is not defined   (core.js:2595)
+Uncaught SyntaxError: redeclaration of const IDENT_RE
+Uncaught ReferenceError: module is not defined   (python.js, go.js, rust.js, …)
+```
+
+…and the dashboard fails to render any code highlighting. The v1.12.6 CHANGELOG claimed this was already fixed — it wasn't. The original patch landed in the CHANGELOG but the actual `<script>` tags in `src/server/dashboard/index.html` never changed. The bug silently rode through every release up to and including 1.13.8.
+
+**Fix**: replace the nine `lib/*.min.js` scripts with a **single `/build/highlight.min.js`** — the proper UMD bundle that exposes `hljs` globally and includes ~190 languages. One network request, no errors, syntax highlighting works everywhere.
+
+```html
+<!-- before -->
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/typescript.min.js"></script>
+… (7 more)
+
+<!-- after -->
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/build/highlight.min.js"></script>
+```
+
+### Also — defense in depth so this never happens again to any user
+
+1.13.1 and earlier registered a cache-first service worker that pinned stale JS in users' browsers for weeks. Bumping `CACHE_NAME` flushed it, but the FIRST load after an upgrade still served the old bundle because the new `sw.js` hadn't activated yet. Not good enough when the old bundle blows up on page load.
+
+Three additional safeguards in 1.13.9:
+
+1. **Self-healing cache cleanup in `index.html`**. The very first `<script>` in the `<head>` reads `localStorage["pilot:asset-gen"]` and compares it to the plugin generation baked into the HTML ("1.13.9"). On mismatch — i.e. first load after an upgrade — it calls `navigator.serviceWorker.getRegistrations().then(r => r.forEach(x => x.unregister()))`, wipes every `caches.keys()` entry, sets the flag, and triggers a single reload. The second load lands SW-free on a fresh bundle. One 50ms flash instead of "dashboard is broken, please Ctrl+Shift+R".
+2. **`Cache-Control: no-cache, must-revalidate`** on every dashboard asset (`index.html`, `*.js`, `*.css`, `*.json`, icons). `no-cache` doesn't mean "don't cache" — it means "revalidate with the origin before using". Browsers still get to 304-cache, but they round-trip to the server, so a new version is picked up on the very next refresh instead of weeks later.
+3. **`CACHE_NAME` bumped to `pilot-v21`**. Any leftover `pilot-v18`/`pilot-v20` precache on returning users gets evicted by the service worker's `activate` handler.
+
+Combined, a returning user on 1.13.1 (cache-first, `pilot-v18`) who upgrades to 1.13.9 sees at most one forced reload on the first dashboard load — after that, zero residual staleness.
+
+### Manual escape hatch (only if the self-heal script didn't run)
+
+Self-heal only runs if the HTML itself gets to the browser. If your existing SW is so aggressive it's still serving the PRE-1.13.9 `index.html` from cache, you can force a one-time clean manually:
+
+- Firefox: `about:serviceworkers` → find `127.0.0.1:4097` → **Unregister** → `Ctrl+Shift+R`.
+- Chrome: DevTools → Application → Service Workers → **Unregister** → `Ctrl+Shift+R`.
+
+Or open the dashboard URL in a private/incognito window once — that browser context has no SW and will fetch the 1.13.9 HTML, run the self-heal, and then your normal window is clean on next visit.
+
+### Cosmetic
+
+- `PILOT_VERSION` bumped to `1.13.9`.
+
+---
+
+## [1.13.8] — 2026-04-20
+
+### Fixed — Passive instances now auto-promote when the primary closes
+
+1.13.7 introduced passive mode so a second OpenCode window wouldn't fail on `EADDRINUSE`. But if you closed the **primary** window, the surviving passive window stayed passive forever — `/remote` still read the stale global state file (or nothing after the primary's `clearState` ran on shutdown), and you couldn't open the dashboard from the remaining terminal without quitting it and reopening.
+
+Also, closing the primary window sometimes left the tunnel child process (cloudflared / ngrok) holding sockets open for a beat, producing a "reconnecting…" blink in the dashboard before the browser even realized the server was gone.
+
+Two fixes:
+
+1. **Auto-promotion watcher**. A passive instance now polls `server.start()` every 5s. `start()` is a cheap no-op when the port is taken and returns `{ ok: true }` the moment the primary releases it. On that first successful bind, the passive instance runs the same `activatePrimary(true)` flow the boot path uses — writes state, writes banner, starts the tunnel, emits the Telegram startup notification, sets `deps.tunnelUrl`. The user sees a toast: **"OpenCode Pilot — promoted. Previous primary window closed. This window now hosts the dashboard on port 4097."** `/remote` works immediately after.
+2. **Tunnel child dies deterministically**. `tunnel.stop()` used to fire `proc.kill()` and return. Now it fires SIGTERM, sets a 400ms fuse, and escalates to SIGKILL if the child is still alive. The `onDead` callback runs on `exit`/`close`, so `_tunnelInfo` flips to `off` synchronously. No more zombie cloudflared hanging on for seconds after the primary window closed.
+
+Refactor inside `src/server/index.ts`: extracted the primary-specific setup into `activatePrimary(isPromotion)`. Shutdown reads `role` at the moment it runs rather than at boot, so a promoted instance cleanly tears down its server/tunnel/state. `clearState` only runs when `role === "primary"` at shutdown time — never from a passive window.
+
+### Upgrading
+
+```bash
+pkill -f opencode
+npx @lesquel/opencode-pilot@latest init
+# Terminal A — primary
+cd /some/project && opencode
+# Terminal B — passive (polls every 5s)
+cd /other/project && opencode
+# Close terminal A's window. Within 5s terminal B auto-promotes;
+# you'll see the "promoted" toast and `/remote` opens the dashboard.
+```
+
+### Cosmetic
+
+- `PILOT_VERSION` bumped to `1.13.8`.
+
+---
+
+## [1.13.7] — 2026-04-20
+
+### Fixed — Opening OpenCode in a second terminal failed with "Port 4097 in use"
+
+When you had one OpenCode window already open and launched a second one from a different terminal (different workspace), the second instance tried to claim port 4097 and failed. Error surfaced as `Failed to start server. Is port 4097 in use?` in the log, plus a toast, plus a refusal to load the plugin. The second OpenCode window essentially ran without the pilot, and closing the first window didn't automatically promote the second one either.
+
+**Passive mode**: the plugin now detects `EADDRINUSE` at bind time and, instead of propagating the error, silently enters "passive mode" for that workspace:
+
+- The HTTP server, tunnel, telegram startup, banner write, state write, and the success toast are all **skipped**. The primary instance already owns those.
+- All four plugin hooks (`event`, `permission.ask`, `tool.execute.before`, `tool.execute.after`) still get registered locally, so OpenCode itself behaves normally — tool calls work, permission flows work, etc.
+- An **informational toast** tells the user: "OpenCode Pilot — passive mode. Port 4097 already in use by another OpenCode window. Open the existing dashboard to manage this workspace." The primary dashboard already has multi-project tabs, so the new workspace is reachable from there as soon as its SDK instance is live.
+- `clearState` is NOT called on shutdown in passive mode — the global state file belongs to the primary window, and deleting it would blind every other pilot TUI/dashboard on the machine.
+- Audit log records `boot.passive` with the reason so you can grep for it.
+
+If the primary instance exits first, any window that starts afterwards binds normally and becomes the new primary. No coordination required.
+
+### Cosmetic
+
+- `PILOT_VERSION` in `src/server/constants.ts` bumped to `1.13.7`.
+
+---
+
+## [1.13.6] — 2026-04-20
+
+### Fixed — Streaming still wasn't visible: intermediate `message.updated` events wiped the transcript mid-turn
+
+After the 1.13.2–1.13.4 fixes (listening to `message.part.delta`, optimistic UI, on-the-fly surfaces, tool hot-swap, service worker rotation, in-memory asset cache), streaming still required a page reload to show the assistant's reply. A sub-agent traced the bug end-to-end: curl on `/events` PROVED deltas were flowing out the SSE stream (9+ delta events captured with correct `{sessionID, messageID, partID, field:"text", delta}`). The bug lived in the frontend.
+
+**Root cause**: the SDK emits `message.updated` **several times per turn**, not just at the end — user-confirm, assistant-init, one or more assistant-intermediate, and assistant-final. The `sse.js` handler treated every `message.updated` the same way: `loadMessages(activeSession)` → `renderMessages` → `box.innerHTML = msgs.map(renderMsg).join('')`. That wipe erased every streaming text node `applyStreamingDelta` had been appending since the previous update, so the typewriter got reset on every intermediate — visually indistinguishable from "nothing happens until the end".
+
+Two sub-bugs:
+
+1. The code branched on `MESSAGE_CREATED` expecting the SDK to emit it. Checked `packages/opencode/src/session/message-v2.ts`: only `Updated`, `PartUpdated`, `PartDelta`, `PartRemoved` are defined — **no `Created`**. Our `MESSAGE_CREATED` branch was dead code. The subscription stays for forward-compat but will never fire today.
+
+2. The final-update detector used `d?.id ?? d?.messageId ?? ev.properties?.id`. Since `d = ev.data ?? ev` and `ev.data` doesn't exist, `d = ev`, and `ev.id` is undefined — the real id lives at `ev.properties.info.id`. So `clearStreamingMessage` and `removeStreamingCursor` silently did nothing.
+
+**Fix** (`src/server/dashboard/sse.js`):
+
+- Detect "final" via `info.time.completed` (or `info.finish`, depending on SDK shape). Only run `loadMessages` on a **final assistant** `message.updated` — which is when we genuinely want to re-render with final markdown, tool blocks, agent badges, etc.
+- For **intermediate** assistant updates: leave the DOM alone. `ensureTextPartSurface` + `applyStreamingDelta` + `replacePartInDom` already handle the incremental render.
+- For **user** `message.updated`: reconcile the optimistic bubble with the real id if the optimistic node exists, otherwise `loadMessages` once (first-time case from another device).
+- Sound / browser notification / session-meta refresh / label-strip refresh: all gated to the final update too.
+- Properly read the id from `ev.properties.info.id`.
+
+### Hard-refresh caveat
+
+With `CACHE_NAME = "pilot-v20"` and stale-while-revalidate, the **first** reload after upgrade still serves the OLD `sse.js` from SW cache while fetching the new one in background. A **second** reload (or `Ctrl+Shift+R`) picks up the 1.13.6 streaming logic. The alternative — bumping the cache name to flush eagerly — would drop other in-flight SW state. If users still don't see streaming after `npx init`, tell them: close every tab, reopen the dashboard URL fresh.
+
+### Cosmetic
+
+- `PILOT_VERSION` in `src/server/constants.ts` was hard-coded at `1.12.8` and bumped through every release. Now set to `1.13.6`. Dashboard `/health` and right-panel will show the correct version.
+
+---
+
+## [1.13.5] — 2026-04-20
+
+### Fixed — "Remote control server not running or token not yet available" on fresh workspaces (e.g. `~/Desktop`)
+
+When another user tried the plugin from `~/Desktop` (or any folder without an `.opencode/` subdirectory), the TUI toast kept reporting the server as offline even when the dashboard was live and reachable. Root cause was a pair of matching bugs:
+
+1. **Server silently failed to write state**. `writeState` called `writeFileSync(join(directory, ".opencode", "pilot-state.json"))` without creating the `.opencode/` folder first. On a workspace that didn't already have that folder, the call threw `ENOENT`, the error bubbled out of the plugin boot, and the state file never got written. The banner writer had a try/catch around the same mistake, so the banner swallowed silently and the state write took down the boot.
+2. **TUI looked in the wrong place**. The `/pilot`, `/pilot-token`, `/remote-control` commands read from `join(process.cwd(), ".opencode", "pilot-state.json")`. `process.cwd()` in the TUI plugin isn't guaranteed to match the server plugin's `ctx.directory`, so even when the state file was written correctly, the TUI often couldn't find it.
+
+Fixes:
+
+- `writeState` / `writeBanner` now `mkdirSync(..., { recursive: true })` before writing and catch any remaining errors (read-only FS, permission denied, etc.) instead of propagating. The server boot can no longer be taken down by a failed state write.
+- Both files are now **dual-written**: the per-project `.opencode/pilot-state.json` (kept for tooling that knows the workspace) PLUS a **canonical global file** at `~/.opencode-pilot/pilot-state.json` (and `pilot-banner.txt`). Since the HTTP server binds to a single port machine-wide, at most one server is live at any moment, so a single global file is sufficient.
+- TUI `readPilotState` / `readBanner` now try the project path first and fall back to the global path. So `/pilot` works from any workspace, including bare folders like `~/Desktop`.
+- `clearState` cleans both paths on shutdown.
+
+### Upgrading
+
+```bash
+pkill -f opencode
+npx @lesquel/opencode-pilot@latest init
+opencode
+```
+
+From any workspace — no `.opencode/` folder required — `/pilot` and `/remote-control` should now surface the live dashboard URL, token, and QR.
+
+---
+
+## [1.13.4] — 2026-04-20
+
+### Fixed — `npx init` broke the dashboard when OpenCode was running
+
+`init` in 1.13.3 aggressively wiped `~/.cache/opencode/packages/@lesquel/opencode-pilot*` to force a fresh download of the plugin on the next OpenCode launch. Correct in principle — but if OpenCode was **already running** when you re-ran `init`, the live plugin lost the directory it was serving dashboard files from. Every subsequent request for `/sw.js`, `/sse.js`, `/main.js`, etc. returned 404. The browser kept running whatever JS it had previously cached, and the 1.13.3 SW rotation never took effect.
+
+Two fixes:
+
+1. **`init` now detects a running OpenCode process** (`pgrep -f opencode` on Unix, `tasklist` on Windows) and **refuses to wipe the cache** while OpenCode is alive. It prints a clear warning telling you to quit OpenCode first and re-run. The install/config steps still run — only the destructive cache cleanup is skipped.
+
+2. **The plugin snapshots the dashboard into memory at boot** (`src/server/http/handlers.ts`). Prior versions read each file from disk on every request, so anything that deleted the plugin's cache directory mid-flight left the dashboard serving 404s until restart. Now every `.js`/`.css`/`.html`/`.svg` under `DASHBOARD_DIR` is loaded into an in-memory map the first time the dashboard is hit, and served from memory afterwards. Dev mode (`PILOT_DEV=true`) still re-reads from disk so live edits show up without a plugin restart.
+
+### How to recover if you're already stuck
+
+The 1.13.3 dashboard is serving 404s for static assets because its cache was deleted. To recover:
+
+```bash
+pkill -f opencode                                   # fully stop OpenCode
+npx @lesquel/opencode-pilot@latest init             # reinstalls fresh (cache is re-populated on next launch)
+opencode                                            # start it back up
+# Then in the browser: Ctrl+Shift+R to force-fetch the new sw.js
+```
+
+---
+
+## [1.13.3] — 2026-04-20
+
+### Fixed — Service worker kept serving the old frontend bundle after upgrade
+
+1.13.2 shipped a complete SSE/streaming rewrite (typewriter via `message.part.delta`, optimistic user messages, on-the-fly part surfaces, tool hot-swap) — all correct on disk. But **the dashboard still didn't stream** after upgrading, because the service worker was serving the 1.12.x JS from cache.
+
+Two issues in the old `sw.js`:
+
+1. **Cache name hadn't bumped**. `CACHE_NAME = "pilot-v18"` was set back in 1.12.x and never bumped, so the `activate` handler never flushed the stale precache. Browsers kept loading the 1.12.x `sse.js` with the old event subscriptions even though `~/.config/opencode/node_modules/@lesquel/opencode-pilot/src/server/dashboard/sse.js` on disk was the 1.13.2 version.
+2. **Strategy was cache-first with no revalidation**. Once a file was in the cache, the browser never refetched it until the cache name changed. This made every future frontend change require a manual cache bump — easy to forget.
+
+1.13.3 bumps `CACHE_NAME` to `pilot-v20` (v19 was announced but never shipped) and switches the fetch strategy to **stale-while-revalidate**: the cached copy renders instantly so the UI stays fast, and in parallel the SW fetches the current file from the server and updates the cache for the next load. No more "fix the code, publish, but users keep running the old bundle" traps — by the second load after publish, everyone's on the new code.
+
+### How to recover if you're stuck on an old cache
+
+```bash
+npx @lesquel/opencode-pilot@latest init
+pkill -f opencode
+opencode
+```
+
+Then hard-reload the dashboard once (`Ctrl+Shift+R` / `Cmd+Shift+R`). The new SW activates, deletes `pilot-v18`, precaches everything at `pilot-v20`, and on the next prompt you should see tokens stream live.
+
+---
+
+## [1.13.2] — 2026-04-20
+
+### Fixed — Dashboard didn't stream: user message + assistant tokens + tool updates all stuck until end of turn
+
+The big one. The dashboard looked frozen from the moment you hit Send until the assistant's entire turn finished: the message you just sent didn't appear, no typewriter effect on the response, tool calls didn't animate through their states. Everything rendered as a single re-render at the very end.
+
+Root cause (five concatenated issues, fixed together):
+
+1. **We were listening to the wrong SSE event for streaming.** OpenCode's SDK emits TWO distinct events: `message.part.updated` (SNAPSHOT, used for tool state transitions pending → running → completed — never has a delta field) and `message.part.delta` (INCREMENTAL token chunks with `{ sessionID, messageID, partID, field, delta }`). The dashboard only subscribed to `message.part.updated` and looked for a `delta` property that never existed. Every token was silently dropped. Now we subscribe to `message.part.delta` for the typewriter and use `message.part.updated` exclusively for non-text hot-swaps.
+
+2. **`sendPrompt` blocked the UI on the full turn.** It `await`ed `POST /prompt` (which on the backend `await`s `client.session.prompt(...)` until the assistant is done) and only then called `loadMessages` to render. Now it appends an optimistic `.message.user[data-pending="1"]` to the DOM immediately, fires the POST without awaiting, and lets SSE drive everything else. The SSE `message.created` (role=user) reconciles the pending marker with the real id.
+
+3. **First delta arrived before the assistant bubble existed.** With the event name fixed, the first token would still be dropped because `applyStreamingDelta` couldn't find `[data-part-id=...]`. `ensureTextPartSurface(partId, messageId)` now creates an empty assistant bubble on demand, so every delta from token #1 lands visibly.
+
+4. **Tool state transitions didn't animate.** Tool blocks now carry `data-part-id` and `data-message-id`. When `message.part.updated` lands with a tool snapshot, `replacePartInDom(part)` swaps only that node — the status icon goes ○ pending → ◐ running → ● completed live, and the OUTPUT pane fills in when the tool finishes. Text parts are deliberately skipped by the replace (the delta stream drives them).
+
+5. **`loadMessages` wiped the transcript mid-turn.** It set `innerHTML = 'Loading…'` unconditionally, including on the final `message.updated` — erasing any in-progress deltas and flashing the whole pane. Now the placeholder only renders on a genuinely empty pane (first load or session switch).
+
+Net effect: hit Send → your message appears instantly → typing indicator → assistant response streams token by token → tool calls animate through pending/running/completed in place → final bubble re-renders with full markdown. Real-time.
+
+### Docs
+
+- README now opens with "Install once, use everywhere" — one `npx init` in `~/.config/opencode` and the plugin works from **any** project. No `.opencode/` duplicates, no per-project setup.
+- New "How to use it day-to-day" section covering: slash commands (`/pilot`, `/pilot-token`, `/dashboard`, `/remote`, `/remote-control`), terminal banner, dashboard tour (`?` palette, sidebar, transcript, right panel, settings gear), and phone access.
+
+---
+
+## [1.13.1] — 2026-04-20
+
+### Fixed — TUI loader reads `tui.json`, not `opencode.json`
+
+1.13.0 wrote the plugin spec into `~/.config/opencode/opencode.json::plugin`, expecting OpenCode's TUI loader to see it. It doesn't. OpenCode actually has **two separate plugin configs**, loaded by two separate loaders:
+
+- `opencode.json::plugin` → read by the **server** loader (`src/plugin/index.ts`). Registers plugins that export a `server()` function (HTTP server, hooks, event listeners).
+- `tui.json::plugin` → read by the **TUI** loader (`src/cli/cmd/tui/plugin/runtime.ts`). Registers plugins that export a `tui()` function (slash commands, toasts, sidebar widgets).
+
+A spec in only `opencode.json` gets the dashboard but zero slash commands. A spec in only `tui.json` gets the slash commands but no dashboard. Our plugin ships both, so it needs to be in **both** files. The TUI loader never even logs "loading tui plugin" for the spec because it literally isn't in the list it reads — no error, no warning, just silent absence.
+
+**`init` in 1.13.1** now writes the single canonical spec `@lesquel/opencode-pilot@latest` into **both** `opencode.json::plugin` and `tui.json::plugin`, creating `tui.json` if it doesn't exist. The `$schema` field defaults to `https://opencode.ai/tui.json` for editor autocompletion.
+
+### Also fixed — OpenCode cache pinned the old pilot version under `@latest` spec
+
+`init` in 1.13.0 cleaned `~/.cache/opencode/packages/@lesquel/opencode-pilot/` but OpenCode actually stores each plugin keyed by the **full spec string**, so the real cache lived at `~/.cache/opencode/packages/@lesquel/opencode-pilot@latest/` (suffix included). The cleanup missed it, so even after installing 1.13.0 in `~/.config/opencode/node_modules/`, OpenCode kept loading a stale 1.11.3 snapshot from that cache — where the server and TUI plugins shared the same `id` and the TUI got silently overwritten.
+
+1.13.1 `init` now enumerates the `<cache>/@lesquel/` directory and removes every entry starting with `opencode-pilot`, covering `opencode-pilot`, `opencode-pilot@latest`, `opencode-pilot@<pinned>`, and stray `opencode-pilot/tui` subpath attempts in a single pass.
+
+### Also fixed — Settings UI showed stale values after save
+
+`GET /settings` and the response of `PATCH /settings` both returned `projectConfigToSettings(deps.config)`, where `deps.config` is a snapshot taken when the plugin booted. Any value saved from the UI (port, host, tunnel, etc.) would persist correctly to `~/.opencode-pilot/config.json` but the UI kept rendering the boot-time value, making it look like the save was ignored.
+
+The handler now recomputes the effective config from the fresh store + shell env on every call. Restart-required fields still require a plugin restart to take effect at runtime — the UI badge makes that explicit — but the *displayed* value is now the one that WILL be active after restart.
+
+### Also fixed — Settings modal clipped tall content on desktop
+
+`.settings-box` had no height constraint, so with every section expanded the modal overflowed the viewport and the Save / Close buttons disappeared off-screen. Added `max-height: 85vh` and `overflow-y: auto` with a subtle scrollbar. Mobile already had the equivalent rules.
+
+### Also fixed — UI froze during a turn (user message + assistant response didn't stream)
+
+`POST /sessions/:id/prompt` blocks on `await deps.client.session.prompt(...)` until the assistant's entire turn is done. The dashboard then `await`ed that response before touching the DOM, so everything looked frozen: the sent message didn't render, the assistant's tokens didn't stream, tools didn't animate, and the whole transcript only appeared at the end as a single re-render.
+
+Five coordinated fixes — the root of it was that we were listening to the wrong SSE event for streaming:
+
+1. **Listen for `message.part.delta` (the real token stream)**. OpenCode's SDK emits TWO distinct events: `message.part.updated` is a SNAPSHOT (no delta field — used for tool state transitions pending → running → completed) and `message.part.delta` is the INCREMENTAL token stream (`{ sessionID, messageID, partID, field, delta }`). The dashboard was subscribing only to `message.part.updated` and looking for a `delta` field that never existed, which is why nothing streamed. We now subscribe to `message.part.delta` for the typewriter effect and use `message.part.updated` exclusively for non-text part hot-swaps.
+2. **Optimistic user message**. `sendPrompt` appends the user's message to the DOM immediately (as a `.message.user[data-pending="1"]` node), clears the input, and fires `POST /prompt` without awaiting it. On failure the optimistic node is removed and a toast is shown; on success the SSE `message.created` (role=user) reconciles the `data-pending` marker with the real message id instead of re-rendering.
+3. **On-the-fly streaming surface**. When the first `message.part.delta` arrives, the corresponding DOM node usually doesn't exist yet. `ensureTextPartSurface(partId, messageId)` now creates an empty assistant bubble with the right `data-part-id` on demand, so every delta lands visibly from token #1.
+4. **Hot-swap for tool parts**. Tool blocks now carry `data-part-id` and `data-message-id` attributes. When `message.part.updated` lands with a tool snapshot, `replacePartInDom(part)` swaps only that node — text parts are deliberately left alone (the delta stream drives them), but tools update live: the status icon animates from ○ (pending) → ◐ (running) → ● (completed), the OUTPUT pane fills in, errors show in red, all without touching the rest of the transcript.
+5. **No `Loading…` wipe while messages exist**. `loadMessages` used to set `innerHTML = 'Loading…'` unconditionally — including on `message.updated` at the end of a turn — which erased in-progress streaming deltas and caused the whole pane to flash. It now only shows the placeholder on a genuinely empty pane (first load, session switch).
+
+Net effect: you hit Send → your message appears instantly → typing indicator → the assistant's response streams token by token → tool calls flicker through their state transitions live → the final bubble re-renders with markdown formatting when `message.updated` lands. Real-time, no frozen UI.
+
+### New docs
+
+- [`docs/INSTALL.md`](docs/INSTALL.md) documents the dual-config architecture, every gotcha from this saga, and the full troubleshooting matrix. Link it from any issue about "slash commands don't appear" or "plugin seems partly loaded".
+
+### Upgrading from 1.12.x or 1.13.0
+
+```bash
+npx @lesquel/opencode-pilot@latest init
+```
+
+Then fully quit OpenCode (all sessions — `pkill -f opencode` if needed) and reopen. The toast should appear and `/remo<Tab>` should autocomplete the pilot commands.
+
+---
+
+## [1.13.0] — 2026-04-20
+
+### Fixed — slash commands never registered on npm-installed plugin
+
+**Symptom**: on the user's machine (OpenCode ≥ 1.14), after `npx @lesquel/opencode-pilot init`, the HTTP dashboard and banner came up fine, but typing `/remo<Tab>` showed only built-in commands. The TUI plugin silently never registered `/remote`, `/dashboard`, `/pilot`, `/pilot-token`, `/remote-control`.
+
+**Root cause**: three concatenated bugs in the install pathway, all visible in `~/.local/share/opencode/log/<ts>.log`:
+
+1. The `init` script added `"@lesquel/opencode-pilot/tui"` to `opencode.json::plugin` expecting OpenCode to honor the package's `exports["./tui"]` sub-path. It doesn't — OpenCode treats any string after `/` as a distinct npm package name and tries to download it into `~/.cache/opencode/packages/@lesquel/opencode-pilot/tui/`, which fails with `ENOENT … package.json`.
+2. To "work around" #1, init also dropped two wrapper files under `~/.config/opencode/plugins/`. But OpenCode's server loader validates **every file** in that folder as a server plugin, and our TUI wrapper re-exported `{ id, tui }` without a `server` function. OpenCode rejected it: `must default export an object with server()`.
+3. The server wrapper in that same folder collided with the npm-spec load: the plugin booted twice, and the second attempt crashed with `Failed to start server. Is port 4097 in use?`.
+
+**The actual fix**: OpenCode's loader already does the right thing. Both the server loader (`plugin/index.ts`) and the TUI loader (`cli/cmd/tui/plugin/runtime.ts`) read the same `plugin_origins` array, and `shared.ts::resolvePackageEntrypoint` picks `exports["./server"]` or `exports["./tui"]` from the package's own `package.json`. **One npm spec is enough** for both modules.
+
+`opencode.json::plugin` should contain exactly:
+
+```json
+"plugin": ["@lesquel/opencode-pilot@latest"]
+```
+
+No wrappers. No `/tui` sub-path. No file:// URLs.
+
+**What `init` does in 1.13**:
+
+- Adds a single canonical `@lesquel/opencode-pilot@latest` spec, removing any stale `/tui`, `/server`, or pinned variants.
+- Deletes stale wrapper files `opencode-pilot.ts` and `opencode-pilot-tui.ts` left behind by 1.11.x–1.12.x installs.
+- Invalidates OpenCode's package cache (`~/.cache/opencode/packages/@lesquel/opencode-pilot/`, or the platform equivalent) so the next launch re-fetches the new version instead of serving a stale copy.
+
+### Canary — how to confirm the plugin actually loaded
+
+On OpenCode startup the TUI plugin shows a toast:
+
+> **OpenCode Pilot** — Remote control plugin loaded. Use `/pilot` or `/pilot-token`.
+
+If the toast appears → TUI registered → slash commands work. If no toast appears, the TUI did not load. Inspect the latest log and grep for `pilot`, `tui.plugin`, or `error`:
+
+```bash
+tail -200 $(ls -t ~/.local/share/opencode/log/*.log | head -1) | grep -iE "pilot|tui.plugin|error"
+```
+
+### Upgrading from 1.12.x
+
+```bash
+npx @lesquel/opencode-pilot@latest init
+```
+
+That single command upgrades the package, strips the stale wrappers, and rewrites `opencode.json::plugin` to the single-spec form. Close **all** OpenCode sessions fully and reopen — the toast should appear on the next launch.
+
+### Also in 1.13
+
+- **`prepublishOnly` guard** (`scripts/prepublish-guard.ts`) fails the publish if `package.json::dependencies` contains the upstream-hook-injected self-reference `"@lesquel/opencode-pilot"` or if `@opencode-ai/plugin` is pinned instead of `"latest"`. This prevents two classes of broken publishes that bit us in 1.12.x.
+
+---
+
 ## [1.12.6] — 2026-04-20
 
 ### Fixed — highlight.js threw "module is not defined" in browser

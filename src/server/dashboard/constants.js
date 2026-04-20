@@ -27,6 +27,10 @@ export const EVENTS = Object.freeze({
   MESSAGE_CREATED:      'message.created',
   MESSAGE_UPDATED:      'message.updated',
   MESSAGE_PART_UPDATED: 'message.part.updated',
+  // Incremental text stream — emitted per-token for text/reasoning fields.
+  // This is what drives the typewriter effect; MESSAGE_PART_UPDATED only
+  // carries snapshots (pending → running → completed) without the delta.
+  MESSAGE_PART_DELTA:   'message.part.delta',
   // Permissions
   PERMISSION_REQUESTED: 'permission.requested',
   PERMISSION_RESOLVED:  'permission.resolved',

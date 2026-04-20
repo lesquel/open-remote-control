@@ -5,15 +5,30 @@ import { matchRoute } from "./routes"
 import type { RouteDeps } from "./routes"
 
 export interface RemoteServer {
-  start(): void
+  /**
+   * Attempt to bind the HTTP server. Returns `{ ok: true }` on success.
+   * Returns `{ ok: false, reason: "port-in-use" }` when the port is already
+   * bound by another OpenCode instance on the same machine — the plugin
+   * treats this as "passive mode" (see src/server/index.ts) rather than
+   * propagating the error. Any other bind failure still throws.
+   */
+  start(): { ok: true } | { ok: false; reason: "port-in-use"; error: Error }
   stop(): void
+}
+
+function isEaddrInUse(err: unknown): boolean {
+  if (!err) return false
+  const anyErr = err as { code?: string; message?: string }
+  if (anyErr.code === "EADDRINUSE") return true
+  return typeof anyErr.message === "string" && /EADDRINUSE|address already in use|port is already in use/i.test(anyErr.message)
 }
 
 export function createRemoteServer(deps: RouteDeps): RemoteServer {
   let server: ReturnType<typeof Bun.serve> | null = null
 
-  function start(): void {
-    server = Bun.serve({
+  function start(): { ok: true } | { ok: false; reason: "port-in-use"; error: Error } {
+    try {
+      server = Bun.serve({
       port: deps.config.port,
       hostname: deps.config.host,
       idleTimeout: 255, // seconds — max Bun allows; prevents SSE connections from being killed
@@ -52,7 +67,14 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
           return jsonError("INTERNAL_ERROR", "Internal server error", 500, CORS_HEADERS)
         }
       },
-    })
+      })
+      return { ok: true }
+    } catch (err) {
+      if (isEaddrInUse(err)) {
+        return { ok: false, reason: "port-in-use", error: err as Error }
+      }
+      throw err
+    }
   }
 
   function stop(): void {

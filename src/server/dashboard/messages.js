@@ -270,6 +270,133 @@ export function removeStreamingCursor(messageId) {
   })
 }
 
+// ── Feature B2: Optimistic user-message + on-the-fly part surfaces ──────────
+//
+// The send flow used to `await sendPromptWithOpts(...)` then `await
+// loadMessages(...)` — which meant the sent message did not appear on
+// screen until the assistant's full response was received. That made the
+// UI feel frozen during a turn. We now:
+//
+//   1. Append the user's message optimistically the moment they hit Send,
+//      with data-pending="1" as a reconcile marker.
+//   2. Reconcile against the SSE `message.created` (role=user) event so
+//      the DOM node gets the real message-id without a re-render.
+//   3. When a `message.part.updated` delta arrives for a text part we
+//      haven't rendered yet, create the surface on the fly so the first
+//      token is visible immediately instead of being lost until the
+//      eventual `message.updated` full reload.
+
+/**
+ * Append an optimistic user message to the DOM. Removes the empty-state
+ * placeholder if present. Returns the created element for the caller.
+ */
+export function appendOptimisticUserMessage(text) {
+  const box = document.getElementById('messages')
+  if (!box) return null
+  // Replace the "Ready for your first prompt" empty state if it's there.
+  const empty = box.querySelector('#no-session-state')
+  if (empty) empty.remove()
+  // Replace a stale Loading… placeholder left by a previous loadMessages.
+  if (box.children.length === 1 && box.firstElementChild?.textContent === 'Loading…') {
+    box.innerHTML = ''
+  }
+  const el = document.createElement('div')
+  el.className = 'message user'
+  el.dataset.pending = '1'
+  el.innerHTML = `<div class="message-role">user</div>
+    <div class="message-body md-rendered">${renderMarkdown(text)}</div>`
+  box.appendChild(el)
+  box.scrollTop = box.scrollHeight
+  return el
+}
+
+/** Remove any optimistic user message still flagged as pending. */
+export function removeOptimisticUserMessage() {
+  const box = document.getElementById('messages')
+  if (!box) return
+  box.querySelectorAll('.message.user[data-pending="1"]').forEach(el => el.remove())
+}
+
+/**
+ * When SSE confirms the user message exists server-side, reconcile the
+ * optimistic node: strip data-pending and attach the real messageID. No
+ * visible change for the user, but subsequent SSE events can target the
+ * node by id.
+ */
+export function reconcileOptimisticUserMessage(messageId) {
+  if (!messageId) return
+  const box = document.getElementById('messages')
+  if (!box) return
+  const pending = box.querySelector('.message.user[data-pending="1"]')
+  if (!pending) return
+  pending.removeAttribute('data-pending')
+  pending.dataset.messageId = messageId
+}
+
+/**
+ * Replace a rendered part node in place with a fresh render of the new
+ * part data. Used when `message.part.updated` lands with a snapshot of a
+ * tool part transitioning pending → running → completed — we need the
+ * DOM to reflect the new status badge, output pane, etc., but we CAN'T
+ * do a full loadMessages() because that would wipe any in-flight text
+ * streaming. So we swap only the affected node.
+ *
+ * For text parts we deliberately do nothing: the delta stream is already
+ * populating them token by token, and replacing the node would lose the
+ * accumulated text.
+ */
+export function replacePartInDom(part) {
+  if (!part || !part.id) return false
+  // Text parts are driven by the delta stream, not by snapshot updates.
+  if (part.type === 'text') return false
+  const node = document.querySelector(`[data-part-id="${CSS.escape(part.id)}"]`)
+  if (!node) return false
+  try {
+    const html = renderPart(part)
+    if (!html) return false
+    const tmp = document.createElement('div')
+    tmp.innerHTML = html
+    const next = tmp.firstElementChild
+    if (!next) return false
+    node.replaceWith(next)
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
+/**
+ * Ensure a text-part surface exists for the given part/message. If not
+ * found, create a fresh assistant bubble (or reuse an empty "typing" one)
+ * and return the element that `applyStreamingDelta` will append into.
+ *
+ * Called from sse.js when a `message.part.updated` delta lands before the
+ * corresponding `message.created` has rendered an assistant message bubble.
+ */
+export function ensureTextPartSurface(partId, messageId) {
+  if (!partId) return null
+  const existing = document.querySelector(`[data-part-id="${CSS.escape(partId)}"]`)
+  if (existing) return existing
+
+  const box = document.getElementById('messages')
+  if (!box) return null
+
+  // Remove the typing indicator if present — it's replaced by a real bubble.
+  box.querySelectorAll('.typing-indicator').forEach(el => el.remove())
+
+  // Create a new assistant message bubble with a single empty text part.
+  const bubble = document.createElement('div')
+  bubble.className = 'message assistant'
+  if (messageId) bubble.dataset.messageId = messageId
+  bubble.innerHTML = `<div class="message-role">assistant</div>
+    <div class="message-body md-rendered" data-part-id="${escapeHtml(partId)}"${
+      messageId ? ` data-message-id="${escapeHtml(messageId)}"` : ''
+    }><span class="streaming-cursor" aria-hidden="true"></span></div>`
+  box.appendChild(bubble)
+  box.scrollTop = box.scrollHeight
+  return bubble.querySelector('[data-part-id]')
+}
+
 // TUI status symbols — minimal, terminal-style
 const STATUS_ICON = {
   pending:   '○',
@@ -522,7 +649,9 @@ function renderToolPart(p) {
     todoItemsHtml = `<div class="tw-items">${rows}</div>`
   }
 
-  return `<div class="tool-block ${hiddenClass}${autoOpen}" id="${id}">
+  const partIdAttr = p.id ? ` data-part-id="${escapeHtml(p.id)}"` : ''
+  const msgIdAttr = p.messageID ? ` data-message-id="${escapeHtml(p.messageID)}"` : ''
+  return `<div class="tool-block ${hiddenClass}${autoOpen}" id="${id}"${partIdAttr}${msgIdAttr}>
     <div class="tool-line tool-header" onclick="window.__toggleTool('${id}')">
       ${summaryHtml}
       <span class="tool-chevron">▶</span>
@@ -575,17 +704,27 @@ export function showTypingIndicator() {
 
 /**
  * Load messages for a session and render them into #messages.
+ *
+ * The "Loading…" placeholder used to wipe the box on every call — including
+ * during a streaming assistant turn triggered by `message.updated`. That
+ * erased in-progress deltas and made the UI flash. We now only show the
+ * placeholder when the pane is genuinely empty (first load, session switch).
  */
 export async function loadMessages(sessionId) {
   const box = document.getElementById('messages')
-  box.innerHTML = '<div style="padding:30px;color:var(--text-muted);font-size:11px;text-align:center">Loading…</div>'
+  const alreadyHasMessages = !!box.querySelector('.message')
+  if (!alreadyHasMessages) {
+    box.innerHTML = '<div style="padding:30px;color:var(--text-muted);font-size:11px;text-align:center">Loading…</div>'
+  }
   try {
     const raw = await fetchMessages(sessionId)
     const msgs = Array.isArray(raw) ? raw : []
     console.debug('[pilot:data] loadMessages session=%s raw=%d', sessionId, msgs.length)
     withErrorBoundary('messages', () => renderMessages(msgs), () => loadMessages(sessionId))
   } catch (_) {
-    box.innerHTML = '<div class="panel-error"><span>⚠ Failed to load messages</span></div>'
+    if (!alreadyHasMessages) {
+      box.innerHTML = '<div class="panel-error"><span>⚠ Failed to load messages</span></div>'
+    }
   }
 }
 

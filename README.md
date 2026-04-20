@@ -28,9 +28,15 @@ All from one keyboard shortcut (`?` opens the command palette).
 
 ---
 
+## Install once, use everywhere
+
+opencode-pilot installs **globally into your OpenCode config dir** (`~/.config/opencode` on Linux/macOS, `%APPDATA%\opencode` on Windows). One install and the plugin auto-loads every time you run `opencode` from **any project directory** — no per-project setup, no `.opencode/` folders to copy around, no duplicate configs.
+
+That's the whole point of running the installer: drop it in once, then just use `opencode` normally and the dashboard is always there.
+
 ## Quick Start
 
-### One command (recommended, since v1.12.1)
+### One command (recommended)
 
 ```bash
 npx @lesquel/opencode-pilot init
@@ -40,11 +46,15 @@ bunx @lesquel/opencode-pilot init
 
 That's it. The installer:
 1. Locates your OpenCode config dir (`~/.config/opencode` or your XDG path / `%APPDATA%`).
-2. Installs the plugin there.
-3. Drops a wrapper file in `<config>/plugins/opencode-pilot.ts` so OpenCode loads it reliably.
-4. Adds the plugin to `opencode.json` if it isn't already.
+2. Installs the plugin there (`@lesquel/opencode-pilot@latest` + `@opencode-ai/plugin@latest`).
+3. Adds `"@lesquel/opencode-pilot@latest"` to **both** `opencode.json::plugin` (for the dashboard server) and `tui.json::plugin` (for the slash commands). OpenCode uses two separate plugin loaders — one file each.
+4. Cleans up stale wrappers, cache entries, and legacy subpath specs left by earlier (<=1.12.x) installs.
 
-Restart OpenCode. The banner prints with URL + token + QR. Done.
+Fully close any running OpenCode sessions and reopen. A toast should appear:
+
+> **OpenCode Pilot** — Remote control plugin loaded. Use `/pilot` or `/pilot-token`.
+
+The banner also prints in the terminal with URL + token + QR. If the toast doesn't appear, see [Troubleshooting](#troubleshooting--slash-commands-dont-appear).
 
 > **Configuration is done from the dashboard** (gear icon → Plugin configuration). You do NOT need to create a `.env` — though you still can if you prefer.
 
@@ -53,19 +63,97 @@ Restart OpenCode. The banner prints with URL + token + QR. Done.
 ```bash
 # 1. Install in your OpenCode config dir
 cd ~/.config/opencode    # or your XDG_CONFIG_HOME path
-bun add @lesquel/opencode-pilot
+bun add @lesquel/opencode-pilot@latest @opencode-ai/plugin@latest
 
-# 2. Drop a wrapper at plugins/opencode-pilot.ts:
-mkdir -p plugins
-cat > plugins/opencode-pilot.ts << 'EOF'
-export { default } from "@lesquel/opencode-pilot/server"
-EOF
-
-# 3. (Optional, for redundancy) add to opencode.json:
-#    "plugin": ["@lesquel/opencode-pilot@latest"]
+# 2. Add the spec to BOTH config files:
+#
+#    opencode.json  — registers the dashboard server plugin:
+#    {
+#      "plugin": ["@lesquel/opencode-pilot@latest"]
+#    }
+#
+#    tui.json  — registers the slash commands (create this file if missing):
+#    {
+#      "$schema": "https://opencode.ai/tui.json",
+#      "plugin": ["@lesquel/opencode-pilot@latest"]
+#    }
 ```
 
+OpenCode runs **two separate plugin loaders**: the server loader reads `opencode.json::plugin` (for `server()` exports like the dashboard), and the TUI loader reads `tui.json::plugin` (for `tui()` exports like slash commands). A spec in only one of them gets you half the plugin. Do **not** add wrappers in `<config>/plugins/` — they conflict with the server loader's strict validation.
+
 Run `opencode` from any project directory. Banner prints with URL + token + QR.
+
+---
+
+> **Going deeper?** [`docs/INSTALL.md`](docs/INSTALL.md) explains OpenCode's two-loader plugin architecture, documents every gotcha we hit, and has a complete troubleshooting matrix. Read it if you're debugging, contributing, or publishing your own OpenCode plugin.
+
+## How to use it day-to-day
+
+Once installed and OpenCode restarted, you have four entry points:
+
+### 1. Slash commands from inside OpenCode TUI
+
+Type any of these at the prompt:
+
+| Command | What it does |
+|---------|--------------|
+| `/pilot` | Show the current dashboard URL + token |
+| `/pilot-token` | Rotate the auth token (invalidates any open dashboards/phones) |
+| `/dashboard` | Same as `/pilot` — alias |
+| `/remote` | Print connection info (host, port, tunnel URL if active) |
+| `/remote-control` | Full status block with all the above plus QR hint |
+
+### 2. Terminal banner at startup
+
+Every `opencode` launch prints a banner with the dashboard URL, a token, and a QR code. Open the URL in any browser on the same machine, or scan the QR with your phone (requires `PILOT_HOST=0.0.0.0` for LAN — see below).
+
+### 3. The web dashboard itself
+
+Open the URL. Then:
+
+- **`?`** opens the command palette — every action is reachable from there.
+- **Left sidebar**: sessions grouped by folder. Click one to switch. `+` creates a new session.
+- **Center pane**: the live transcript — user messages appear instantly, the assistant's response streams token by token, tool calls animate pending → running → completed with their inputs and outputs expandable inline.
+- **Right panel**: context usage, MCP servers, LSP status, project path, pinned TODOs.
+- **Tabs at the top**: open multiple projects in parallel (v1.11+).
+- **Gear icon (⚙)**: Settings UI — change port/host, enable tunnel, wire up Telegram bot, generate VAPID keys for Web Push. Everything is editable from here; you rarely need to touch `.env` files anymore.
+
+### 4. From your phone
+
+See [Connect from your phone](#connect-from-your-phone) below. Either same-WiFi (LAN) with `PILOT_HOST=0.0.0.0`, or anywhere with a Cloudflare / ngrok tunnel. The dashboard is mobile-friendly — bottom-sheet modals, 44px tap targets, swipe-to-close. Permissions approvals, prompt sending, session switching all work from the phone.
+
+## Troubleshooting — slash commands don't appear
+
+If the plugin loads (you see the banner in the terminal) but typing `/remo<Tab>` in the TUI doesn't autocomplete `/remote`, `/dashboard`, `/pilot`, `/pilot-token`, or `/remote-control`:
+
+1. **Check the canary toast**. On startup the TUI should toast "OpenCode Pilot — Remote control plugin loaded". No toast → the TUI plugin didn't register, even if the dashboard server did.
+
+2. **Inspect the latest log**:
+
+   ```bash
+   tail -200 $(ls -t ~/.local/share/opencode/log/*.log | head -1) | grep -iE "pilot|tui.plugin|error"
+   ```
+
+   - Windows: `%LOCALAPPDATA%\opencode\log\<timestamp>.log`
+   - macOS: `~/Library/Logs/opencode/<timestamp>.log`
+
+3. **Re-run init**. It cleans up stale wrappers and stale subpath entries left behind by 1.11.x–1.12.x:
+
+   ```bash
+   npx @lesquel/opencode-pilot@latest init
+   ```
+
+   Then **fully close all OpenCode sessions** (the plugin loader is cached per running process) and reopen.
+
+4. **Verify BOTH `opencode.json::plugin` AND `tui.json::plugin`** each have exactly one entry for the pilot:
+
+   ```json
+   "plugin": ["@lesquel/opencode-pilot@latest"]
+   ```
+
+   If `tui.json` is missing entirely, the TUI plugin was never registered and slash commands never appear — `init` in 1.13.1+ creates this file. If you see `"@lesquel/opencode-pilot/tui"` anywhere or wrapper paths in the array, the old install pattern got in — `npx init` in step 3 fixes that.
+
+5. **Verify no stale wrappers** in `~/.config/opencode/plugins/`. Safe to delete: `opencode-pilot.ts`, `opencode-pilot-tui.ts`. These were auto-generated by 1.11.x–1.12.x and are no longer needed. `init` does this cleanup automatically.
 
 ---
 

@@ -17,6 +17,65 @@
 <!-- Syntax highlighting theme -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/base16/monokai.min.css">
 <link rel="stylesheet" href="./styles.css">
+
+<!--
+  Self-healing cache cleanup.
+
+  Problem: old versions (≤1.13.1) registered a service worker with a
+  cache-first fetch strategy and never bumped CACHE_NAME for several
+  releases. Users upgrading from those versions kept seeing stale JS —
+  even `Ctrl+Shift+R` didn't always flush it because the SW intercepted
+  the request before it reached the network.
+
+  Solution: embed the current plugin generation in the HTML itself. On
+  every load we compare it against what's in localStorage. If this is the
+  first load after a plugin upgrade, we unregister every service worker
+  registered against this origin, delete every cache entry, and reload
+  once. The reload lands on a SW-free page served with no-cache headers,
+  so the browser fetches the fresh assets directly from the plugin. The
+  SW re-registers itself during the normal page init and the next load
+  is fast again.
+
+  Bump PILOT_ASSET_GEN any time the dashboard assets change in a way
+  that old SW caches must be flushed (new file, renamed file, breaking
+  change to main.js/sw.js). The value matches package.json::version.
+-->
+<script>
+(function() {
+  try {
+    var GEN = "1.13.10";
+    var KEY = "pilot:asset-gen";
+    if (localStorage.getItem(KEY) === GEN) return;
+    localStorage.setItem(KEY, GEN);
+    var swWork = Promise.resolve();
+    if ("serviceWorker" in navigator) {
+      swWork = navigator.serviceWorker
+        .getRegistrations()
+        .then(function(regs) {
+          return Promise.all(regs.map(function(r) { return r.unregister(); }));
+        })
+        .catch(function() {});
+    }
+    var cacheWork = Promise.resolve();
+    if (window.caches && typeof caches.keys === "function") {
+      cacheWork = caches
+        .keys()
+        .then(function(keys) {
+          return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+        })
+        .catch(function() {});
+    }
+    Promise.all([swWork, cacheWork]).then(function() {
+      // Guard against reload loops: we only reload when the flag flips.
+      // If reload happens before the flag is persisted, the next load
+      // lands with the flag already set and skips this block.
+      setTimeout(function() { location.reload(); }, 50);
+    });
+  } catch (_err) {
+    // Never let this block the page from loading.
+  }
+})();
+</script>
 </head>
 <body>
 
@@ -458,14 +517,14 @@
 
 <!-- CDN libs (must load before ES modules that reference them) -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/core.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/typescript.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/javascript.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/python.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/go.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/rust.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/json.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/lib/languages/bash.min.js"></script>
+<!--
+  highlight.js — UMD bundle (NOT the CommonJS /lib/*.min.js files).
+  The /lib paths ship with `module.exports = ...` and redeclared consts;
+  loading them directly in a browser throws `module is not defined` and
+  `redeclaration of const IDENT_RE`. The /build bundle is proper UMD and
+  exposes `hljs` globally. One file, ~190 languages included.
+-->
+<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/build/highlight.min.js"></script>
 
 <script type="module" src="./main.js"></script>
 </body>

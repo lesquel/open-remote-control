@@ -1,6 +1,20 @@
-import { writeFileSync } from "fs"
-import { join } from "path"
+import { mkdirSync, writeFileSync } from "fs"
+import { homedir } from "os"
+import { dirname, join } from "path"
 import { generateQR } from "./qr"
+
+export function globalBannerPath(): string {
+  return join(homedir(), ".opencode-pilot", "pilot-banner.txt")
+}
+
+function safeWrite(path: string, content: string): void {
+  try {
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, content)
+  } catch {
+    // Silent fail — caller tolerates missing banner file.
+  }
+}
 
 const DEFAULT_PWA_URL = "https://lesquel.github.io/open-remote-control/"
 
@@ -75,11 +89,11 @@ export async function writeBanner(opts: BannerOptions): Promise<string> {
     .filter((line) => line !== "")
     .join("\n")
 
-  try {
-    writeFileSync(join(directory, ".opencode", "pilot-banner.txt"), banner)
-  } catch {
-    // Silent fail — .opencode directory may not exist yet in edge cases
-  }
+  // Dual-write: project path for projects that have an .opencode/ folder
+  // (nice for git-tracked workflows), plus a global path the TUI can always
+  // read regardless of cwd.
+  safeWrite(join(directory, ".opencode", "pilot-banner.txt"), banner)
+  safeWrite(globalBannerPath(), banner)
 
   return banner
 }

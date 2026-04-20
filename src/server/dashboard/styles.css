@@ -1366,10 +1366,25 @@ body {
   padding: 16px 20px;
   min-width: 280px;
   max-width: 360px;
+  /* When the plugin config expands every section, the modal can exceed
+     viewport height. Cap at 85vh and let the box scroll its own content
+     instead of clipping off-screen. Mobile (<=768px) already overrides. */
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
+  /* Subtle scrollbar that doesn't steal from the horizontal padding. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
+.settings-box::-webkit-scrollbar { width: 6px; }
+.settings-box::-webkit-scrollbar-track { background: transparent; }
+.settings-box::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.settings-box::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 .settings-box h3 {
   font-size: 11px;
   color: var(--accent);

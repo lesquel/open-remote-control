@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, statSync, realpathSync } from "fs"
+import { readFileSync, readdirSync, existsSync, statSync, realpathSync } from "fs"
 import { join, dirname, extname, isAbsolute } from "path"
 import { fileURLToPath } from "url"
 import type { RouteContext } from "./routes"
@@ -22,6 +22,8 @@ import { PILOT_VERSION } from "../constants"
 import {
   RESTART_REQUIRED_FIELDS,
   envKeyFor,
+  loadConfigSafe,
+  mergeStoredSettings,
   projectConfigToSettings,
   resolveSources,
 } from "../config"
@@ -87,13 +89,95 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon",
 }
 
+/**
+ * Cache-Control used for every dashboard asset.
+ *
+ * `no-cache` does NOT mean "do not cache" (that's `no-store`). It means
+ * "cache freely, but revalidate with the origin before using". The browser
+ * will still hit the server on every load and we'll respond with a fresh
+ * copy from the in-memory snapshot. This costs us a round-trip per asset
+ * in exchange for making every user pick up a new version on the next
+ * refresh — no more users stuck on an old bundle for a month because their
+ * service worker intercepted the request before it hit the network.
+ */
+const DASHBOARD_CACHE_HEADERS = {
+  "Cache-Control": "no-cache, must-revalidate",
+} as const
+
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 export async function serveDashboard({ deps }: RouteContext): Promise<Response> {
   const html = getDashboardHtml(deps.config.dev)
   return new Response(html, {
-    headers: { "Content-Type": "text/html; charset=utf-8", ...CORS_HEADERS },
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      ...DASHBOARD_CACHE_HEADERS,
+      ...CORS_HEADERS,
+    },
   })
+}
+
+/**
+ * In-memory cache of dashboard files.
+ *
+ * Previously we read each file from disk on every request. That broke
+ * catastrophically if someone deleted the plugin's cache directory while
+ * the server was running (e.g. `npx init` while OpenCode is alive) — the
+ * HTTP server kept serving but every asset request returned 404, leaving
+ * the user's browser stuck on whatever it had cached before.
+ *
+ * We now snapshot every file under DASHBOARD_DIR into memory at boot.
+ * Responses serve from memory, so cache-wipe operations can't break a
+ * running dashboard.
+ *
+ * Dev mode (`PILOT_DEV=true`) bypasses the cache so live edits to
+ * dashboard files show up without a plugin restart.
+ */
+type CachedAsset = { content: Buffer; mime: string }
+const assetCache = new Map<string, CachedAsset>()
+
+function loadAssetsIntoMemory(): void {
+  if (!existsSync(DASHBOARD_DIR)) return
+  const walk = (dir: string, prefix: string) => {
+    let entries: string[]
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry)
+      let stat
+      try {
+        stat = statSync(full)
+      } catch {
+        continue
+      }
+      if (stat.isDirectory()) {
+        walk(full, `${prefix}${entry}/`)
+        continue
+      }
+      const ext = extname(full)
+      const mime = MIME[ext] ?? "text/plain"
+      try {
+        assetCache.set(`${prefix}${entry}`, {
+          content: readFileSync(full),
+          mime,
+        })
+      } catch {
+        // Skip unreadable files — they just return 404 at request time.
+      }
+    }
+  }
+  walk(DASHBOARD_DIR, "")
+}
+
+// Lazy-load on first dashboard request so import order doesn't matter.
+let assetsLoaded = false
+function ensureAssetsLoaded(): void {
+  if (assetsLoaded) return
+  assetsLoaded = true
+  loadAssetsIntoMemory()
 }
 
 /**
@@ -109,25 +193,40 @@ async function serveDashboardFile(
     return jsonError("FORBIDDEN", "Forbidden", 403, CORS_HEADERS)
   }
 
-  const filePath = join(DASHBOARD_DIR, relativePath)
+  // Dev mode: re-read every request so live edits show up.
+  if (deps.config.dev) {
+    const filePath = join(DASHBOARD_DIR, relativePath)
+    if (!existsSync(filePath)) {
+      return jsonError("NOT_FOUND", "Not found", 404, CORS_HEADERS)
+    }
+    try {
+      const content = readFileSync(filePath)
+      const mime = MIME[extname(filePath)] ?? "text/plain"
+      return new Response(new Uint8Array(content), {
+        headers: {
+          "Content-Type": mime,
+          ...DASHBOARD_CACHE_HEADERS,
+          ...CORS_HEADERS,
+        },
+      })
+    } catch {
+      deps.audit.log("error", { path: pathname, error: "Failed to read file" })
+      return jsonError("INTERNAL_ERROR", "Failed to read file", 500, CORS_HEADERS)
+    }
+  }
 
-  if (!existsSync(filePath)) {
+  // Production: serve from the in-memory snapshot.
+  ensureAssetsLoaded()
+  const asset = assetCache.get(relativePath)
+  if (!asset) {
     return jsonError("NOT_FOUND", "Not found", 404, CORS_HEADERS)
   }
-
-  let content: string
-  try {
-    content = readFileSync(filePath, "utf-8")
-  } catch {
-    deps.audit.log("error", { path: pathname, error: "Failed to read file" })
-    return jsonError("INTERNAL_ERROR", "Failed to read file", 500, CORS_HEADERS)
-  }
-
-  const ext = extname(filePath)
-  const mime = MIME[ext] ?? "text/plain"
-
-  return new Response(content, {
-    headers: { "Content-Type": mime, ...CORS_HEADERS },
+  return new Response(new Uint8Array(asset.content), {
+    headers: {
+      "Content-Type": asset.mime,
+      ...DASHBOARD_CACHE_HEADERS,
+      ...CORS_HEADERS,
+    },
   })
 }
 
@@ -1079,9 +1178,20 @@ function buildSettingsResponse(deps: RouteContext["deps"]): {
   restartRequired: ReadonlyArray<keyof PilotSettings>
   configFilePath: string
 } {
+  // Recompute the effective config from the FRESH store + shell env every
+  // time. `deps.config` is a boot-time snapshot and does not reflect changes
+  // made via PATCH /settings — returning it here caused saved values (port,
+  // host, tunnel, etc.) to appear "reverted" in the UI even though the disk
+  // state was correct. Settings marked `restartRequired` still need a plugin
+  // restart to take effect; `settings` below shows the value that WILL be
+  // active after that restart.
   const stored = deps.settingsStore.load()
+  const effectiveEnv = mergeStoredSettings(process.env, deps.shellEnv, stored)
+  const effective = loadConfigSafe(effectiveEnv, () => {
+    // swallow — we already warned once at boot
+  })
   return {
-    settings: projectConfigToSettings(deps.config),
+    settings: projectConfigToSettings(effective),
     sources: resolveSources(deps.shellEnv, deps.envFileApplied, stored),
     restartRequired: RESTART_REQUIRED_FIELDS,
     configFilePath: deps.settingsStore.filePath(),

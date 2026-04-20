@@ -82,12 +82,9 @@ async function startCloudflared(port: number): Promise<TunnelInstance> {
   return {
     publicUrl,
     provider: "cloudflared",
-    stop: () => {
-      try {
-        proc.kill()
-      } catch {}
+    stop: () => killTunnelProcess(proc, () => {
       _tunnelInfo = { provider: "cloudflared", url: null, status: "off" }
-    },
+    }),
   }
 }
 
@@ -109,13 +106,42 @@ async function startNgrok(port: number): Promise<TunnelInstance> {
   return {
     publicUrl,
     provider: "ngrok",
-    stop: () => {
-      try {
-        proc.kill()
-      } catch {}
+    stop: () => killTunnelProcess(proc, () => {
       _tunnelInfo = { provider: "ngrok", url: null, status: "off" }
-    },
+    }),
   }
+}
+
+// Aggressively kill a tunnel child. Some providers (cloudflared in particular)
+// re-spawn or hold their socket long enough that a polite SIGTERM is slow —
+// if the parent OpenCode process is closing a window, the tunnel must die
+// now, not eventually. We SIGTERM first, then SIGKILL at 400ms if it's
+// still breathing, then run the on-dead callback.
+function killTunnelProcess(proc: ChildProcess, onDead: () => void): void {
+  if (proc.exitCode !== null || proc.killed) {
+    onDead()
+    return
+  }
+  try {
+    proc.kill("SIGTERM")
+  } catch {
+    // already gone
+  }
+  const killTimer = setTimeout(() => {
+    if (proc.exitCode === null && !proc.killed) {
+      try {
+        proc.kill("SIGKILL")
+      } catch {
+        // already gone
+      }
+    }
+  }, 400)
+  const onExit = () => {
+    clearTimeout(killTimer)
+    onDead()
+  }
+  proc.once("exit", onExit)
+  proc.once("close", onExit)
 }
 
 function waitForUrl(

@@ -1,7 +1,15 @@
 // sse.js — SSE connection with exponential backoff reconnect
 import { getState, setState, appendPartDelta, clearStreamingMessage, subscribe } from './state.js'
 import { loadSessions, renderSessions, updateHeaderSession, updateInfoBar, refreshSessionMeta } from './sessions.js'
-import { loadMessages, applyStreamingDelta, removeStreamingCursor, showTypingIndicator } from './messages.js'
+import {
+  loadMessages,
+  applyStreamingDelta,
+  removeStreamingCursor,
+  showTypingIndicator,
+  reconcileOptimisticUserMessage,
+  ensureTextPartSurface,
+  replacePartInDom,
+} from './messages.js'
 import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from './multi-view.js'
 import { handlePermissionRequested, handlePermissionResolved } from './permissions.js'
 import { onSubagentSpawned } from './subagents.js'
@@ -29,6 +37,7 @@ const SSE_EVENTS = [
   EVENTS.MESSAGE_CREATED,
   EVENTS.MESSAGE_UPDATED,
   EVENTS.MESSAGE_PART_UPDATED,
+  EVENTS.MESSAGE_PART_DELTA,
   EVENTS.PERMISSION_REQUESTED,
   EVENTS.PERMISSION_RESOLVED,
   EVENTS.STATUS_CHANGED,
@@ -153,97 +162,137 @@ async function handleEvent(ev) {
     loadSessions()
   }
 
-  // ── Feature B: streaming delta for text parts ──────────────────────────
-  if (t === EVENTS.MESSAGE_PART_UPDATED) {
-    // ev.data has { part, delta? } — delta is the incremental text chunk
-    const part = d?.part ?? ev.properties?.part
-    const delta = d?.delta ?? ev.properties?.delta
-    const sessionId = part?.sessionID
-    const messageId = part?.messageID
-    const partId = part?.id
+  // ── Streaming deltas: incremental tokens for text / reasoning fields ─────
+  // The SDK emits `message.part.delta` per token with { sessionID, messageID,
+  // partID, field, delta }. This drives the typewriter effect. A separate
+  // `message.part.updated` event emits snapshots for NON-text parts (tools
+  // moving pending → running → completed) — handled below.
+  if (t === EVENTS.MESSAGE_PART_DELTA) {
+    const sessionId = d?.sessionID ?? ev.properties?.sessionID
+    const messageId = d?.messageID ?? ev.properties?.messageID
+    const partId    = d?.partID    ?? ev.properties?.partID
+    const field     = d?.field     ?? ev.properties?.field
+    const delta     = d?.delta     ?? ev.properties?.delta
 
-    if (part?.type === 'text' && typeof delta === 'string' && delta.length > 0) {
-      // Accumulate delta in state
+    if (typeof delta !== 'string' || delta.length === 0) return
+    if (sessionId !== activeSession || multiviewActive) {
+      // Still accumulate for background sessions so a later switch has
+      // the full text, but don't touch the DOM.
       appendPartDelta(sessionId, messageId, partId, delta)
-      // Update DOM directly if this session is the active one
-      if (sessionId === activeSession && !multiviewActive) {
-        applyStreamingDelta(partId, delta)
-      }
+      return
     }
-    // Fallback: if no delta field, do nothing here — message.updated will re-render
+    // Only apply to text fields; reasoning could also be streamed but we
+    // currently render reasoning via snapshots only.
+    if (field === 'text') {
+      appendPartDelta(sessionId, messageId, partId, delta)
+      // Guarantee a DOM surface — the first delta normally lands before
+      // message.created (assistant) has rendered its bubble.
+      ensureTextPartSurface(partId, messageId)
+      applyStreamingDelta(partId, delta)
+    }
+    return
+  }
+
+  // ── Snapshot: full part state (tool pending → running → completed) ──────
+  // Emitted for every state transition on non-text parts. We use this to
+  // hot-swap the specific tool node in the DOM so the status icon, args,
+  // and output update live — WITHOUT wiping the transcript (which would
+  // drop any in-flight text deltas from the delta stream).
+  if (t === EVENTS.MESSAGE_PART_UPDATED) {
+    const part = d?.part ?? ev.properties?.part
+    const sessionId = part?.sessionID
+    if (!part || sessionId !== activeSession || multiviewActive) return
+    replacePartInDom(part)
     return
   }
 
   if (t === EVENTS.MESSAGE_CREATED || t === EVENTS.MESSAGE_UPDATED) {
-    // On message.updated: clear streaming state for this message (it's complete)
-    if (t === EVENTS.MESSAGE_UPDATED) {
-      const sessionId = d?.sessionId ?? ev.properties?.sessionID
-      const messageId = d?.id ?? d?.messageId ?? ev.properties?.id
-      if (sessionId && messageId) {
-        clearStreamingMessage(sessionId, messageId)
-        // Remove blinking cursor if present
-        if (sessionId === activeSession) {
+    // The SDK ONLY emits message.updated — message.created is never sent.
+    // A single message fires many `message.updated` events during a turn
+    // (user msg created, assistant msg init with empty content, assistant
+    // final with tokens + cost, and user msg re-emitted with summary). We
+    // must NOT re-fetch + full re-render on every one of those, because
+    // `loadMessages → renderMessages` does `box.innerHTML = …` which blows
+    // away in-flight text deltas (the typewriter). Instead:
+    //   • user message → reconcile the optimistic bubble (or load once if
+    //     no optimistic node exists).
+    //   • assistant message → only full-reload when the message is final
+    //     (`info.time.completed` set, or `info.finish` present). During
+    //     streaming, rely on ensureTextPartSurface + applyStreamingDelta
+    //     plus replacePartInDom for non-text parts.
+    const info = ev.properties?.info ?? d?.info ?? d ?? {}
+    const msgRole = info.role ?? d?.role ?? null
+    const messageId = info.id ?? d?.id ?? d?.messageId ?? null
+    const evtSessionId =
+      ev.properties?.sessionID ?? ev.properties?.sessionId ?? d?.sessionID ?? d?.sessionId ?? null
+    const isAssistant = msgRole === 'assistant'
+    const isUser = msgRole === 'user'
+    const isFinal =
+      info?.time?.completed != null ||
+      (isAssistant && typeof info?.finish === 'string' && info.finish.length > 0)
+
+    if (t === EVENTS.MESSAGE_UPDATED && isFinal) {
+      if (evtSessionId && messageId) {
+        clearStreamingMessage(evtSessionId, messageId)
+        if (evtSessionId === activeSession) {
           removeStreamingCursor(messageId)
         }
       }
     }
 
     // ── v1.9: sound + browser notification on assistant turn completion ──────
-    if (t === EVENTS.MESSAGE_UPDATED) {
-      const msgRole = d?.role ?? ev.properties?.role ?? null
-      const isAssistant = msgRole === 'assistant' || msgRole == null  // null = assume assistant
-      if (isAssistant && document.hidden) {
-        const { settings } = getState()
-        // Sound notification
-        if (settings.sound) {
-          playNotifySound()
-        }
-        // Browser notification
-        if (settings.notif && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-          try {
-            const sessionId = d?.sessionId ?? ev.properties?.sessionID ?? null
-            const { sessions } = getState()
-            const sessionTitle = sessionId ? (sessions[sessionId]?.title ?? null) : null
-            const body = sessionTitle ? `Response ready in "${sessionTitle}"` : 'Agent response ready'
-            const n = new Notification('OpenCode Pilot', {
-              body,
-              icon: './icons/icon.svg',
-              tag: 'pilot-msg-' + (sessionId ?? Date.now()),
-            })
-            n.onclick = () => {
-              window.focus()
-              if (sessionId) {
-                import('./sessions.js').then(m => m.selectSession(sessionId)).catch(() => {})
-              }
-              n.close()
+    // Only fire once the turn is actually done, not on intermediate updates.
+    if (t === EVENTS.MESSAGE_UPDATED && isAssistant && isFinal && document.hidden) {
+      const { settings } = getState()
+      if (settings.sound) playNotifySound()
+      if (settings.notif && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try {
+          const { sessions } = getState()
+          const sessionTitle = evtSessionId ? (sessions[evtSessionId]?.title ?? null) : null
+          const body = sessionTitle ? `Response ready in "${sessionTitle}"` : 'Agent response ready'
+          const n = new Notification('OpenCode Pilot', {
+            body,
+            icon: './icons/icon.svg',
+            tag: 'pilot-msg-' + (evtSessionId ?? Date.now()),
+          })
+          n.onclick = () => {
+            window.focus()
+            if (evtSessionId) {
+              import('./sessions.js').then(m => m.selectSession(evtSessionId)).catch(() => {})
             }
-          } catch (_) {}
-        }
+            n.close()
+          }
+        } catch (_) {}
       }
     }
 
-    // SDK emits sessionID (capital D) under ev.properties, but data may also
-    // carry sessionId (lower d) in some envelope shapes. Resolve both so the
-    // multi-view refresh actually fires (regression: only the lower-d form
-    // was being checked, so SSE never re-rendered MV panes).
-    const evtSessionId = d?.sessionId ?? d?.sessionID ?? ev.properties?.sessionID ?? ev.properties?.sessionId ?? null
-
     if (activeSession && !multiviewActive) {
-      if (t === EVENTS.MESSAGE_UPDATED) {
-        // Final message: do a full re-render so the complete content is shown.
-        loadMessages(activeSession)
-      } else {
-        // MESSAGE_CREATED: determine role. Null role defaults to assistant.
-        const msgRole = d?.role ?? ev.properties?.role ?? null
-        const isAssistant = msgRole === 'assistant' || msgRole == null
-        if (isAssistant) {
-          // Show a typing indicator so the user sees activity without wiping
-          // the DOM (which would break in-flight streaming deltas).
-          showTypingIndicator()
-        } else {
-          // User message: full render so the sent message appears immediately.
+      if (isUser) {
+        // User message update: reconcile the optimistic bubble with the
+        // real id, or load once if there's no pending optimistic node
+        // (e.g. message came from another device / TUI / API).
+        const hasPending = !!document.querySelector('.message.user[data-pending="1"]')
+        if (hasPending) {
+          if (messageId) reconcileOptimisticUserMessage(messageId)
+        } else if (!document.querySelector(`.message.user[data-message-id="${messageId}"]`)) {
           loadMessages(activeSession)
         }
+        // If the user message node is already in the DOM, do nothing —
+        // intermediate user updates (e.g. summary attached) don't need a
+        // re-render and would wipe streaming deltas.
+      } else if (isAssistant) {
+        if (isFinal) {
+          // End of turn: do the full re-render so markdown, tool states,
+          // and agent badges render from the canonical server snapshot.
+          loadMessages(activeSession)
+        } else if (!document.querySelector(`.message.assistant[data-message-id="${messageId}"]`)) {
+          // Assistant message just initialised but we have no bubble yet.
+          // Show a typing indicator; the first delta will replace it via
+          // ensureTextPartSurface.
+          showTypingIndicator()
+        }
+        // Intermediate assistant updates with an existing bubble: ignore.
+        // Deltas + replacePartInDom drive the streaming DOM.
       }
     }
     if (evtSessionId && mvPanels.has(evtSessionId)) {
@@ -256,7 +305,8 @@ async function handleEvent(ev) {
       window.__agentPanel?.refresh?.()
     }
     // Refresh session meta for this session so sessions list shows fresh model/cost
-    if (t === EVENTS.MESSAGE_UPDATED && evtSessionId) {
+    // Only on final updates — intermediate ones carry partial/stale token counts.
+    if (t === EVENTS.MESSAGE_UPDATED && evtSessionId && isFinal) {
       refreshSessionMeta(evtSessionId)
     }
   }

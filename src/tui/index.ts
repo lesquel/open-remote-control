@@ -2,6 +2,7 @@ import type { TuiPlugin, TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin
 import type { PluginOptions } from "@opencode-ai/plugin"
 import { join } from "path"
 import { existsSync, readFileSync } from "fs"
+import { homedir } from "os"
 
 // ─── State file reader ───────────────────────────────────────────────────────
 
@@ -13,24 +14,50 @@ interface PilotState {
   pid: number
 }
 
-function readPilotState(dir: string): PilotState | null {
-  const statePath = join(dir, ".opencode", "pilot-state.json")
-  if (!existsSync(statePath)) return null
-  try {
-    return JSON.parse(readFileSync(statePath, "utf-8")) as PilotState
-  } catch {
-    return null
+// Search order for the state/banner files:
+//   1. The current project's .opencode/ folder (process.cwd())
+//   2. The global fallback at ~/.opencode-pilot/
+//
+// The global path is what the server writes unconditionally. The project
+// path is a nice-to-have for workspaces that have an .opencode/ folder.
+// Previously the TUI only checked (1), and since fresh workspaces like
+// ~/Desktop don't have .opencode/, the TUI always reported "Remote
+// control server not running or token not yet available" — even when
+// the server was perfectly healthy.
+function globalDir(): string {
+  return join(homedir(), ".opencode-pilot")
+}
+
+function readFirst<T>(paths: string[], parse: (raw: string) => T): T | null {
+  for (const path of paths) {
+    if (!existsSync(path)) continue
+    try {
+      return parse(readFileSync(path, "utf-8"))
+    } catch {
+      // try next path
+    }
   }
+  return null
+}
+
+function readPilotState(dir: string): PilotState | null {
+  return readFirst(
+    [
+      join(dir, ".opencode", "pilot-state.json"),
+      join(globalDir(), "pilot-state.json"),
+    ],
+    (raw) => JSON.parse(raw) as PilotState,
+  )
 }
 
 function readBanner(dir: string): string | null {
-  const bannerPath = join(dir, ".opencode", "pilot-banner.txt")
-  if (!existsSync(bannerPath)) return null
-  try {
-    return readFileSync(bannerPath, "utf-8")
-  } catch {
-    return null
-  }
+  return readFirst(
+    [
+      join(dir, ".opencode", "pilot-banner.txt"),
+      join(globalDir(), "pilot-banner.txt"),
+    ],
+    (raw) => raw,
+  )
 }
 
 // ─── Command definitions ─────────────────────────────────────────────────────

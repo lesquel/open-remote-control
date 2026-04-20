@@ -1,6 +1,6 @@
 {
   "name": "@lesquel/opencode-pilot",
-  "version": "1.12.8",
+  "version": "1.13.10",
   "description": "Remote control web dashboard for OpenCode — multi-project tabs, live SSE streaming, mobile-friendly, push/Telegram notifications, tunnel for phone access from anywhere.",
   "publishConfig": {
     "access": "public"
@@ -27,7 +27,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
     "format": "prettier --write 'src/**/*.ts'",
-    "test": "bun test"
+    "test": "bun test",
+    "prepublishOnly": "bun scripts/prepublish-guard.ts && tsc --noEmit && bun test"
   },
   "repository": {
     "type": "git",

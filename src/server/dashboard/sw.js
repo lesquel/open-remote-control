@@ -1,5 +1,17 @@
 // sw.js — Service Worker: app shell caching, never caches API calls
-const CACHE_NAME = "pilot-v18"
+//
+// Bump CACHE_NAME on every release that changes frontend files (.js/.css/
+// .html). The `activate` handler below deletes any older named caches, so
+// bumping this name is the primary mechanism for flushing a stale app
+// shell from users' browsers.
+//
+// Fetch strategy is stale-while-revalidate for the app shell: the cached
+// copy renders instantly, and in parallel we fetch a fresh copy so the
+// NEXT load gets the new code. Prior versions used cache-first with no
+// revalidation, which locked users onto an old bundle until the cache
+// name changed — that's how the `message.part.delta` handler in 1.13.2
+// was invisible to already-open tabs.
+const CACHE_NAME = "pilot-v21"
 const PRECACHE = [
   "./",
   "./index.html",
@@ -73,24 +85,40 @@ self.addEventListener("fetch", (event) => {
   const isApiCall = apiPaths.some((p) => url.pathname.startsWith(p))
   if (isApiCall) return // Pass through, browser handles natively
 
-  // Cache-first for app shell assets
+  // Stale-while-revalidate for app shell assets: serve the cache instantly
+  // (if present), and in parallel fetch from the network to refresh the
+  // cache for the next request. This is the fix for the 1.13.2 situation
+  // where fresh JS (message.part.delta handler, optimistic rendering,
+  // etc.) was sitting on disk but browsers kept running the cached copy.
   event.respondWith(
-    caches.match(event.request).then((hit) => {
-      if (hit) return hit
-
-      return fetch(event.request)
+    caches.open(CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(event.request)
+      const networkFetch = fetch(event.request)
         .then((res) => {
-          if (res.ok) {
-            const clone = res.clone()
-            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone))
+          // Only cache successful, same-origin basic responses (skip opaque
+          // cross-origin + error responses to avoid polluting the cache).
+          if (res && res.ok && res.type === "basic") {
+            cache.put(event.request, res.clone()).catch(() => {})
           }
           return res
         })
-        .catch(() => {
-          if (event.request.mode === "navigate") {
-            return caches.match("./index.html")
-          }
-        })
+        .catch(() => null)
+
+      if (cached) {
+        // Kick off the revalidation but don't wait for it — the user gets
+        // the cached bytes right now, the fresh bytes land for next time.
+        networkFetch.catch(() => {})
+        return cached
+      }
+
+      // No cache yet — wait on the network, fall back to index.html for
+      // navigation requests if we're offline.
+      const res = await networkFetch
+      if (res) return res
+      if (event.request.mode === "navigate") {
+        return (await caches.match("./index.html")) ?? Response.error()
+      }
+      return Response.error()
     })
   )
 })

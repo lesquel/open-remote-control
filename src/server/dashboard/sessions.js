@@ -1,7 +1,7 @@
 // sessions.js — Sessions list, single-session panel, send prompt, abort
 import { getState, setState } from './state.js'
 import { fetchSessions, fetchMessages, createSession as apiCreateSession, sendPromptWithOpts, abortSession as apiAbortSession, updateSessionTitle, deleteSession as apiDeleteSession } from './api.js'
-import { loadMessages, normalizeMessage } from './messages.js'
+import { loadMessages, normalizeMessage, appendOptimisticUserMessage, removeOptimisticUserMessage, showTypingIndicator } from './messages.js'
 import { loadDiff } from './diff.js'
 import { toast } from './toast.js'
 import { loadSubagents } from './subagents.js'
@@ -666,30 +666,44 @@ async function sendPrompt() {
   const input = document.getElementById('prompt-input')
   const msg = input.value.trim()
   if (!msg) return
-  // Push to command history before clearing
   window.__commandHistory?.push(msg)
   input.value = ''
   input.style.height = ''
+
+  // Optimistic render so the user sees their message immediately. The
+  // server handler blocks until the assistant's full turn completes (it
+  // `await`s session.prompt), so without this the pane would stay empty
+  // until the assistant's final message.updated — which made the whole
+  // UI feel frozen during a turn.
+  appendOptimisticUserMessage(msg)
+  // Pre-show typing indicator; the first message.part.updated delta will
+  // replace it with a real streaming bubble.
+  showTypingIndicator()
+
+  // Read agent/model preferences set by command-palette (if any).
+  let opts = {}
   try {
-    // Read agent/model preferences set by command-palette (if any)
-    const opts = {}
-    try {
-      const paletteMod = await import('./command-palette.js')
-      const agentPref = paletteMod.getActiveSessionAgentPref?.()
-      const modelPref = paletteMod.getActiveSessionModelPref?.()
-      if (agentPref) opts.agent = agentPref
-      if (modelPref?.modelId) {
-        opts.modelID    = modelPref.modelId
-        opts.providerID = modelPref.providerId ?? ''
-      }
-    } catch (_) {}
-    await sendPromptWithOpts(activeSession, msg, opts)
-    // Clear pending label indicator after successful send
-    window.__labelStripSetPending?.(null)
-    await loadMessages(activeSession)
-  } catch (err) {
-    toast(`Failed to send prompt: ${err?.message ?? 'unknown error'}`)
-  }
+    const paletteMod = await import('./command-palette.js')
+    const agentPref = paletteMod.getActiveSessionAgentPref?.()
+    const modelPref = paletteMod.getActiveSessionModelPref?.()
+    if (agentPref) opts.agent = agentPref
+    if (modelPref?.modelId) {
+      opts.modelID    = modelPref.modelId
+      opts.providerID = modelPref.providerId ?? ''
+    }
+  } catch (_) {}
+
+  // Fire the POST and return immediately. SSE drives the streaming DOM
+  // updates from here on. We only touch the DOM again on failure, to roll
+  // back the optimistic message.
+  sendPromptWithOpts(activeSession, msg, opts)
+    .then(() => {
+      window.__labelStripSetPending?.(null)
+    })
+    .catch(err => {
+      removeOptimisticUserMessage()
+      toast(`Failed to send prompt: ${err?.message ?? 'unknown error'}`)
+    })
 }
 
 // ── Tabs ───────────────────────────────────────────────────────────────────

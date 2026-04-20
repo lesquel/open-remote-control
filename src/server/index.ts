@@ -91,24 +91,155 @@ export default {
 
     const server = createRemoteServer(deps)
 
-    server.start()
+    // Promotion model:
+    //
+    //  - At boot, try to bind the HTTP port.
+    //  - If we get it → "primary": HTTP server + tunnel + banner + state + toast.
+    //  - If EADDRINUSE → "passive": skip all of the above, register hooks only.
+    //    Secondary windows are passive so OpenCode keeps working without
+    //    fighting the primary for port 4097. The dashboard has multi-project
+    //    tabs so the existing primary already sees this workspace.
+    //  - A passive instance polls the port every 5s. If the primary goes away
+    //    (user closed that terminal, crash, etc.), the first passive instance
+    //    to re-bind promotes itself and takes over the tunnel, state, banner,
+    //    and toast. This is what restores `/remote` on the surviving window
+    //    after the original one is closed.
+    //
+    // `role` is mutable because a passive instance can become primary later.
+    let role: "primary" | "passive" = "passive"
+    let tunnel: { publicUrl: string | null; provider: string; stop: () => void } = {
+      publicUrl: null,
+      provider: "off",
+      stop: () => {},
+    }
+    let promotionTimer: ReturnType<typeof setInterval> | null = null
 
-    writeState(ctx.directory, {
-      token: currentToken,
-      port: config.port,
-      host: config.host,
-      startedAt: Date.now(),
-      pid: process.pid,
-    })
+    async function activatePrimary(isPromotion: boolean): Promise<void> {
+      role = "primary"
+      writeState(ctx.directory, {
+        token: currentToken,
+        port: config.port,
+        host: config.host,
+        startedAt: Date.now(),
+        pid: process.pid,
+      })
 
-    // Start tunnel (non-blocking — runs after HTTP server is up)
-    const tunnel = await startTunnel({
-      provider: config.tunnel,
-      port: config.port,
-    })
+      tunnel = await startTunnel({
+        provider: config.tunnel,
+        port: config.port,
+      })
+      deps.tunnelUrl = tunnel.publicUrl
 
-    // Make tunnel URL available to handlers (e.g. /health, /auth/rotate)
-    deps.tunnelUrl = tunnel.publicUrl
+      const localUrl = `http://${config.host}:${config.port}`
+      await writeBanner({
+        localUrl,
+        publicUrl: tunnel.publicUrl,
+        token: currentToken,
+        directory: ctx.directory,
+      })
+
+      await ctx.client.app
+        .log({
+          body: {
+            service: "opencode-pilot",
+            level: "info",
+            message: `Remote control active on ${config.host}:${config.port}`,
+            extra: { token: currentToken },
+          },
+        })
+        .catch(() => {})
+
+      if (config.tunnel !== "off") {
+        await ctx.client.app
+          .log({
+            body: {
+              service: "opencode-pilot",
+              level: tunnel.publicUrl ? "info" : "warn",
+              message: tunnel.publicUrl
+                ? `Tunnel (${tunnel.provider}) active at ${tunnel.publicUrl}`
+                : `Tunnel provider ${config.tunnel} requested but unavailable`,
+            },
+          })
+          .catch(() => {})
+      }
+
+      const dashboardUrl = `${tunnel.publicUrl ?? localUrl}/?token=${currentToken}`
+      telegram
+        .sendStartup(dashboardUrl)
+        .catch((err) => audit.log("telegram.send_failed", { error: String(err), kind: "startup" }))
+
+      ctx.client.tui
+        .showToast({
+          body: {
+            title: isPromotion ? "🎮 OpenCode Pilot — promoted" : "🎮 OpenCode Pilot",
+            message: isPromotion
+              ? `Previous primary window closed. This window now hosts the dashboard on port ${config.port}.`
+              : `Remote control active on port ${config.port}. Use /remote-control for details.`,
+            variant: "success",
+            duration: isPromotion ? 7000 : 5000,
+          },
+        })
+        .catch(() => {})
+    }
+
+    function startPromotionWatcher(): void {
+      if (promotionTimer) return
+      promotionTimer = setInterval(async () => {
+        if (role === "primary") {
+          if (promotionTimer) clearInterval(promotionTimer)
+          promotionTimer = null
+          return
+        }
+        // Quick retry: if we can bind the port now, the primary is gone and
+        // we take over. server.start() returns { ok: false } with no side
+        // effects if the port is still taken — safe to poll.
+        const result = server.start()
+        if (result.ok) {
+          audit.log("boot.promoted", { port: config.port })
+          if (promotionTimer) clearInterval(promotionTimer)
+          promotionTimer = null
+          await activatePrimary(true)
+        }
+      }, 5000)
+    }
+
+    // ─── Initial boot: try to become primary ───────────────────────────────
+    const bindResult = server.start()
+
+    if (bindResult.ok) {
+      await activatePrimary(false)
+    } else {
+      audit.log("boot.passive", {
+        reason: bindResult.reason,
+        port: config.port,
+      })
+      await ctx.client.app
+        .log({
+          body: {
+            service: "opencode-pilot",
+            level: "info",
+            message:
+              `Another OpenCode instance owns port ${config.port}. ` +
+              `This window runs in passive mode; it will auto-promote if the ` +
+              `primary goes away. In the meantime use the existing dashboard.`,
+          },
+        })
+        .catch(() => {})
+      ctx.client.tui
+        .showToast({
+          body: {
+            title: "OpenCode Pilot — passive mode",
+            message:
+              `Port ${config.port} already in use by another OpenCode window. ` +
+              `Use /remote to open that dashboard. This window will auto-promote ` +
+              `if you close the other one.`,
+            variant: "info",
+            duration: 7000,
+          },
+        })
+        .catch(() => {})
+      startPromotionWatcher()
+    }
 
     // ─── R2: Global error traps ──────────────────────────────────────────
     // Never write to stdout/stderr — the OpenCode TUI renders those as red
@@ -135,81 +266,27 @@ export default {
     })
 
     // ─── Graceful shutdown ───────────────────────────────────────────────
-    const disposables: Array<() => void | Promise<void>> = [
-      () => server.stop(),
-      () => tunnel.stop(),
-      () => telegram.stop(),
-      () => clearState(ctx.directory),
-    ]
-
+    // Shutdown reads `role` at the moment it runs, not at boot — so a
+    // passive instance that got promoted correctly tears down the server,
+    // tunnel, and state it started. clearState only runs when we're the
+    // primary at shutdown; deleting the global state file from a passive
+    // instance would blind every other window.
     async function shutdown(): Promise<void> {
-      for (const d of disposables.reverse()) {
-        try {
-          await d()
-        } catch {}
+      if (promotionTimer) {
+        clearInterval(promotionTimer)
+        promotionTimer = null
+      }
+      try { telegram.stop() } catch {}
+      if (role === "primary") {
+        try { tunnel.stop() } catch {}
+        try { server.stop() } catch {}
+        try { clearState(ctx.directory) } catch {}
       }
     }
 
     process.once("SIGINT", () => void shutdown())
     process.once("SIGTERM", () => void shutdown())
     process.once("exit", () => void shutdown())
-
-    // ─── Logging ─────────────────────────────────────────────────────────
-    await ctx.client.app.log({
-      body: {
-        service: "opencode-pilot",
-        level: "info",
-        message: `Remote control active on ${config.host}:${config.port}`,
-        extra: { token: currentToken },
-      },
-    })
-
-    if (config.tunnel !== "off") {
-      if (tunnel.publicUrl) {
-        await ctx.client.app.log({
-          body: {
-            service: "opencode-pilot",
-            level: "info",
-            message: `Tunnel (${tunnel.provider}) active at ${tunnel.publicUrl}`,
-          },
-        })
-      } else {
-        await ctx.client.app.log({
-          body: {
-            service: "opencode-pilot",
-            level: "warn",
-            message: `Tunnel provider ${config.tunnel} requested but unavailable (binary not found or failed to start)`,
-          },
-        })
-      }
-    }
-
-    // ─── Banner & QR ─────────────────────────────────────────────────────
-    const localUrl = `http://${config.host}:${config.port}`
-    await writeBanner({
-      localUrl,
-      publicUrl: tunnel.publicUrl,
-      token: currentToken,
-      directory: ctx.directory,
-    })
-
-    // Send Telegram startup notification (fire and forget)
-    const dashboardUrl = `${tunnel.publicUrl ?? localUrl}/?token=${currentToken}`
-    telegram
-      .sendStartup(dashboardUrl)
-      .catch((err) => audit.log("telegram.send_failed", { error: String(err), kind: "startup" }))
-
-    // Notify TUI that the server is up
-    ctx.client.tui
-      .showToast({
-        body: {
-          title: "🎮 OpenCode Pilot",
-          message: `Remote control active on port ${config.port}. Use /remote-control for details.`,
-          variant: "success",
-          duration: 5000,
-        },
-      })
-      .catch(() => {})
 
     // ─── Hooks ───────────────────────────────────────────────────────────
     const sessionBusyStart = new Map<string, number>()
