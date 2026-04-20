@@ -1,7 +1,7 @@
 {
   "name": "@lesquel/opencode-pilot",
-  "version": "1.11.2",
-  "description": "Remote control plugin for OpenCode — monitor sessions, send prompts, approve permissions, and get Telegram notifications from anywhere",
+  "version": "1.11.3",
+  "description": "Remote control web dashboard for OpenCode — multi-project tabs, live SSE streaming, mobile-friendly, push/Telegram notifications, tunnel for phone access from anywhere.",
   "publishConfig": {
     "access": "public"
   },
@@ -34,18 +34,40 @@
     "url": "https://github.com/lesquel/open-remote-control/issues"
   },
   "homepage": "https://github.com/lesquel/open-remote-control#readme",
-  "author": "lesquel",
+  "author": {
+    "name": "lesquel",
+    "url": "https://github.com/lesquel"
+  },
   "license": "MIT",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/lesquel"
+  },
   "keywords": [
     "opencode",
-    "plugin",
+    "opencode-plugin",
+    "ai-agent",
     "remote-control",
-    "monitoring",
     "dashboard",
+    "web-dashboard",
+    "mobile",
+    "pwa",
     "telegram",
+    "telegram-bot",
+    "web-push",
+    "push-notifications",
     "sse",
+    "server-sent-events",
+    "cloudflared",
+    "ngrok",
     "tunnel",
-    "permissions"
+    "qr-code",
+    "permissions",
+    "agent-monitoring",
+    "multi-project",
+    "developer-tools",
+    "claude",
+    "anthropic"
   ],
   "dependencies": {
     "@opencode-ai/plugin": "latest",

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.11.3] — 2026-04-20
+
+### Changed — npm metadata + README rewrite for users
+
+- **README** rewritten for npm visitors. Features list, mobile / phone access, keyboard shortcuts table, all env vars at a glance, links to docs/. Badges for npm version, downloads, license, GitHub stars.
+- **package.json keywords** expanded from 9 to 25 — covers `opencode-plugin`, `ai-agent`, `web-push`, `cloudflared`, `ngrok`, `pwa`, `multi-project`, `developer-tools`, `claude`, `anthropic` etc. for npm search discoverability.
+- **package.json author** structured as `{ name, url }` so npm shows a clickable link.
+- **package.json funding** field added pointing to GitHub Sponsors.
+- **description** rewritten to mention the headline features (multi-project tabs, live SSE, mobile, tunnel, push/Telegram).
+
+No code changes. Pure publish-quality polish.
+
+---
+
 ## [1.11.2] — 2026-04-20
 
 ### Changed — Package renamed to `@lesquel/opencode-pilot`
