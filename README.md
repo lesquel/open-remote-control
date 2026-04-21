@@ -124,6 +124,8 @@ See [Connect from your phone](#connect-from-your-phone) below. Either same-WiFi 
 
 ## Troubleshooting — slash commands don't appear
 
+> **Other symptoms** (port conflicts, `/remote` says "server not running", dashboard 401s, push/telegram silent, wrong tab opens) are covered in [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md). This section is specifically about the "I installed it but slash commands are missing" case.
+
 If the plugin loads (you see the banner in the terminal) but typing `/remo<Tab>` in the TUI doesn't autocomplete `/remote`, `/dashboard`, `/pilot`, `/pilot-token`, or `/remote-control`:
 
 1. **Check the canary toast**. On startup the TUI should toast "OpenCode Pilot — Remote control plugin loaded". No toast → the TUI plugin didn't register, even if the dashboard server did.
@@ -284,10 +286,19 @@ The `.env` file is searched in: (1) `process.cwd()/.env` then (2) the plugin's i
 
 ## Documentation
 
+**For users**
+- [Troubleshooting runtime issues](docs/TROUBLESHOOTING.md) — start here if `/remote` says "server not running", the dashboard 401s, push/telegram isn't arriving, or the wrong tab opens
+- [Install deep-dive](docs/INSTALL.md) — how OpenCode's two-loader plugin architecture works, every trap we've hit getting a clean install, full troubleshooting matrix
 - [Configuration reference](docs/CONFIGURATION.md) — every env var, with example `.env` files for common scenarios
 - [Connect from phone](docs/CONFIGURATION.md#scenario-2-solo-dev-want-phone-access-in-same-wifi) — LAN + tunnel setup
 - [Tunnel testing](docs/TUNNEL_TESTING.md) — end-to-end verification guide
-- [Publishing to npm](docs/PUBLISHING_TO_NPM.md) — for contributors who want to publish forks
+
+**For contributors and AI agents**
+- [`AGENTS.md`](AGENTS.md) — strict workflow for AI agents and humans editing the repo (hard rules, release process, debugging playbook, Engram protocol)
+- [`CLAUDE.md`](CLAUDE.md) — codebase overview, file map, routes, event types
+- [Architecture](docs/ARCHITECTURE.md) — design decisions with rationale
+- [Release checklist](docs/RELEASE.md) — step-by-step execution guide for shipping a new version
+- [Publishing to npm](docs/PUBLISHING_TO_NPM.md) — one-time npm account setup and scope choice
 - [Cloud relay v2.0 design](docs/CLOUD_RELAY_v2_DESIGN.md) — architecture doc for a future centralized service
 - [Production readiness](docs/PRODUCTION_READINESS.md) — deployment-mode verdicts
 
@@ -306,13 +317,15 @@ If you want the deep version, see the [`docs/`](docs/) folder.
 - **Server**: Bun + TypeScript (strict)
 - **Dashboard**: vanilla ES modules, plain CSS, ~9000 LOC. No React, no build step.
 - **Optional deps**: `cloudflared` / `ngrok` (tunnel), `@modelcontextprotocol/sdk` (MCP), `web-push` (push notifications)
-- **Tests**: 181 (Bun test runner), all green
+- **Tests**: 228 (Bun test runner), all green
 
 ---
 
 ## Contributing
 
 Issues and PRs welcome at [github.com/lesquel/open-remote-control](https://github.com/lesquel/open-remote-control).
+
+**Before you open a PR, read [`AGENTS.md`](AGENTS.md).** It's short and it's the contract for how the repo is maintained — hard rules, release process, debugging playbook. Following it is the difference between a PR that gets merged in a day and one that needs three rounds of review.
 
 Local dev:
 
@@ -333,6 +346,8 @@ bun pm pack        # creates lesquel-opencode-pilot-X.X.X.tgz
 # In a test project with opencode.json:
 bun add /path/to/lesquel-opencode-pilot-X.X.X.tgz
 ```
+
+Shipping a new version: follow [`docs/RELEASE.md`](docs/RELEASE.md). Pushing a `vX.Y.Z` tag is the only supported way to publish.
 
 ---
 

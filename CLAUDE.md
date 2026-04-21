@@ -1,5 +1,15 @@
 # OpenCode Pilot — CLAUDE.md
 
+Codebase overview for AI agents. For the **strict workflow** (what to never do, release process, debugging playbook, Engram protocol), read [`AGENTS.md`](./AGENTS.md) first — that file is the contract.
+
+Companion docs:
+
+- [`AGENTS.md`](./AGENTS.md) — strict AI-agent workflow and conventions
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — design decisions with rationale
+- [`docs/RELEASE.md`](./docs/RELEASE.md) — release execution checklist
+- [`docs/TROUBLESHOOTING.md`](./docs/TROUBLESHOOTING.md) — user-facing runtime debugging
+- [`docs/INSTALL.md`](./docs/INSTALL.md) — install-time debugging + the two-loader plugin architecture
+
 ## Project
 Remote control plugin for OpenCode. Lets you monitor sessions, send prompts, and approve permissions remotely via HTTP/SSE.
 

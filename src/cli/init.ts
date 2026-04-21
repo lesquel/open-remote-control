@@ -99,15 +99,43 @@ function which(cmd: string): boolean {
 // reads dashboard files (sw.js, sse.js, etc.) from the cache on every HTTP
 // request, so wiping the cache mid-flight produces a 404 storm and leaves
 // the user's browser pinned to whatever it cached previously.
-function isOpencodeRunning(): boolean {
+//
+// **Critical**: we use `pgrep -x opencode` (exact process-name match), NOT
+// `pgrep -f opencode` (full command-line substring match).
+//
+// `-f` matched:
+//   - The init process itself (`bunx @lesquel/opencode-pilot@latest init`
+//     contains the string "opencode")
+//   - Any shell running in a directory whose path contains "opencode"
+//     (e.g. our own dev checkout at `~/proyectos/plugin-opencode/…`)
+//   - Editors with files open under such a path
+//
+// So v1.13.13 reported "OpenCode is running" for basically every user and
+// produced the red "CACHE NOT REFRESHED" banner + exit 2 on CLEAN installs,
+// defeating its own purpose. The -x flag fixes this by matching only
+// processes whose executable name is exactly `opencode`.
+//
+// We also exclude the current process and its parent on the off-chance a
+// user's OpenCode wrapper script renames its argv[0] — the wrapper's PID
+// would be our parent, and we do NOT want to self-detect.
+/** @internal — exported only for testing. Do not call from non-test code. */
+export function isOpencodeRunning(): boolean {
   if (platform() === "win32") {
+    // `tasklist /FI "IMAGENAME eq opencode.exe"` already filters by image
+    // name, not command line, so this path was never affected by the bug.
     const r = spawnSync("tasklist", ["/FI", "IMAGENAME eq opencode.exe"], {
       encoding: "utf8",
     })
     return r.stdout?.toLowerCase().includes("opencode.exe") ?? false
   }
-  const r = spawnSync("pgrep", ["-f", "opencode"], { stdio: "pipe" })
-  return r.status === 0
+  const r = spawnSync("pgrep", ["-x", "opencode"], { encoding: "utf8" })
+  if (r.status !== 0) return false
+  const selfPids = new Set<number>([process.pid, process.ppid])
+  const foreignPids = (r.stdout ?? "")
+    .split("\n")
+    .map((line) => parseInt(line.trim(), 10))
+    .filter((pid) => Number.isFinite(pid) && !selfPids.has(pid))
+  return foreignPids.length > 0
 }
 
 function ensurePackageInstalled(configDir: string, installer: string): boolean {
@@ -401,29 +429,35 @@ function printCacheSkipBanner(): void {
   console.log("")
 }
 
-const args = process.argv.slice(2)
-const command = args[0] ?? "init"
+// CLI entrypoint — only executes when this file is run directly (e.g.
+// `bunx @lesquel/opencode-pilot init`), not when imported from a test.
+// Guarded with `import.meta.main` so exporting internals for testing
+// (see `isOpencodeRunning`) doesn't re-run the installer as a side effect.
+if (import.meta.main) {
+  const args = process.argv.slice(2)
+  const command = args[0] ?? "init"
 
-if (command === "init") {
-  const result = main()
-  if (result.cacheInvalidationSkipped) {
-    process.exit(2)
+  if (command === "init") {
+    const result = main()
+    if (result.cacheInvalidationSkipped) {
+      process.exit(2)
+    }
+  } else if (command === "--help" || command === "-h" || command === "help") {
+    console.log(`Usage: npx ${PACKAGE_NAME} init`)
+    console.log(`       Installs and wires the plugin into your OpenCode config.`)
+    process.exit(0)
+  } else if (command === "--version" || command === "-v") {
+    try {
+      const pkgUrl = new URL("../../package.json", import.meta.url)
+      const pkg = JSON.parse(readFileSync(pkgUrl, "utf8")) as { version: string }
+      console.log(pkg.version)
+    } catch {
+      console.log("unknown")
+    }
+    process.exit(0)
+  } else {
+    console.error(`Unknown command: ${command}`)
+    console.error(`Try: npx ${PACKAGE_NAME} init`)
+    process.exit(1)
   }
-} else if (command === "--help" || command === "-h" || command === "help") {
-  console.log(`Usage: npx ${PACKAGE_NAME} init`)
-  console.log(`       Installs and wires the plugin into your OpenCode config.`)
-  process.exit(0)
-} else if (command === "--version" || command === "-v") {
-  try {
-    const pkgUrl = new URL("../../package.json", import.meta.url)
-    const pkg = JSON.parse(readFileSync(pkgUrl, "utf8")) as { version: string }
-    console.log(pkg.version)
-  } catch {
-    console.log("unknown")
-  }
-  process.exit(0)
-} else {
-  console.error(`Unknown command: ${command}`)
-  console.error(`Try: npx ${PACKAGE_NAME} init`)
-  process.exit(1)
 }

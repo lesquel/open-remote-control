@@ -4,6 +4,59 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.13.14] — 2026-04-21
+
+### Fixed — `isOpencodeRunning()` false-positive on every clean install
+
+**The report**
+
+After 1.13.13 shipped, running `bunx @lesquel/opencode-pilot@latest init` on a machine with **no OpenCode process running** still produced the red `!! CONFIG WRITTEN — BUT PLUGIN CACHE NOT REFRESHED !!` banner and exit code 2. The loud banner that was supposed to warn a narrow edge case was firing for almost every user.
+
+**Root cause — `pgrep -f` is too permissive**
+
+`src/cli/init.ts` used `pgrep -f opencode` to detect a running OpenCode. The `-f` flag matches against the **full command line**, not the process name. That caused three false-positive matches:
+
+1. **The init process itself.** The command `bunx @lesquel/opencode-pilot@latest init` contains the literal string `opencode`. `pgrep -f` happily reported the init's own shell as an OpenCode process.
+2. **Any shell running inside a directory whose path contains `opencode`** — most obviously, our own dev checkouts at `~/proyectos/plugin-opencode/…`. A bash session cd'd into that directory has the path in its argv via `PWD` or similar.
+3. **Editors, file managers, or grep processes** opened with files under such a path.
+
+The net effect: 1.13.13's diagnostic banner and `exit 2` fired on basically every install, making the whole "strict mode" feature counterproductive — users ignored the banner or downgraded back to 1.13.12.
+
+**The fix — `pgrep -x opencode` + self-PID exclusion**
+
+```diff
+- const r = spawnSync("pgrep", ["-f", "opencode"], { stdio: "pipe" })
+- return r.status === 0
++ const r = spawnSync("pgrep", ["-x", "opencode"], { encoding: "utf8" })
++ if (r.status !== 0) return false
++ const selfPids = new Set<number>([process.pid, process.ppid])
++ const foreignPids = (r.stdout ?? "")
++   .split("\n")
++   .map((line) => parseInt(line.trim(), 10))
++   .filter((pid) => Number.isFinite(pid) && !selfPids.has(pid))
++ return foreignPids.length > 0
+```
+
+- `-x` matches only processes whose **executable name** is exactly `opencode`, so `bunx`, `node`, and random shells are never matched.
+- Self-PID and parent-PID are excluded explicitly — defensive against niche setups where a wrapper script renames `argv[0]` to `opencode`.
+
+**Regression tests — `src/cli/init.test.ts`**
+
+Three tests guard this:
+
+1. `isOpencodeRunning()` returns `false` in the test environment (bun running `bun test` is never matched).
+2. Source-level check: the literal `'pgrep", ["-x", "opencode"]'` must appear and `'pgrep", ["-f", "opencode"]'` must NOT appear. Catches any "refactor" that silently reverts the flag.
+3. Source-level check: `process.pid`, `process.ppid`, and `selfPids` must all appear — documents the self-exclusion contract.
+
+**Also in this release**
+
+- New `AGENTS.md` at the repo root — strict workflow for AI agents editing the code (hard rules, release process, debugging playbook, Engram protocol). Reference in [`CLAUDE.md`](./CLAUDE.md).
+- New `docs/RELEASE.md` — step-by-step release execution checklist. Single source of truth for the three places `version` must bump, the conventional commit format, and why the tag push must wait for CI to go green on `main` first.
+- New `docs/TROUBLESHOOTING.md` — user-facing runtime debugging covering port conflicts, stale cache, Telegram/tunnel silence, SSE disconnects, phone/LAN connectivity, and the data dump to attach to bug reports.
+- Server plugin boot-marker log — `ctx.client.app.log` writes `Plugin loading — version X.Y.Z, pid N, directory <cwd>` as the first thing on load. If a user reports "nothing happens", the presence or absence of this line in `opencode logs` immediately tells us whether the plugin loaded at all.
+
+---
+
 ## [1.13.13] — 2026-04-21
 
 ### Fixed — `pilot-state.json` silently missing when server is up ([#1](https://github.com/lesquel/open-remote-control/issues/1))

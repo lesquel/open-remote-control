@@ -16,10 +16,29 @@ import { createNotificationService } from "./services/notifications"
 import { createRemoteServer } from "./http/server"
 import { createEventHook, createPermissionAskHook, createToolHooks } from "./hooks"
 import { createLogger } from "./util/logger"
+import { PILOT_VERSION } from "./constants"
 
 export default {
   id: "opencode-pilot",
   server: (async (ctx) => {
+    // Boot marker — logged before anything else. If this line is missing from
+    // OpenCode's log panel after a restart, the plugin didn't load at all
+    // (check `~/.config/opencode/opencode.json::plugin` and the package cache
+    // at `~/.cache/opencode/packages/@lesquel/opencode-pilot@latest/`). If it
+    // IS present but nothing else from opencode-pilot appears, activation
+    // crashed silently — something in the 15 or so lines below is throwing.
+    // Issue #1 (open-remote-control) would have been 10x faster to diagnose
+    // with this log in place.
+    await ctx.client.app
+      .log({
+        body: {
+          service: "opencode-pilot",
+          level: "info",
+          message: `Plugin loading — version ${PILOT_VERSION}, pid ${process.pid}, directory ${ctx.directory ?? "<none>"}`,
+        },
+      })
+      .catch(() => {})
+
     // Snapshot the shell environment BEFORE .env and settings-store touch
     // process.env. This is what tells us which variables came from the user's
     // shell (highest priority) vs layered overlays.
