@@ -3,7 +3,7 @@ import type { PluginOptions } from "@opencode-ai/plugin"
 import { join } from "path"
 import { existsSync, readFileSync } from "fs"
 import { homedir } from "os"
-import { isServerAlive } from "./liveness"
+import { isServerAlive, probeHealth, defaultProbeTarget, type HealthProbe } from "./liveness"
 import { buildDashboardUrl } from "./url-builder"
 
 // ─── State file reader ───────────────────────────────────────────────────────
@@ -63,6 +63,81 @@ function readBanner(dir: string): string | null {
   )
 }
 
+// ─── No-state-file fallback (issue #1) ───────────────────────────────────────
+// Before 1.13.13 the three slash commands collapsed three very different
+// scenarios into the same "server not running" toast. Now we probe the
+// default host:port and return an actionable diagnosis.
+
+interface MissingStateToast {
+  title: string
+  message: string
+  variant: "warning" | "error"
+  duration: number
+}
+
+function diagnoseMissingState(probe: HealthProbe, title: string): MissingStateToast {
+  const statePath = join(globalDir(), "pilot-state.json")
+  if (probe.kind === "pilot") {
+    return {
+      title,
+      message: [
+        `Pilot server is responding on ${probe.host}:${probe.port}`,
+        `(version ${probe.version ?? "unknown"}), but the state file at`,
+        `${statePath} is missing.`,
+        ``,
+        `This is usually a cache or permissions problem. Try:`,
+        `  1. Fully quit OpenCode.`,
+        `  2. rm -rf ~/.cache/opencode/packages/@lesquel/opencode-pilot*`,
+        `  3. bunx @lesquel/opencode-pilot@latest init`,
+        `  4. Reopen OpenCode.`,
+      ].join("\n"),
+      variant: "error",
+      duration: 15000,
+    }
+  }
+  if (probe.kind === "other") {
+    return {
+      title,
+      message: [
+        `Something is listening on ${probe.host}:${probe.port},`,
+        `but it is not the pilot server (HTTP ${probe.status}, unknown /health shape).`,
+        ``,
+        `Identify it with:  ss -tulpn | grep :${probe.port}`,
+        `Then stop that process or set PILOT_PORT to a free port.`,
+      ].join("\n"),
+      variant: "error",
+      duration: 12000,
+    }
+  }
+  // probe.kind === "none"
+  return {
+    title,
+    message: [
+      `Remote control server not running.`,
+      ``,
+      `Nothing is listening on ${probe.host}:${probe.port} and no state file`,
+      `was found at ${statePath}.`,
+      ``,
+      `Check that the plugin is enabled in ~/.config/opencode/opencode.json`,
+      `and that OpenCode has been restarted since running bunx init.`,
+    ].join("\n"),
+    variant: "warning",
+    duration: 10000,
+  }
+}
+
+async function diagnoseAndToast(api: TuiPluginApi, title: string): Promise<void> {
+  const { host, port } = defaultProbeTarget()
+  const probe = await probeHealth(host, port)
+  const toast = diagnoseMissingState(probe, title)
+  api.ui.toast({
+    title: toast.title,
+    message: toast.message,
+    variant: toast.variant,
+    duration: toast.duration,
+  })
+}
+
 // ─── Command definitions ─────────────────────────────────────────────────────
 
 const commands = [
@@ -116,12 +191,7 @@ const commands = [
         return
       }
 
-      api.ui.toast({
-        title: "OpenCode Pilot",
-        message: "Remote control server not running or token not yet available",
-        variant: "warning",
-        duration: 5000,
-      })
+      await diagnoseAndToast(api, "OpenCode Pilot — Remote Control")
     },
   },
   {
@@ -162,12 +232,7 @@ const commands = [
         return
       }
 
-      api.ui.toast({
-        title: "Pilot Token",
-        message: "Token not available. Check that the server plugin is loaded.",
-        variant: "warning",
-        duration: 5000,
-      })
+      await diagnoseAndToast(api, "Pilot Token")
     },
   },
   {
@@ -182,12 +247,7 @@ const commands = [
       const state = readPilotState(dir)
 
       if (!state) {
-        api.ui.toast({
-          title: "OpenCode Pilot — Dashboard",
-          message: "Remote control server not running or token not yet available",
-          variant: "error",
-          duration: 5000,
-        })
+        await diagnoseAndToast(api, "OpenCode Pilot — Dashboard")
         return
       }
 

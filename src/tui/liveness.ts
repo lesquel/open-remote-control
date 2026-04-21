@@ -89,3 +89,77 @@ async function httpIsAlive(url: string): Promise<boolean> {
     return false
   }
 }
+
+/**
+ * Result of probing a host:port for a pilot server when no state file exists.
+ * Introduced in 1.13.13 for issue #1 — the TUI used to report the same
+ * "server not running" toast for three very different situations:
+ *
+ *   - `pilot`: our plugin IS running (200 /health with our JSON shape) but
+ *     the state file is missing. Root cause is usually stale cache or a
+ *     permissions issue on `~/.opencode-pilot/`.
+ *   - `other`: the port responds but /health is not ours. Something else
+ *     grabbed the port before OpenCode booted.
+ *   - `none`: nothing is listening on the probed host:port.
+ *
+ * Distinguishing the three lets /remote print an actionable next step
+ * instead of a generic "server not running".
+ */
+export type HealthProbe =
+  | { kind: "pilot"; version?: string; host: string; port: number }
+  | { kind: "other"; host: string; port: number; status: number }
+  | { kind: "none"; host: string; port: number }
+
+/**
+ * Probe a known/guessed host:port for our pilot /health endpoint. Always
+ * resolves (never throws). 500ms timeout to stay snappy inside a slash
+ * command flow.
+ */
+export async function probeHealth(host: string, port: number): Promise<HealthProbe> {
+  const url = `http://${host}:${port}/health`
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 500)
+    try {
+      const res = await fetch(url, { signal: controller.signal })
+      if (!res.ok) {
+        return { kind: "other", host, port, status: res.status }
+      }
+      // Our /health returns { status, version, services: {...}, telegram_ok }.
+      // `services.sdk` is the most distinctive key — unlikely to collide with
+      // a random HTTP service on the same port.
+      const body = (await res.json()) as {
+        status?: unknown
+        version?: unknown
+        services?: { sdk?: unknown }
+      }
+      const looksLikePilot =
+        typeof body?.status === "string" &&
+        typeof body?.services?.sdk === "string"
+      if (looksLikePilot) {
+        const version = typeof body.version === "string" ? body.version : undefined
+        return { kind: "pilot", version, host, port }
+      }
+      return { kind: "other", host, port, status: res.status }
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch {
+    return { kind: "none", host, port }
+  }
+}
+
+/**
+ * Default host:port the TUI probes when no state file exists. Matches the
+ * server-side defaults in `src/server/config.ts` and honors the same env
+ * vars (PILOT_HOST / PILOT_PORT) so users who customized the port still
+ * get a useful probe result.
+ */
+export function defaultProbeTarget(): { host: string; port: number } {
+  const port = Number(process.env.PILOT_PORT)
+  const host = process.env.PILOT_HOST ?? "127.0.0.1"
+  return {
+    host,
+    port: Number.isFinite(port) && port > 0 ? port : 4097,
+  }
+}

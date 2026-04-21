@@ -38,13 +38,37 @@ function safeMkdir(path: string) {
   }
 }
 
-function safeWrite(path: string, content: string): boolean {
+/**
+ * Per-path write outcome. `ok:false` callers can surface `error` to the user
+ * (or the OpenCode log panel) so silent ENOENT / EACCES on `~/.opencode-pilot/`
+ * stop looking like "server not running" in the TUI.
+ */
+export interface WriteOutcome {
+  path: string
+  ok: boolean
+  error?: string
+}
+
+/**
+ * Structured dual-write result. Before 1.13.13 writeState returned `void` and
+ * every error was swallowed silently — a user with an unwritable
+ * `~/.opencode-pilot/` directory saw no evidence of the problem, only the
+ * TUI toast saying the server was not running. This shape lets the caller
+ * (`activatePrimary`) log a clear diagnostic when either path fails.
+ */
+export interface WriteStateResult {
+  /** null when `directory` was invalid and we could not even compute the project path. */
+  project: WriteOutcome | null
+  global: WriteOutcome
+}
+
+function writeOne(path: string, content: string): WriteOutcome {
   try {
     safeMkdir(dirname(path))
     writeFileSync(path, content)
-    return true
-  } catch {
-    return false
+    return { path, ok: true }
+  } catch (err) {
+    return { path, ok: false, error: (err as Error)?.message ?? String(err) }
   }
 }
 
@@ -57,13 +81,34 @@ function safeRead(path: string): PilotState | null {
   }
 }
 
-export function writeState(directory: string, state: PilotState): void {
+/**
+ * Best-effort dual write. Each path is isolated — an invalid `directory`
+ * (undefined, empty, or something `join` refuses) no longer aborts the global
+ * write, which is the one the TUI reads as of 1.13.x. Returns a
+ * {@link WriteStateResult} so callers can log/act on partial failures.
+ */
+export function writeState(directory: string, state: PilotState): WriteStateResult {
   const json = JSON.stringify(state, null, 2)
-  // Best-effort dual write. If the project .opencode/ dir can't be created
-  // (permissions, read-only FS, etc.) we still succeed on the global path,
-  // which is what the TUI reads anyway.
-  safeWrite(projectStatePath(directory), json)
-  safeWrite(globalStatePath(), json)
+
+  let project: WriteOutcome | null = null
+  try {
+    // projectStatePath can throw if directory is falsy or not a string in a
+    // future OpenCode SDK change. We isolate the failure so the global write
+    // below still runs — the TUI reads the global file, so that's the one
+    // that matters.
+    const ppath = projectStatePath(directory)
+    project = writeOne(ppath, json)
+  } catch (err) {
+    project = {
+      path: "<invalid-directory>",
+      ok: false,
+      error: (err as Error)?.message ?? String(err),
+    }
+  }
+
+  const global = writeOne(globalStatePath(), json)
+
+  return { project, global }
 }
 
 /**

@@ -4,6 +4,81 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.13.13] — 2026-04-21
+
+### Fixed — `pilot-state.json` silently missing when server is up ([#1](https://github.com/lesquel/open-remote-control/issues/1))
+
+**The report**
+
+@Marcwos reported that OpenCode was listening on port 4097 but `/remote`, `/remote-control`, and `/pilot-token` all surfaced "Remote control server not running or token not yet available". No `pilot-state.json` existed at either `.opencode/pilot-state.json` or `~/.opencode-pilot/pilot-state.json`. The user had a fully-functional pilot server but zero way for the TUI to find it — a totally invisible failure.
+
+**Root causes (four paths led to the same symptom)**
+
+1. **Stale package cache after `bunx init` while OpenCode was running.** The v1.13.11 init script refuses to invalidate `~/.cache/opencode/packages/@lesquel/opencode-pilot@latest/` while any `opencode` process is alive (because the live plugin reads dashboard assets from that same cache). The skip was printed as a single `console.log` line that users missed. OpenCode kept loading the previously-installed version, which — if old enough — only wrote the project-scoped `.opencode/pilot-state.json` and silently failed on workspaces like `~/Desktop` that have no `.opencode/` folder.
+
+2. **`writeState` swallowed every I/O error.** `safeWrite()` wrapped `mkdirSync` + `writeFileSync` in a naked `try {} catch {}` that returned `false` and dropped the error on the floor. A user with an unwritable `~/.opencode-pilot/` (permissions, quotas, read-only FS, overlay weirdness) saw zero evidence of the problem — not in OpenCode's log panel, not in stderr, nowhere.
+
+3. **`projectStatePath(directory)` could crash the whole dual write.** `writeState` called `join(directory, ".opencode", "pilot-state.json")` **before** wrapping the call in `safeWrite`. If a future OpenCode SDK change ever passes `ctx.directory` as `undefined` or `null`, `join()` throws `TypeError` out of `writeState`, which takes `activatePrimary` with it — and the global-path write that was supposed to be the fallback never runs.
+
+4. **Passive-mode / non-pilot-owner of port 4097 was indistinguishable from "plugin not loaded".** The TUI reported the same toast in all three scenarios.
+
+**The fix — defensive on all four paths**
+
+1. **`src/cli/init.ts` — loud banner + nonzero exit when cache invalidation is skipped.** Previously the skip was a two-line `console.log`. Now it's a red ANSI banner with a 3-step remediation checklist, printed as the last thing on screen, followed by `process.exit(2)`. CI scripts, shell pipelines, and even humans skimming the output cannot miss it.
+
+2. **`src/server/services/state.ts` — `writeState` now returns `WriteStateResult`.** Each path (`project`, `global`) reports `{ path, ok, error? }` so callers can log partial failures. The internal `safeWrite` helper is replaced by `writeOne`, which still tries `mkdir -p` + `writeFileSync`, but captures the error message into the outcome instead of discarding it.
+
+3. **`src/server/index.ts` — `activatePrimary` surfaces write failures via `ctx.client.app.log`.** If the global write fails, an `ERROR` level log appears in OpenCode's log panel explaining exactly which path failed, the underlying error, and how to remediate. If the global write reports `ok` but `existsSync` says the file is missing (exotic FS case), that's also logged. Project-scoped failures are logged at `WARN` — not critical because the TUI reads the global path as of 1.13.x, but useful for debugging.
+
+4. **`src/tui/liveness.ts` — new `probeHealth(host, port)` helper.** Returns `{kind: "pilot" | "other" | "none", ...}`. The `"pilot"` case is keyed on our specific `/health` JSON shape (`{status, version, services.sdk}`) so a random HTTP service on port 4097 doesn't pass as us.
+
+5. **`src/tui/index.ts` — all three slash commands call `diagnoseAndToast` when no state file is found.** Each of the three probe outcomes gets a distinct, actionable message:
+
+   - `pilot` — "Server is responding but state file is missing — this is a cache/permissions problem, run these 4 commands".
+   - `other` — "Something is listening on :4097 but it isn't us, identify with `ss -tulpn` and either stop it or set `PILOT_PORT`".
+   - `none` — "Nothing is listening and no state file exists — check the plugin is in `opencode.json` and restart OpenCode".
+
+**Isolation of `projectStatePath` failures**
+
+The `projectStatePath(directory)` call is now wrapped in its own `try/catch` inside `writeState`. If `join()` throws for any reason, the catch records `{path: "<invalid-directory>", ok: false, error}` for the project outcome and **the global write still runs unconditionally**. The TUI's canonical state path is the global one, so this guarantees the slash commands keep working even if `ctx.directory` is temporarily garbage.
+
+**Regression tests**
+
+`src/server/services/state.test.ts` now covers:
+
+- `writeState` returns both outcomes populated when the directory is valid.
+- `writeState(null, ...)` returns `project.ok === false` **and** still writes the global path successfully.
+- When `.opencode` is blocked by a regular file at the expected location, the project outcome reports `ok: false` with a real error message, and the global write still succeeds.
+- `globalStatePath()` stays anchored to `homedir()` / `.opencode-pilot/pilot-state.json` — a drift would silently break the TUI's cross-module contract.
+
+**User-visible output (example of the new init banner)**
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  !! CONFIG WRITTEN — BUT PLUGIN CACHE NOT REFRESHED !!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  OpenCode is currently running. The plugin package cache under
+  ~/.cache/opencode/packages/ was NOT invalidated — OpenCode will
+  keep loading the previously-installed version until you flush it.
+
+  Required steps:
+
+    1. Quit every OpenCode window / session:
+         pkill -f opencode     # Linux / macOS
+         (or close every terminal window running opencode)
+
+    2. Re-run this installer so cache invalidation succeeds:
+         bunx @lesquel/opencode-pilot@latest init
+
+    3. Reopen OpenCode.
+
+  Exiting with code 2 so CI/scripts notice this is NOT a success.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+---
+
 ## [1.13.12] — 2026-04-20
 
 ### Added — dashboard auto-focuses the current project tab when opened via `/remote`

@@ -9,7 +9,8 @@ import { createTelegramBot } from "./services/telegram"
 import { createPushService } from "./services/push"
 import { createSettingsStore } from "./services/settings-store"
 import { startTunnel } from "./services/tunnel"
-import { writeState, clearState } from "./services/state"
+import { writeState, clearState, globalStatePath } from "./services/state"
+import { existsSync } from "fs"
 import { writeBanner } from "./services/banner"
 import { createNotificationService } from "./services/notifications"
 import { createRemoteServer } from "./http/server"
@@ -116,13 +117,68 @@ export default {
 
     async function activatePrimary(isPromotion: boolean): Promise<void> {
       role = "primary"
-      writeState(ctx.directory, {
+      const writeResult = writeState(ctx.directory, {
         token: currentToken,
         port: config.port,
         host: config.host,
         startedAt: Date.now(),
         pid: process.pid,
       })
+
+      // Observability for issue #1 (open-remote-control): before 1.13.13,
+      // writeState swallowed every error silently. If both the project-scoped
+      // .opencode/pilot-state.json AND the global ~/.opencode-pilot/pilot-state.json
+      // failed to materialize, the server happily bound the port but the TUI
+      // slash commands reported "Remote control server not running". Surfacing
+      // the failure here (via the OpenCode log panel) turns an invisible bug
+      // into a diagnosable one.
+      if (!writeResult.global.ok) {
+        await ctx.client.app
+          .log({
+            body: {
+              service: "opencode-pilot",
+              level: "error",
+              message:
+                `CRITICAL: could not write pilot-state.json to ${writeResult.global.path} — ` +
+                `TUI slash commands (/remote, /pilot-token, /remote-control) will report ` +
+                `the server as not running. Error: ${writeResult.global.error}. ` +
+                `Fix the permissions on ~/.opencode-pilot/ and restart OpenCode.`,
+            },
+          })
+          .catch(() => {})
+      } else if (!existsSync(writeResult.global.path)) {
+        // Belt-and-suspenders: writeOne reported ok:true, but the file is not
+        // on disk. This can happen with exotic filesystems (overlays, tmpfs
+        // with quotas, NFS misconfig). Surface it so the user can debug.
+        await ctx.client.app
+          .log({
+            body: {
+              service: "opencode-pilot",
+              level: "error",
+              message:
+                `CRITICAL: writeState() returned ok but ${writeResult.global.path} is missing ` +
+                `on disk. Filesystem may have quota/overlay issues. TUI commands will fail.`,
+            },
+          })
+          .catch(() => {})
+      }
+
+      if (writeResult.project && !writeResult.project.ok) {
+        // Not critical — TUI reads the global file. Logged as a warning so
+        // the user can still investigate if they care about the project-scoped
+        // copy (tooling that reads `.opencode/pilot-state.json`).
+        await ctx.client.app
+          .log({
+            body: {
+              service: "opencode-pilot",
+              level: "warn",
+              message:
+                `Project-scoped state file ${writeResult.project.path} not written ` +
+                `(${writeResult.project.error}) — using global ${globalStatePath()} only.`,
+            },
+          })
+          .catch(() => {})
+      }
 
       tunnel = await startTunnel({
         provider: config.tunnel,

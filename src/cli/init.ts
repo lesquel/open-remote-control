@@ -41,6 +41,14 @@ interface InitResult {
   installer: string | null
   serverConfigChanged: boolean
   tuiConfigChanged: boolean
+  /**
+   * True when cache invalidation was skipped because OpenCode was running.
+   * The caller exits nonzero so scripts/CI notice the partial success.
+   * Introduced in 1.13.13 for issue #1 — users were re-running init without
+   * quitting OpenCode, getting a "Done" message, and still loading the old
+   * cached plugin from `~/.cache/opencode/packages/`.
+   */
+  cacheInvalidationSkipped: boolean
 }
 
 function locateOpencodeConfigDir(): string {
@@ -294,20 +302,16 @@ function main(): InitResult {
   // it while OpenCode is alive produces a 404 storm on the dashboard until
   // the user restarts OpenCode. We refuse the delete and tell the user.
   let cleanedCache: string[] = []
-  if (isOpencodeRunning()) {
-    console.log(
-      `  Skipped cache invalidation: OpenCode appears to be running.\n` +
-        `  Fully quit OpenCode (pkill -f opencode / kill the window) and\n` +
-        `  re-run \`npx @lesquel/opencode-pilot@latest init\` to flush the\n` +
-        `  stale cache. Without this, OpenCode keeps loading a previously\n` +
-        `  cached version of the plugin.`,
-    )
-  } else {
+  const cacheInvalidationSkipped = isOpencodeRunning()
+  if (!cacheInvalidationSkipped) {
     cleanedCache = cleanupStaleCache(locateOpencodeCacheDirs())
     for (const p of cleanedCache) {
       console.log(`  Invalidated cache:  ${p}`)
     }
   }
+  // The loud banner is printed at the END of main() (after config writes)
+  // so the user sees it as the last thing on screen — and we exit nonzero
+  // so CI / scripts / humans don't miss it.
 
   const serverCfg = ensurePluginEntry(
     configDir,
@@ -337,15 +341,19 @@ function main(): InitResult {
     console.log(`  Note: ${tuiCfg.warning}`)
   }
 
-  console.log(`\n  Done.`)
-  console.log(`  Next steps:`)
-  console.log(`    1. Close ALL running OpenCode sessions (fully quit).`)
-  console.log(`    2. Reopen OpenCode from any project: \`opencode\`.`)
-  console.log(`    3. A toast "OpenCode Pilot — Remote control plugin loaded" should appear.`)
-  console.log(`    4. Type \`/remo\` + <Tab> — slash commands /remote, /dashboard,`)
-  console.log(`       /pilot, /pilot-token, /remote-control should autocomplete.`)
-  console.log(`    5. Click the gear (⚙) in the dashboard → Plugin configuration`)
-  console.log(`       to set tunnel, Telegram, VAPID, etc.\n`)
+  if (cacheInvalidationSkipped) {
+    printCacheSkipBanner()
+  } else {
+    console.log(`\n  Done.`)
+    console.log(`  Next steps:`)
+    console.log(`    1. Close ALL running OpenCode sessions (fully quit).`)
+    console.log(`    2. Reopen OpenCode from any project: \`opencode\`.`)
+    console.log(`    3. A toast "OpenCode Pilot — Remote control plugin loaded" should appear.`)
+    console.log(`    4. Type \`/remo\` + <Tab> — slash commands /remote, /dashboard,`)
+    console.log(`       /pilot, /pilot-token, /remote-control should autocomplete.`)
+    console.log(`    5. Click the gear (⚙) in the dashboard → Plugin configuration`)
+    console.log(`       to set tunnel, Telegram, VAPID, etc.\n`)
+  }
 
   return {
     configDir,
@@ -355,14 +363,52 @@ function main(): InitResult {
     installer,
     serverConfigChanged: serverCfg.changed,
     tuiConfigChanged: tuiCfg.changed,
+    cacheInvalidationSkipped,
   }
+}
+
+// Visible banner printed at the end of init when we detected a running
+// OpenCode process. We use ANSI red only when stdout is a TTY so CI logs
+// stay readable and pipes to `tee` don't get escape-code noise.
+function printCacheSkipBanner(): void {
+  const isTTY = Boolean(process.stdout.isTTY)
+  const red = isTTY ? "\x1b[1;31m" : ""
+  const yellow = isTTY ? "\x1b[1;33m" : ""
+  const reset = isTTY ? "\x1b[0m" : ""
+  const bar = "━".repeat(72)
+  console.log("")
+  console.log(`${red}${bar}${reset}`)
+  console.log(`${red}  !! CONFIG WRITTEN — BUT PLUGIN CACHE NOT REFRESHED !!${reset}`)
+  console.log(`${red}${bar}${reset}`)
+  console.log("")
+  console.log(`${yellow}  OpenCode is currently running. The plugin package cache under${reset}`)
+  console.log(`${yellow}  ~/.cache/opencode/packages/ was NOT invalidated — OpenCode will${reset}`)
+  console.log(`${yellow}  keep loading the previously-installed version until you flush it.${reset}`)
+  console.log("")
+  console.log(`  Required steps:`)
+  console.log("")
+  console.log(`    1. Quit every OpenCode window / session:`)
+  console.log(`         pkill -f opencode     # Linux / macOS`)
+  console.log(`         (or close every terminal window running opencode)`)
+  console.log("")
+  console.log(`    2. Re-run this installer so cache invalidation succeeds:`)
+  console.log(`         bunx @lesquel/opencode-pilot@latest init`)
+  console.log("")
+  console.log(`    3. Reopen OpenCode.`)
+  console.log("")
+  console.log(`${red}  Exiting with code 2 so CI/scripts notice this is NOT a success.${reset}`)
+  console.log(`${red}${bar}${reset}`)
+  console.log("")
 }
 
 const args = process.argv.slice(2)
 const command = args[0] ?? "init"
 
 if (command === "init") {
-  main()
+  const result = main()
+  if (result.cacheInvalidationSkipped) {
+    process.exit(2)
+  }
 } else if (command === "--help" || command === "-h" || command === "help") {
   console.log(`Usage: npx ${PACKAGE_NAME} init`)
   console.log(`       Installs and wires the plugin into your OpenCode config.`)
