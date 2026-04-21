@@ -59,14 +59,28 @@ describe("dashboard/index.html self-healing cleanup", () => {
 })
 
 describe("dashboard/sw.js cache naming", () => {
-  // CACHE_NAME has to change whenever we ship a frontend regression
-  // fix, otherwise the service worker's activate handler doesn't
-  // know to evict the previous precache. The `pilot-vNN` shape is
-  // hard-coded in install/activate; keep it monotonic so debugging
-  // is easy.
-  test("CACHE_NAME follows the pilot-vNN convention", () => {
-    const match = SW_JS.match(/const\s+CACHE_NAME\s*=\s*"(pilot-v\d+)"/)
-    expect(match).not.toBeNull()
+  // As of 1.13.15 CACHE_NAME is a placeholder (`__PILOT_CACHE_VERSION__`)
+  // that the server templates to `pilot-v<PILOT_VERSION>` at serve time.
+  // This gives every release a unique cache key automatically — before
+  // 1.13.15 the literal `pilot-v21` was manually maintained and drifted
+  // version-over-version, letting stale dashboard assets survive upgrades
+  // (one of the factors behind the 1.13.x "token inválido" family of
+  // reports).
+  //
+  // The source file must carry the PLACEHOLDER — never a hardcoded
+  // `pilot-v<N>` again — so the templating path always runs.
+  test("CACHE_NAME uses the __PILOT_CACHE_VERSION__ placeholder (not a literal pilot-vNN)", () => {
+    const placeholderMatch = SW_JS.match(
+      /const\s+CACHE_NAME\s*=\s*"__PILOT_CACHE_VERSION__"/,
+    )
+    expect(placeholderMatch).not.toBeNull()
+
+    // And no hardcoded pilot-v<N> literal may coexist — that would be
+    // a forgotten debug leftover or a partial revert.
+    const literalMatch = SW_JS.match(
+      /const\s+CACHE_NAME\s*=\s*"pilot-v\d+"/,
+    )
+    expect(literalMatch).toBeNull()
   })
 })
 

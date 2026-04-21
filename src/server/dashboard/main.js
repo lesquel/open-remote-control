@@ -1,5 +1,5 @@
 // main.js — Entry point: resolves auth, bootstraps all modules
-import { resolveToken } from './auth.js'
+import { resolveToken, showTokenExpiredScreen, clearStoredToken } from './auth.js'
 import { setState, getActiveDirectory, subscribe, getProjectTabs } from './state.js'
 import { initMarkdown } from './markdown.js'
 import { loadSettings } from './settings.js'
@@ -74,6 +74,25 @@ function isEmbeddedMode() {
   return false
 }
 
+/**
+ * Make a cheap authenticated GET /status to verify the token the dashboard
+ * just resolved actually matches what the running pilot server expects.
+ * Returns true on 200, false on 401 (or any other failure — better to show
+ * the expired-token UI than to boot into a broken dashboard).
+ */
+async function validateTokenAgainstServer(serverUrl, token) {
+  try {
+    const res = await fetch(`${serverUrl}/status`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+    return res.ok
+  } catch {
+    // Network error: let the normal dashboard UI handle it and display
+    // reconnect banners. We only want to short-circuit on definitive 401.
+    return true
+  }
+}
+
 async function bootstrap() {
   // 1. Check for connect deep-link in URL hash (from QR code scan)
   const fromHash = parseConnectHash()
@@ -92,6 +111,17 @@ async function bootstrap() {
     }
     if (!token) return
     setState({ serverUrl: '', token })
+
+    // Early validation — catches the "localStorage has a stale token from
+    // a previous OpenCode session" case before any UI renders. Without this
+    // the dashboard boots normally, then every data fetch 401s and the user
+    // sees broken panels. Introduced in 1.13.15 for issue #1 follow-up.
+    const valid = await validateTokenAgainstServer('', token)
+    if (!valid) {
+      clearStoredToken()
+      showTokenExpiredScreen()
+      return
+    }
   } else {
     const conn = getConnection()
     if (!conn) {

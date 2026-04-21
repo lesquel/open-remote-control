@@ -4,6 +4,66 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.13.15] — 2026-04-21
+
+### Fixed — dashboard "token inválido" with no recovery path ([#1](https://github.com/lesquel/open-remote-control/issues/1) follow-up)
+
+**The report**
+
+After 1.13.14 installed cleanly, opening the dashboard still surfaced a vague "token inválido" error and every API panel stayed blank. The plugin itself was running fine — the problem was entirely browser-side. Three bugs compounded:
+
+1. **Zero 401 handling in the dashboard.** `api-fetch.js` retried only 429/502/503/504; `api.js::request` converted 401 into a generic `Error("401")`. No file anywhere cleared `localStorage[pilot_token]` when the server rejected. A stale token lived forever, every subsequent request 401'd, and no UI told the user what to do.
+
+2. **Stale token across OpenCode restarts.** `generateToken()` returns fresh 32-byte randomness on every plugin boot. `/remote` writes the current token into `pilot-state.json` and builds a `?token=<current>` URL. But browsers with a **previously-open dashboard tab** still hold the OLD token in localStorage. All their fetches go out with `Authorization: Bearer <old>` → 401 forever → the TUI looks healthy but the tab looks broken.
+
+3. **Hardcoded service-worker cache name.** `sw.js` shipped with `CACHE_NAME = "pilot-v21"`, which drifted version-over-version because no one remembered to bump it. Browsers that installed `pilot-v21` under 1.13.2 kept serving 1.13.2's `auth.js` from their local cache under 1.13.14, so fixes to the 401 path would never reach users who had visited the dashboard before upgrading.
+
+**The fix — four layers, all defensive**
+
+1. **`src/server/dashboard/api.js` — centralized 401 recovery.** Every request that comes back 401 calls a new `handleUnauthorized()` helper that (a) clears `localStorage[pilot_token]`, (b) surfaces the new `showTokenExpiredScreen()` UI, and (c) sets a `tokenInvalidated` flag so a burst of in-flight requests doesn't try to mutate the DOM seven times in a row. The flag resets per page-load.
+
+2. **`src/server/dashboard/auth.js` — new `showTokenExpiredScreen()` + `clearStoredToken()`.** The screen explains *why* the token is rejected ("OpenCode has restarted since you last opened the dashboard") and offers a single button that clears localStorage and reloads — no ambiguity for the user.
+
+3. **`src/server/dashboard/main.js` — boot-time validation.** Before rendering any of the app shell, the bootstrap now makes an authenticated `GET /status` with whatever token `resolveToken()` produced. On 401 it short-circuits into `showTokenExpiredScreen()`. On network error it falls through (the dashboard's own reconnect banners handle that path — we only want to short-circuit on a *definitive* 401).
+
+4. **`src/server/dashboard/sw.js` + `src/server/http/handlers.ts` — version-scoped SW cache.** `CACHE_NAME` is now `"__PILOT_CACHE_VERSION__"` in source; the handler's new `applyTemplating()` rewrites it to `pilot-v${PILOT_VERSION}` at serve time. Every release automatically invalidates the previous cache via the existing `activate` handler. The asset-sanity test enforces that no future commit can reintroduce a hardcoded `pilot-v<N>` literal.
+
+### Added — `uninstall` and `doctor` CLI subcommands
+
+**`bunx @lesquel/opencode-pilot uninstall [--keep-config]`**
+
+Reverses every side effect `init` had:
+
+1. Removes the plugin spec from `opencode.json::plugin` and `tui.json::plugin`.
+2. Uninstalls the npm package via the detected installer (bun/npm).
+3. Invalidates `~/.cache/opencode/packages/@lesquel/opencode-pilot*` (skipped and reported loud if OpenCode is running, same guard as `init`).
+4. Deletes `~/.opencode-pilot/pilot-state.json` and `pilot-banner.txt`.
+5. Unless `--keep-config`, deletes `~/.opencode-pilot/config.json` too and removes the directory if empty.
+6. Prints clear instructions for the **per-browser cleanup** the CLI cannot automate (DevTools → Application → Clear site data on the dashboard origin).
+
+**`bunx @lesquel/opencode-pilot doctor`**
+
+Zero-side-effect diagnostic. Prints a six-check status report:
+
+- Plugin package installed in the OpenCode config dir?
+- `opencode.json::plugin` references our package?
+- `tui.json::plugin` references our package?
+- Any `opencode` process running? (warn-level — not a failure)
+- Pilot `/health` responsive and matching our JSON shape?
+- Global `pilot-state.json` present and parseable?
+
+Each check prints ✓ / ✗ / ! with a one-line detail. Exits nonzero if any check fails, so you can pipe it into scripts. This is the command to attach to bug reports (under 2 seconds to run, no sensitive data).
+
+### Added — server-side log line for every 401
+
+`src/server/http/server.ts` now calls `deps.logger.warn(...)` on every auth failure, in addition to the existing `deps.audit.log`. The message explains the likely cause ("a dashboard tab from before the last OpenCode restart") so the 401 storm is visible in OpenCode's log panel, not only in the audit log most users never open.
+
+### Breaking change for custom forks: `sw.js` CACHE_NAME
+
+Downstream forks that edited `CACHE_NAME` directly must now use the `__PILOT_CACHE_VERSION__` placeholder — hardcoded `pilot-v<N>` literals will fail the asset-sanity test on build.
+
+---
+
 ## [1.13.14] — 2026-04-21
 
 ### Fixed — `isOpencodeRunning()` false-positive on every clean install

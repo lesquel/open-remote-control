@@ -1,6 +1,21 @@
 // api.js — All HTTP API calls centralized
 import { getState, getActiveDirectory } from './state.js'
 import { apiFetch } from './api-fetch.js'
+import { showTokenExpiredScreen, clearStoredToken } from './auth.js'
+
+// Set to true the first time any request returns 401. Prevents a cascade of
+// simultaneous in-flight requests from all independently showing the
+// "token expired" screen (they'd each call showTokenExpiredScreen, which is
+// a DOM mutation, and the last one wins with stale event handlers).
+// Introduced in 1.13.15 for issue #1 follow-up (dashboard said "token
+// inválido" with no recovery path).
+let tokenInvalidated = false
+function handleUnauthorized() {
+  if (tokenInvalidated) return
+  tokenInvalidated = true
+  clearStoredToken()
+  showTokenExpiredScreen()
+}
 
 /**
  * Base URL for API calls.
@@ -63,6 +78,15 @@ async function request(method, path, body, opts = {}) {
   const data = r.ok ? await r.json() : null
   if (!r.ok) {
     console.debug('[pilot:data] request %s %s → %d', method, url, r.status)
+    // 401: the token in localStorage no longer matches the server (OpenCode
+    // restarted, token rotated, or the dashboard came from a fork running a
+    // different pilot on the same port). Surface the recovery UI instead of
+    // bubbling a mute 401 up to whatever component made the call — that's
+    // the class of bug that produced "token inválido" with no next step in
+    // 1.13.x.
+    if (r.status === 401) {
+      handleUnauthorized()
+    }
     const err = new Error(`${r.status}`)
     err.status = r.status
     throw err

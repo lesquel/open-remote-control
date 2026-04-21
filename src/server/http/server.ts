@@ -54,7 +54,19 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
         // Auth check — "optional" is handled per-handler (SSE)
         if (route.auth === "required") {
           if (!validateToken(req, deps.token)) {
-            deps.audit.log("auth.failed", { path, ip: getIP(req) })
+            const ip = getIP(req)
+            deps.audit.log("auth.failed", { path, ip })
+            // Also surface via ctx.client.app.log so the user sees 401
+            // storms in OpenCode's log panel (not only in the audit log
+            // which most users never open). This is the signal that
+            // tells you a stale token is being retried by a dashboard
+            // that hasn't noticed the server restart.
+            // Introduced in 1.13.15 for issue #1 "token inválido" follow-up.
+            deps.logger.warn(
+              `Auth rejected on ${req.method} ${path} — the client sent a token that does not match the current server token. ` +
+              `Usually: a dashboard tab from before the last OpenCode restart. Have the user re-open via /remote.`,
+              { path, method: req.method, ip },
+            )
             return jsonError("UNAUTHORIZED", "Unauthorized", 401, CORS_HEADERS)
           }
           deps.audit.log("request", { method: req.method, path, ip: getIP(req) })

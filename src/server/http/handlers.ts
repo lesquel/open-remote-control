@@ -181,6 +181,25 @@ function ensureAssetsLoaded(): void {
 }
 
 /**
+ * Apply per-file template substitutions. Right now only `sw.js` uses this —
+ * its `__PILOT_CACHE_VERSION__` placeholder is replaced with a version-
+ * scoped cache name so browsers invalidate cached dashboard assets on
+ * every plugin release (see 1.13.15 fix for the "token inválido" issue).
+ *
+ * Keep this function pure and O(1) per file — it runs inside every
+ * response path.
+ */
+function applyTemplating(relativePath: string, content: Buffer): Buffer {
+  if (relativePath === "sw.js") {
+    const replaced = content
+      .toString("utf-8")
+      .replace(/__PILOT_CACHE_VERSION__/g, `pilot-v${PILOT_VERSION}`)
+    return Buffer.from(replaced, "utf-8")
+  }
+  return content
+}
+
+/**
  * Serve a static dashboard file given a relative path within DASHBOARD_DIR.
  */
 async function serveDashboardFile(
@@ -200,7 +219,8 @@ async function serveDashboardFile(
       return jsonError("NOT_FOUND", "Not found", 404, CORS_HEADERS)
     }
     try {
-      const content = readFileSync(filePath)
+      const raw = readFileSync(filePath)
+      const content = applyTemplating(relativePath, raw)
       const mime = MIME[extname(filePath)] ?? "text/plain"
       return new Response(new Uint8Array(content), {
         headers: {
@@ -221,7 +241,8 @@ async function serveDashboardFile(
   if (!asset) {
     return jsonError("NOT_FOUND", "Not found", 404, CORS_HEADERS)
   }
-  return new Response(new Uint8Array(asset.content), {
+  const content = applyTemplating(relativePath, asset.content)
+  return new Response(new Uint8Array(content), {
     headers: {
       "Content-Type": asset.mime,
       ...DASHBOARD_CACHE_HEADERS,

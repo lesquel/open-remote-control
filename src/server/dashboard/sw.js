@@ -1,9 +1,16 @@
 // sw.js — Service Worker: app shell caching, never caches API calls
 //
-// Bump CACHE_NAME on every release that changes frontend files (.js/.css/
-// .html). The `activate` handler below deletes any older named caches, so
-// bumping this name is the primary mechanism for flushing a stale app
-// shell from users' browsers.
+// CACHE_NAME is templated at serve time — the literal string
+// `__PILOT_CACHE_VERSION__` below gets replaced with `pilot-v<PILOT_VERSION>`
+// by `serveDashboardFile` in `src/server/http/handlers.ts`. This means every
+// plugin release produces a new cache key automatically, and the `activate`
+// handler below deletes older caches without us ever having to remember to
+// bump a literal.
+//
+// Before 1.13.15 this was a hardcoded `pilot-v21` that drifted version-over-
+// version without anyone bumping it, which is how the "token inválido" bug
+// in 1.13.14 stayed latent — browsers kept serving stale dashboard assets
+// from a cache that outlived the plugin version that created it.
 //
 // Fetch strategy is stale-while-revalidate for the app shell: the cached
 // copy renders instantly, and in parallel we fetch a fresh copy so the
@@ -11,7 +18,7 @@
 // revalidation, which locked users onto an old bundle until the cache
 // name changed — that's how the `message.part.delta` handler in 1.13.2
 // was invisible to already-open tabs.
-const CACHE_NAME = "pilot-v21"
+const CACHE_NAME = "__PILOT_CACHE_VERSION__"
 const PRECACHE = [
   "./",
   "./index.html",

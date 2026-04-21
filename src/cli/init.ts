@@ -429,6 +429,383 @@ function printCacheSkipBanner(): void {
   console.log("")
 }
 
+// ─── uninstall ──────────────────────────────────────────────────────────────
+// User-requested in 1.13.15. Reverses every side effect `init` had:
+//   1. Remove the plugin spec from opencode.json and tui.json.
+//   2. Uninstall the npm package from the OpenCode config dir.
+//   3. Invalidate the plugin package cache (same rules as init —
+//      refuse if OpenCode is running).
+//   4. Remove stale wrapper files and `~/.opencode-pilot/` state/banner.
+//   5. Unless `--keep-config`, also delete `~/.opencode-pilot/config.json`
+//      so reinstalling starts from defaults.
+// Leaves browser-side cache (service worker, localStorage) untouched —
+// those live per-browser and there's no way to clean them from the CLI.
+// We print explicit instructions for the user to run manually.
+
+interface UninstallResult {
+  configDir: string
+  pluginEntriesRemoved: { opencode: boolean; tui: boolean }
+  packageRemoved: boolean
+  cleanedCache: string[]
+  cleanedWrappers: string[]
+  cleanedState: string[]
+  cacheInvalidationSkipped: boolean
+  keptConfig: boolean
+}
+
+function removePluginEntry(
+  configDir: string,
+  filename: string,
+): boolean {
+  const cfgPath = join(configDir, filename)
+  if (!existsSync(cfgPath)) return false
+  let raw: string
+  try {
+    raw = readFileSync(cfgPath, "utf8")
+  } catch {
+    return false
+  }
+  let cfg: Record<string, unknown>
+  try {
+    cfg = JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return false
+  }
+  const existing = Array.isArray(cfg.plugin) ? (cfg.plugin as string[]) : []
+  const next = existing.filter(
+    (e) => typeof e !== "string" || !STALE_ENTRY_REGEX.test(e),
+  )
+  if (next.length === existing.length) return false
+  cfg.plugin = next
+  writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
+  return true
+}
+
+function removePackage(configDir: string, installer: string): boolean {
+  const pkgPath = join(configDir, "node_modules", PACKAGE_NAME, "package.json")
+  if (!existsSync(pkgPath)) return false
+  const args = installer === "bun" ? ["remove", PACKAGE_NAME] : ["uninstall", PACKAGE_NAME]
+  const r = spawnSync(installer, args, { cwd: configDir, stdio: "inherit" })
+  return r.status === 0
+}
+
+function cleanupStateDir(keepConfig: boolean): string[] {
+  const removed: string[] = []
+  const dir = join(homedir(), ".opencode-pilot")
+  if (!existsSync(dir)) return removed
+
+  const ephemeral = ["pilot-state.json", "pilot-banner.txt"]
+  for (const file of ephemeral) {
+    const target = join(dir, file)
+    if (existsSync(target)) {
+      try {
+        rmSync(target, { force: true })
+        removed.push(target)
+      } catch {
+        // Best-effort
+      }
+    }
+  }
+
+  if (!keepConfig) {
+    const cfg = join(dir, "config.json")
+    if (existsSync(cfg)) {
+      try {
+        rmSync(cfg, { force: true })
+        removed.push(cfg)
+      } catch {
+        // Best-effort
+      }
+    }
+    // Remove the directory only if now empty (avoids nuking user extras).
+    try {
+      const leftovers = readdirSync(dir)
+      if (leftovers.length === 0) {
+        rmSync(dir, { recursive: true, force: true })
+        removed.push(dir)
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return removed
+}
+
+function uninstall(keepConfig: boolean): UninstallResult {
+  console.log(`\n  ${PACKAGE_NAME} — uninstaller\n`)
+
+  const configDir = locateOpencodeConfigDir()
+  console.log(`  OpenCode config dir: ${configDir}`)
+
+  const pluginEntriesRemoved = {
+    opencode: existsSync(configDir) ? removePluginEntry(configDir, "opencode.json") : false,
+    tui: existsSync(configDir) ? removePluginEntry(configDir, "tui.json") : false,
+  }
+  if (pluginEntriesRemoved.opencode) console.log(`  Removed plugin entry from opencode.json`)
+  if (pluginEntriesRemoved.tui) console.log(`  Removed plugin entry from tui.json`)
+
+  let packageRemoved = false
+  const installer = existsSync(configDir) ? detectInstaller(configDir) : null
+  if (installer) {
+    packageRemoved = removePackage(configDir, installer)
+    if (packageRemoved) console.log(`  Uninstalled package via ${installer}`)
+  } else if (existsSync(join(configDir, "node_modules", PACKAGE_NAME))) {
+    console.log(
+      `  Note: package is installed at ${join(configDir, "node_modules", PACKAGE_NAME)} ` +
+        `but no installer (bun/npm) found on PATH — remove manually.`,
+    )
+  }
+
+  const cleanedWrappers = cleanupStaleWrappers(configDir)
+  for (const p of cleanedWrappers) {
+    console.log(`  Removed stale wrapper: ${p}`)
+  }
+
+  let cleanedCache: string[] = []
+  const cacheInvalidationSkipped = isOpencodeRunning()
+  if (!cacheInvalidationSkipped) {
+    cleanedCache = cleanupStaleCache(locateOpencodeCacheDirs())
+    for (const p of cleanedCache) {
+      console.log(`  Invalidated cache:  ${p}`)
+    }
+  }
+
+  const cleanedState = cleanupStateDir(keepConfig)
+  for (const p of cleanedState) {
+    console.log(`  Removed state file: ${p}`)
+  }
+
+  console.log(`\n  Uninstall complete.`)
+  console.log(`\n  Remaining cleanup (manual, per-browser):`)
+  console.log(`    1. Open the dashboard's origin in each browser`)
+  console.log(`       (usually http://127.0.0.1:4097)`)
+  console.log(`    2. DevTools → Application → Storage → "Clear site data"`)
+  console.log(`    3. This removes the stored token and unregisters`)
+  console.log(`       the PWA service worker.\n`)
+
+  if (cacheInvalidationSkipped) {
+    console.log(
+      `  Heads up: OpenCode is currently running, so the plugin package\n` +
+        `  cache under ~/.cache/opencode/packages/ was NOT cleaned up.\n` +
+        `  Fully quit OpenCode and re-run \`bunx ${PACKAGE_NAME} uninstall\`\n` +
+        `  to finish the job.\n`,
+    )
+  }
+
+  return {
+    configDir,
+    pluginEntriesRemoved,
+    packageRemoved,
+    cleanedCache,
+    cleanedWrappers,
+    cleanedState,
+    cacheInvalidationSkipped,
+    keptConfig: keepConfig,
+  }
+}
+
+// ─── doctor ─────────────────────────────────────────────────────────────────
+// Diagnostic command — prints a status report. Zero side effects.
+// Helps users (and us, when triaging issues) answer "is opencode-pilot
+// actually set up correctly on this machine?" in under 2 seconds.
+
+interface DoctorFinding {
+  label: string
+  ok: boolean | "warn"
+  detail?: string
+}
+
+function doctorCheckPackageInstalled(configDir: string): DoctorFinding {
+  const pkgPath = join(configDir, "node_modules", PACKAGE_NAME, "package.json")
+  if (!existsSync(pkgPath)) {
+    return {
+      label: "Plugin package installed in OpenCode config dir",
+      ok: false,
+      detail: `Not found at ${pkgPath}. Run \`bunx ${PACKAGE_NAME} init\`.`,
+    }
+  }
+  let version = "unknown"
+  try {
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { version?: string }
+    if (typeof pkg.version === "string") version = pkg.version
+  } catch {
+    // fall through
+  }
+  return {
+    label: "Plugin package installed in OpenCode config dir",
+    ok: true,
+    detail: `version ${version} at ${pkgPath}`,
+  }
+}
+
+function doctorCheckPluginEntry(
+  configDir: string,
+  filename: string,
+): DoctorFinding {
+  const cfgPath = join(configDir, filename)
+  if (!existsSync(cfgPath)) {
+    return {
+      label: `${filename} plugin entry`,
+      ok: false,
+      detail: `${cfgPath} does not exist`,
+    }
+  }
+  let cfg: Record<string, unknown>
+  try {
+    cfg = JSON.parse(readFileSync(cfgPath, "utf8")) as Record<string, unknown>
+  } catch {
+    return {
+      label: `${filename} plugin entry`,
+      ok: false,
+      detail: `Invalid JSON at ${cfgPath}`,
+    }
+  }
+  const list = Array.isArray(cfg.plugin) ? (cfg.plugin as string[]) : []
+  const hasEntry = list.some(
+    (e) => typeof e === "string" && STALE_ENTRY_REGEX.test(e),
+  )
+  if (!hasEntry) {
+    return {
+      label: `${filename} plugin entry`,
+      ok: false,
+      detail: `${cfgPath} does not reference ${PACKAGE_NAME}`,
+    }
+  }
+  return {
+    label: `${filename} plugin entry`,
+    ok: true,
+    detail: list.filter((e) => typeof e === "string" && STALE_ENTRY_REGEX.test(e)).join(", "),
+  }
+}
+
+function doctorCheckOpencodeRunning(): DoctorFinding {
+  const running = isOpencodeRunning()
+  return {
+    label: "OpenCode process running",
+    ok: running ? "warn" : true,
+    detail: running
+      ? "yes — cache invalidation during init/uninstall will be skipped until you quit OpenCode"
+      : "no",
+  }
+}
+
+async function doctorCheckHealthEndpoint(): Promise<DoctorFinding> {
+  const port = Number(process.env.PILOT_PORT) || 4097
+  const host = process.env.PILOT_HOST || "127.0.0.1"
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 500)
+    try {
+      const res = await fetch(`http://${host}:${port}/health`, { signal: ctrl.signal })
+      if (!res.ok) {
+        return {
+          label: `Pilot /health on ${host}:${port}`,
+          ok: false,
+          detail: `HTTP ${res.status} — something else may be on the port`,
+        }
+      }
+      const body = (await res.json()) as {
+        version?: unknown
+        services?: { sdk?: unknown }
+      }
+      const looksLikePilot =
+        typeof body?.services?.sdk === "string" && typeof body?.version === "string"
+      if (!looksLikePilot) {
+        return {
+          label: `Pilot /health on ${host}:${port}`,
+          ok: false,
+          detail: `Responded, but not with pilot's /health shape — another process owns this port`,
+        }
+      }
+      return {
+        label: `Pilot /health on ${host}:${port}`,
+        ok: true,
+        detail: `version ${body.version as string} responding`,
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch {
+    return {
+      label: `Pilot /health on ${host}:${port}`,
+      ok: "warn",
+      detail: `Not responding — OpenCode may be off, or the plugin failed to load`,
+    }
+  }
+}
+
+function doctorCheckStateFile(): DoctorFinding {
+  const path = join(homedir(), ".opencode-pilot", "pilot-state.json")
+  if (!existsSync(path)) {
+    return {
+      label: "Global pilot-state.json",
+      ok: false,
+      detail: `Missing at ${path}`,
+    }
+  }
+  try {
+    const state = JSON.parse(readFileSync(path, "utf8")) as {
+      port?: unknown
+      host?: unknown
+      pid?: unknown
+    }
+    return {
+      label: "Global pilot-state.json",
+      ok: true,
+      detail: `host=${String(state.host)} port=${String(state.port)} pid=${String(state.pid)}`,
+    }
+  } catch (err) {
+    return {
+      label: "Global pilot-state.json",
+      ok: false,
+      detail: `Unreadable: ${(err as Error).message}`,
+    }
+  }
+}
+
+function printFinding(f: DoctorFinding): void {
+  const isTTY = Boolean(process.stdout.isTTY)
+  const green = isTTY ? "\x1b[32m" : ""
+  const red = isTTY ? "\x1b[31m" : ""
+  const yellow = isTTY ? "\x1b[33m" : ""
+  const reset = isTTY ? "\x1b[0m" : ""
+  const icon = f.ok === true ? `${green}✓${reset}` : f.ok === "warn" ? `${yellow}!${reset}` : `${red}✗${reset}`
+  console.log(`  ${icon}  ${f.label}`)
+  if (f.detail) {
+    console.log(`       ${f.detail}`)
+  }
+}
+
+async function doctor(): Promise<DoctorFinding[]> {
+  console.log(`\n  ${PACKAGE_NAME} — doctor\n`)
+
+  const configDir = locateOpencodeConfigDir()
+  console.log(`  OpenCode config dir: ${configDir}\n`)
+
+  const findings: DoctorFinding[] = [
+    doctorCheckPackageInstalled(configDir),
+    doctorCheckPluginEntry(configDir, "opencode.json"),
+    doctorCheckPluginEntry(configDir, "tui.json"),
+    doctorCheckOpencodeRunning(),
+    await doctorCheckHealthEndpoint(),
+    doctorCheckStateFile(),
+  ]
+
+  for (const f of findings) printFinding(f)
+  console.log("")
+
+  const anyFail = findings.some((f) => f.ok === false)
+  if (anyFail) {
+    console.log(`  Some checks failed. See detail lines above.`)
+    console.log(`  Full troubleshooting: docs/TROUBLESHOOTING.md on GitHub.\n`)
+  } else {
+    console.log(`  All checks passed.\n`)
+  }
+
+  return findings
+}
+
 // CLI entrypoint — only executes when this file is run directly (e.g.
 // `bunx @lesquel/opencode-pilot init`), not when imported from a test.
 // Guarded with `import.meta.main` so exporting internals for testing
@@ -442,9 +819,27 @@ if (import.meta.main) {
     if (result.cacheInvalidationSkipped) {
       process.exit(2)
     }
+  } else if (command === "uninstall") {
+    const keepConfig = args.includes("--keep-config")
+    const result = uninstall(keepConfig)
+    if (result.cacheInvalidationSkipped) {
+      process.exit(2)
+    }
+  } else if (command === "doctor") {
+    const findings = await doctor()
+    if (findings.some((f) => f.ok === false)) {
+      process.exit(1)
+    }
   } else if (command === "--help" || command === "-h" || command === "help") {
-    console.log(`Usage: npx ${PACKAGE_NAME} init`)
-    console.log(`       Installs and wires the plugin into your OpenCode config.`)
+    console.log(`Usage: npx ${PACKAGE_NAME} <command>`)
+    console.log(``)
+    console.log(`Commands:`)
+    console.log(`  init                       Install and wire the plugin into OpenCode config.`)
+    console.log(`  uninstall [--keep-config]  Remove plugin config, package, cache, and state.`)
+    console.log(`                             --keep-config preserves ~/.opencode-pilot/config.json.`)
+    console.log(`  doctor                     Print diagnostic status report. Zero side effects.`)
+    console.log(`  --version, -v              Print version.`)
+    console.log(`  --help, -h                 Print this help.`)
     process.exit(0)
   } else if (command === "--version" || command === "-v") {
     try {
@@ -457,7 +852,7 @@ if (import.meta.main) {
     process.exit(0)
   } else {
     console.error(`Unknown command: ${command}`)
-    console.error(`Try: npx ${PACKAGE_NAME} init`)
+    console.error(`Try: npx ${PACKAGE_NAME} --help`)
     process.exit(1)
   }
 }

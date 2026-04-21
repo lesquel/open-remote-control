@@ -296,6 +296,22 @@ describe("HTTP server integration", () => {
     expect(body.length).toBeGreaterThan(0)
   })
 
+  test("GET /sw.js substitutes CACHE_NAME placeholder with versioned value (1.13.15)", async () => {
+    // Regression: before 1.13.15, sw.js shipped a hardcoded `pilot-v21`
+    // that drifted release-over-release and left browsers holding stale
+    // cached dashboard assets (a contributor to the "token inválido"
+    // symptom family). `serveDashboardFile` now runs `applyTemplating`
+    // which replaces `__PILOT_CACHE_VERSION__` with `pilot-v<version>`.
+    // This test confirms the end-to-end serve path does the substitution.
+    const res = await fetch(`${baseUrl}/sw.js`)
+    expect(res.status).toBe(200)
+    const body = await res.text()
+    // Placeholder must be fully expanded — zero instances left in output.
+    expect(body).not.toContain("__PILOT_CACHE_VERSION__")
+    // Expansion must produce the version-scoped cache key.
+    expect(body).toMatch(/const\s+CACHE_NAME\s*=\s*"pilot-v\d+\.\d+\.\d+"/)
+  })
+
   test("OPTIONS / preflight returns CORS headers", async () => {
     const res = await fetch(`${baseUrl}/`, { method: "OPTIONS" })
     expect(res.status).toBe(204)
