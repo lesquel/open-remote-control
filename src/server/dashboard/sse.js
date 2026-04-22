@@ -339,13 +339,32 @@ async function handleEvent(ev) {
   }
 
   if (t === EVENTS.PERMISSION_REQUESTED) {
-    handlePermissionRequested(d)
+    // Pilot events carry payload under .properties (see notifications.ts).
+    // Normalize to a stable shape for handlers that don't know about .properties.
+    const props = ev.properties ?? d ?? {}
+    const normalized = {
+      id: props.permissionID ?? props.id,
+      permissionID: props.permissionID ?? props.id,
+      description: props.title ?? props.description,
+      title: props.title,
+      sessionID: props.sessionID,
+      type: props.permissionType ?? props.type,
+      pattern: props.pattern,
+      metadata: props.metadata,
+    }
+    handlePermissionRequested(normalized)
     // Dispatch for push-notifications module
-    window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: d }))
+    window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: normalized }))
   }
 
   if (t === EVENTS.PERMISSION_RESOLVED) {
-    handlePermissionResolved(d)
+    // pilot.permission.resolved also carries payload under .properties.
+    const resolvedProps = ev.properties ?? d ?? {}
+    const resolvedNormalized = {
+      id: resolvedProps.permissionID ?? resolvedProps.id,
+      permissionID: resolvedProps.permissionID ?? resolvedProps.id,
+    }
+    handlePermissionResolved(resolvedNormalized)
   }
 
   if (t === EVENTS.TODO_UPDATED) {

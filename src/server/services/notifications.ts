@@ -10,7 +10,12 @@ export interface NotificationService {
   emit(event: BusEvent): void
   /** Emit a typed PilotEvent and record it in the audit log. */
   emitPilot(event: PilotEvent): void
-  /** Full pipeline: SSE + Telegram + audit for permission pending. */
+  /**
+   * Full pipeline: SSE + Telegram + Web Push for permission pending.
+   * Returns `true` if at least one interactive channel was reachable
+   * (Telegram enabled, Web Push enabled with subscribers, or SSE clients connected).
+   * Returns `false` when no channel can reach a human — caller should skip waitForResponse.
+   */
   notifyPermissionPending(
     permissionID: string,
     title: string,
@@ -18,7 +23,7 @@ export interface NotificationService {
     permissionType: string,
     pattern?: string | string[],
     metadata?: Record<string, unknown>,
-  ): Promise<void>
+  ): Promise<boolean>
   /** Telegram notification when a session goes idle after work. */
   notifySessionIdle(
     client: PluginInput["client"],
@@ -54,7 +59,11 @@ export function createNotificationService(
     permissionType: string,
     pattern?: string | string[],
     metadata: Record<string, unknown> = {},
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const telegramReachable = telegram.enabled
+    const pushReachable = push.isEnabled() && push.count() > 0
+    const sseReachable = eventBus.hasClients()
+
     telegram
       .sendPermissionRequest(permissionID, title, sessionID)
       .catch((err) => audit.log("telegram.send_failed", { error: String(err) }))
@@ -74,22 +83,24 @@ export function createNotificationService(
         .catch((err) => audit.log("push.send_failed", { error: String(err) }))
     }
 
-    if (!eventBus.hasClients()) return
+    if (sseReachable) {
+      audit.log("permission.requested", { permissionType, title, sessionID })
 
-    audit.log("permission.requested", { permissionType, title, sessionID })
-
-    const event: PilotEvent = {
-      type: "pilot.permission.pending",
-      properties: {
-        permissionID,
-        title,
-        sessionID,
-        permissionType,
-        pattern,
-        metadata,
-      },
+      const event: PilotEvent = {
+        type: "pilot.permission.pending",
+        properties: {
+          permissionID,
+          title,
+          sessionID,
+          permissionType,
+          pattern,
+          metadata,
+        },
+      }
+      eventBus.emit(event)
     }
-    eventBus.emit(event)
+
+    return telegramReachable || pushReachable || sseReachable
   }
 
   async function notifySessionIdle(

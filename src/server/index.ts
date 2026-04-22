@@ -316,7 +316,8 @@ export default {
             message:
               `Another OpenCode instance owns port ${config.port}. ` +
               `This window runs in passive mode; it will auto-promote if the ` +
-              `primary goes away. In the meantime use the existing dashboard.`,
+              `primary goes away. In the meantime use the existing dashboard. ` +
+              `Passive mode: remote-facing hooks disabled. This instance will take over if primary on port ${config.port} goes down.`,
           },
         })
         .catch(() => {})
@@ -398,18 +399,32 @@ export default {
     )
     const toolHooks = createToolHooks(notifications)
 
+    // Role-aware gating: passive instances must not intercept remote-facing
+    // hooks because no HTTP/SSE/dashboard/Telegram clients can respond to them.
+    // `role` is read at call time — promotion to primary is automatic without
+    // re-registering hooks.
     return {
-      event: eventHook,
-      "permission.ask": permissionAskHook,
-      "tool.execute.before": async (input, output) =>
-        toolHooks.handleToolBefore(input, {
+      event: async (input) => {
+        if (role === "passive") return
+        return eventHook(input)
+      },
+      "permission.ask": async (input, output) => {
+        if (role === "passive") return
+        return permissionAskHook(input, output)
+      },
+      "tool.execute.before": async (input, output) => {
+        if (role === "passive") return
+        return toolHooks.handleToolBefore(input, {
           args: (output?.args ?? {}) as Record<string, unknown>,
-        }),
-      "tool.execute.after": async (input, output) =>
-        toolHooks.handleToolAfter(
+        })
+      },
+      "tool.execute.after": async (input, output) => {
+        if (role === "passive") return
+        return toolHooks.handleToolAfter(
           { ...input, args: input.args as Record<string, unknown> | undefined },
           output,
-        ),
+        )
+      },
     }
   }) satisfies Plugin,
 }

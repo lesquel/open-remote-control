@@ -1106,7 +1106,9 @@ export async function globFiles({ url, deps }: RouteContext): Promise<Response> 
   const cwd = cwdParam && cwdParam.length > 0 ? cwdParam : deps.directory
   const limit = parseLimit(url.searchParams.get("limit"), GLOB_DEFAULT_LIMIT, GLOB_MAX_LIMIT)
 
-  const allowedRoots = [deps.directory, process.env.HOME ?? ""]
+  const allowedRoots = [deps.directory, deps.worktree].filter(
+    (p): p is string => typeof p === "string" && p.length > 0,
+  )
   const cwdSafe = resolveSafePath(cwd, allowedRoots)
   if (!cwdSafe.ok) {
     return jsonError("FORBIDDEN", `cwd rejected: ${cwdSafe.error}`, 403, CORS_HEADERS)
@@ -1160,7 +1162,9 @@ export async function readFileAbs({ url, deps }: RouteContext): Promise<Response
   const path = url.searchParams.get("path")
   if (!path) return jsonError("MISSING_PATH", "path is required", 400, CORS_HEADERS)
 
-  const allowedRoots = [deps.directory, process.env.HOME ?? ""]
+  const allowedRoots = [deps.directory, deps.worktree].filter(
+    (p): p is string => typeof p === "string" && p.length > 0,
+  )
   const safe = resolveSafePath(path, allowedRoots)
   if (!safe.ok) {
     return jsonError("FORBIDDEN", `path rejected: ${safe.error}`, 403, CORS_HEADERS)
@@ -1190,9 +1194,15 @@ export async function readFileAbs({ url, deps }: RouteContext): Promise<Response
 // so the dashboard can display and edit it. Writes go to the JSON store; shell
 // env vars cannot be overridden from the UI (409 on conflict).
 //
-// Sensitive fields (telegram token, VAPID private key) are returned as-is via
-// HTTPS/localhost — the transport is already trusted and the UI needs them to
-// show "previously saved" state.
+// Sensitive fields (telegram token, VAPID private key) are redacted in GET
+// responses — the UI only needs to know whether they are configured.
+
+/** Redact a secret field for GET responses. The raw value is never sent. */
+function redactSecret(value: string | undefined): { configured: boolean; preview: string } {
+  if (!value || value.length === 0) return { configured: false, preview: "" }
+  if (value.length <= 8) return { configured: true, preview: "•".repeat(value.length) }
+  return { configured: true, preview: `${value.slice(0, 4)}…${value.slice(-4)}` }
+}
 
 function buildSettingsResponse(deps: RouteContext["deps"]): {
   settings: Required<PilotSettings>
@@ -1221,7 +1231,20 @@ function buildSettingsResponse(deps: RouteContext["deps"]): {
 }
 
 export async function getSettings({ deps }: RouteContext): Promise<Response> {
-  return json(buildSettingsResponse(deps), 200, CORS_HEADERS)
+  const result = buildSettingsResponse(deps)
+  const { telegramToken, vapidPrivateKey, ...otherSettings } = result.settings
+  return json(
+    {
+      ...result,
+      settings: {
+        ...otherSettings,
+        telegramToken: redactSecret(telegramToken),
+        vapidPrivateKey: redactSecret(vapidPrivateKey),
+      },
+    },
+    200,
+    CORS_HEADERS,
+  )
 }
 
 export async function patchSettings({ req, deps }: RouteContext): Promise<Response> {

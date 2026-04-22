@@ -1,11 +1,27 @@
+export interface PermissionMeta {
+  title?: string
+  sessionID?: string
+  type?: string
+  pattern?: string
+  metadata?: Record<string, unknown>
+}
+
 export interface PendingPermission {
   permissionID: string
   createdAt: number
   resolved: boolean
+  title?: string
+  sessionID?: string
+  type?: string
+  pattern?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface PermissionQueue {
-  waitForResponse(permissionID: string): Promise<{ action: "allow" | "deny" } | null>
+  waitForResponse(
+    permissionID: string,
+    meta?: PermissionMeta,
+  ): Promise<{ action: "allow" | "deny" } | null>
   resolve(permissionID: string, action: "allow" | "deny"): void
   pending(): PendingPermission[]
 }
@@ -13,11 +29,17 @@ export interface PermissionQueue {
 export function createPermissionQueue(timeoutMs: number): PermissionQueue {
   const waiters = new Map<
     string,
-    { resolve: (value: { action: "allow" | "deny" } | null) => void; createdAt: number; timeoutId: ReturnType<typeof setTimeout> }
+    {
+      resolve: (value: { action: "allow" | "deny" } | null) => void
+      createdAt: number
+      timeoutId: ReturnType<typeof setTimeout>
+      meta: PermissionMeta
+    }
   >()
 
   function waitForResponse(
     permissionID: string,
+    meta: PermissionMeta = {},
   ): Promise<{ action: "allow" | "deny" } | null> {
     return new Promise((resolvePromise) => {
       const timeoutId = setTimeout(() => {
@@ -27,7 +49,7 @@ export function createPermissionQueue(timeoutMs: number): PermissionQueue {
           waiter.resolve(null)
         }
       }, timeoutMs)
-      waiters.set(permissionID, { resolve: resolvePromise, createdAt: Date.now(), timeoutId })
+      waiters.set(permissionID, { resolve: resolvePromise, createdAt: Date.now(), timeoutId, meta })
     })
   }
 
@@ -45,6 +67,7 @@ export function createPermissionQueue(timeoutMs: number): PermissionQueue {
       permissionID: id,
       createdAt: w.createdAt,
       resolved: false,
+      ...w.meta,
     }))
   }
 

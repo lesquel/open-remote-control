@@ -25,7 +25,7 @@ export function showNextPerm() {
     const p = pendingPerms[0]
     const descEl = document.getElementById('perm-desc')
     if (descEl) {
-      descEl.textContent = p.description ?? p.command ?? p.tool ?? JSON.stringify(p)
+      descEl.textContent = p.title ?? p.description ?? p.command ?? p.tool ?? JSON.stringify(p)
       if (pendingPerms.length > 1) {
         const badge = document.createElement('span')
         badge.className = 'badge'
@@ -56,7 +56,7 @@ async function respondPerm(action) {
   const remaining = pendingPerms.slice(1)
   setState({ pendingPerms: remaining })
   try {
-    await respondPermission(p.id, action)
+    await respondPermission(p.id ?? p.permissionID, action)
   } catch (_) {}
   showNextPerm()
 }
@@ -67,17 +67,25 @@ export function initPermissions() {
 }
 
 export function handlePermissionRequested(data) {
-  const { pendingPerms } = getState()
-  if (data?.id) {
-    setState({ pendingPerms: [...pendingPerms, data] })
-    showNextPerm()
-  } else {
-    loadPermissions()
+  if (!data) {
+    loadPermissions()  // server push told us something changed; re-fetch list
+    return
   }
+  const id = data.id ?? data.permissionID
+  if (!id) {
+    loadPermissions()
+    return
+  }
+  const { pendingPerms } = getState()
+  // Don't double-add if an existing poll already placed it
+  if (pendingPerms.some(p => (p.id ?? p.permissionID) === id)) return
+  setState({ pendingPerms: [...pendingPerms, { ...data, id }] })
+  showNextPerm()
 }
 
 export function handlePermissionResolved(data) {
+  const id = data?.id ?? data?.permissionID ?? data
   const { pendingPerms } = getState()
-  setState({ pendingPerms: pendingPerms.filter(p => p.id !== (data.id ?? data)) })
+  setState({ pendingPerms: pendingPerms.filter(p => (p.id ?? p.permissionID) !== id) })
   showNextPerm()
 }

@@ -5,6 +5,7 @@ export interface EventBus {
   createSSEResponse(extraHeaders?: Record<string, string>): Response
   hasClients(): boolean
   clientCount(): number
+  closeAll(): void
 }
 
 interface SSEClient {
@@ -34,10 +35,11 @@ export function createEventBus(): EventBus {
 
   function createSSEResponse(extraHeaders: Record<string, string> = {}): Response {
     let pingInterval: ReturnType<typeof setInterval> | null = null
+    let client: SSEClient | null = null
 
     const stream = new ReadableStream({
       start(controller) {
-        const client: SSEClient = { controller, connectedAt: Date.now() }
+        client = { controller, connectedAt: Date.now() }
         clients.add(client)
 
         // Send initial connection event
@@ -55,11 +57,19 @@ export function createEventBus(): EventBus {
             controller.enqueue(new TextEncoder().encode(`: ping\n\n`))
           } catch {
             if (pingInterval) clearInterval(pingInterval)
+            if (client) {
+              clients.delete(client)
+              client = null
+            }
           }
         }, 25_000)
       },
       cancel() {
         if (pingInterval) clearInterval(pingInterval)
+        if (client) {
+          clients.delete(client)
+          client = null
+        }
       },
     })
 
@@ -73,10 +83,18 @@ export function createEventBus(): EventBus {
     })
   }
 
+  function closeAll(): void {
+    for (const c of clients) {
+      try { c.controller.close() } catch { /* ignore */ }
+    }
+    clients.clear()
+  }
+
   return {
     emit,
     createSSEResponse,
     hasClients: () => clients.size > 0,
     clientCount: () => clients.size,
+    closeAll,
   }
 }
