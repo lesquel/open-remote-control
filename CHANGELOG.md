@@ -4,6 +4,61 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.4] — 2026-04-22
+
+**The real root cause of "dashboard doesn't update until reload".** Four release cycles chasing symptoms; v1.16.4 fixes the actual bug.
+
+### Fixed — `event` hook no longer short-circuits in passive mode
+
+A user session on v1.16.3 with the new `[sse-boot]` markers confirmed the exact failure: the EventSource connects, `onopen` fires, the `pilot.connected` welcome arrives at the browser — and then nothing. Not a single `message.part.delta`, `message.updated`, or `message.part.updated` follows. The stream is alive but empty.
+
+The cause traces back to v1.15.0, commit `cb1f732`. That release added passive-mode gating to all four plugin hooks:
+
+```ts
+event: async (input) => {
+  if (role === "passive") return
+  return eventHook(input)
+},
+```
+
+The intent was correct for `permission.ask` — a passive instance has no dashboard or Telegram to respond, so waiting on `permissionQueue.waitForResponse` would hang until timeout. But applying the same gate to `event`, `tool.execute.before`, and `tool.execute.after` was a mistake: those three hooks are fire-and-forget. They forward telemetry to the local event bus and return. A passive instance emitting to an empty client set is a safe no-op.
+
+What v1.15.0 actually did: when the plugin boots as passive for ANY reason — a stale port from a previous OpenCode process, a race in multi-window startup, a slow `activatePrimary()` awaiting a tunnel handshake — the hook gate swallows every SDK event. The SSE bus stays subscribed to zero events. The dashboard sees the welcome and nothing else.
+
+v1.16.4 narrows the gate to `permission.ask` only. The other three hooks now forward unconditionally:
+
+```ts
+return {
+  event: eventHook,  // no gate — fire-and-forget
+  "permission.ask": async (input, output) => {
+    if (role === "passive") return
+    return permissionAskHook(input, output)
+  },
+  "tool.execute.before": async (input, output) => toolHooks.handleToolBefore(input, ...),
+  "tool.execute.after":  async (input, output) => toolHooks.handleToolAfter(input, output),
+}
+```
+
+The passive-instance hang issue that `permission.ask` was solving remains solved. Everything else that used to drop silently now flows through. The dashboard updates in real time without a reload.
+
+### What the previous four releases actually fixed
+
+They were not useless — they uncovered and repaired adjacent real bugs:
+
+- v1.14.2 — fixed the `/remote` auto-focus flow for the active project directory.
+- v1.15.0 — closed a different class of SSE leak + real security issues (the overzealous hook gate was a regression of its own, not known at the time).
+- v1.16.2 — fixed real SSE transport buffering (2KiB padding, 3s pings, `X-Accel-Buffering: no`) that *would* have been a second-order issue once events started flowing again. These defenses stay.
+- v1.16.3 — added `[sse-boot]` diagnostic markers that made the current bug visible within 60 seconds of user feedback.
+
+Without the `[sse-boot]` logs from v1.16.3, this would still be intermittent. The diagnostic release was not wasted.
+
+### Still open, lower priority
+
+- `MESSAGE_PART_UPDATED` for non-active sessions still returns early without invalidating cache (tracked since v1.15.0).
+- `activeSession`-null race for very first delta of a freshly-created session (text accumulates correctly, only live typewriter is delayed).
+
+---
+
 ## [1.16.3] — 2026-04-22
 
 Diagnostic release. v1.16.2 shipped two SSE fixes (stream buffering + boot-time `sse-dir` race) but a user report indicates updates still don't arrive without a reload. To find out exactly where the pipeline fails on the affected setup, this release adds unconditional `[sse-boot]` console markers in `src/server/dashboard/sse.js`. No functional changes to the SSE pipeline itself.

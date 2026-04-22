@@ -399,32 +399,39 @@ export default {
     )
     const toolHooks = createToolHooks(notifications)
 
-    // Role-aware gating: passive instances must not intercept remote-facing
-    // hooks because no HTTP/SSE/dashboard/Telegram clients can respond to them.
-    // `role` is read at call time — promotion to primary is automatic without
-    // re-registering hooks.
+    // Role-aware gating, narrowly scoped:
+    //
+    // Only `permission.ask` needs the passive short-circuit, because that hook
+    // BLOCKS waiting for a remote response — a passive instance with no HTTP
+    // server, no dashboard, and no SSE clients would hang for the full
+    // permissionTimeoutMs (5 minutes default) before the TUI fallback kicks in.
+    //
+    // `event`, `tool.execute.before`, and `tool.execute.after` are
+    // fire-and-forget: they forward telemetry to the local event bus and
+    // return immediately. A passive instance calling `eventBus.emit(...)`
+    // with no connected clients is a safe no-op (the loop just walks an empty
+    // Set). Gating these three like v1.15.0 did had a severe side effect:
+    // when the plugin boots as passive for ANY reason (stale port from a
+    // previous process, multi-window startup order), NO SDK events ever
+    // reached the SSE bus — including on the instance that the dashboard
+    // was actually connected to if its role snapshot was out of date. That
+    // looked exactly like "dashboard never updates without reload" and
+    // consumed four release cycles before the audit caught it.
     return {
-      event: async (input) => {
-        if (role === "passive") return
-        return eventHook(input)
-      },
+      event: eventHook,
       "permission.ask": async (input, output) => {
         if (role === "passive") return
         return permissionAskHook(input, output)
       },
-      "tool.execute.before": async (input, output) => {
-        if (role === "passive") return
-        return toolHooks.handleToolBefore(input, {
+      "tool.execute.before": async (input, output) =>
+        toolHooks.handleToolBefore(input, {
           args: (output?.args ?? {}) as Record<string, unknown>,
-        })
-      },
-      "tool.execute.after": async (input, output) => {
-        if (role === "passive") return
-        return toolHooks.handleToolAfter(
+        }),
+      "tool.execute.after": async (input, output) =>
+        toolHooks.handleToolAfter(
           { ...input, args: input.args as Record<string, unknown> | undefined },
           output,
-        )
-      },
+        ),
     }
   }) satisfies Plugin,
 }
