@@ -4,6 +4,51 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.12] — 2026-04-22
+
+Fixed — THE actual reason the Settings modal wouldn't open. User's in-browser diagnostic (v1.16.11 confirmed running, CSS rule for `[hidden]` present, `modal.hidden` already `false`) showed `getComputedStyle(modal).display === 'none'` anyway, and `getBoundingClientRect()` returning `0x0`. Something else was forcing `display: none`.
+
+### The legacy CSS that won by specificity
+
+`styles.css` still carried pre-Wave-5 rules for the settings modal:
+
+```css
+#settings-modal {
+  display: none;       /* permanent invisibility */
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  background: rgba(0,0,0,.7);
+  align-items: center;
+  justify-content: center;
+}
+#settings-modal.open { display: flex; }
+```
+
+Back when the modal was a bespoke one-off (pre-v1.16.0), opening it meant toggling the `.open` class on `#settings-modal`. The Wave 5 refactor (v1.16.0) moved the modal to the shared `.modal-backdrop` class + `hidden` attribute pattern that every other modal uses — and wired the JS accordingly — but **never removed the old rules**.
+
+`#settings-modal` (ID selector, specificity 0,1,0,0) beats `.modal-backdrop` (class selector, specificity 0,0,1,0). So even with `.modal-backdrop { display: flex }` and `.modal-backdrop[hidden] { display: none !important }` both in place, the ID rule `display: none` still won. The modal was trapped invisible, regardless of what `modal.hidden` was set to.
+
+### The fix
+
+Deleted the two legacy rules (`#settings-modal` block + `#settings-modal.open`). Left a comment in their place explaining why they went. Now `.modal-backdrop` + `.modal-backdrop[hidden]` control the settings modal's visibility exactly like they do for every other modal (help, connect, file viewer, command palette, debug). One source of truth.
+
+### How to confirm it works
+
+After `npm publish` + `bunx init` + restart OpenCode + Ctrl+Shift+R:
+
+1. Click the gear icon (⚙) in the header.
+2. The Settings modal opens immediately with the 4 tabs.
+3. Click **Connection** → change port → click **Save** → restart OpenCode.
+
+No other modal was affected because this rule was specific to `#settings-modal`. The other dialogs have been using `.modal-backdrop` cleanly since v1.16.0.
+
+### Diagnostic value, not zero
+
+This is the 3rd bug uncovered via in-browser `getBoundingClientRect` + `getComputedStyle` diagnostics, and each one had a completely different root cause (CSS override, dead `getElementById`, legacy ID-selector rule). The pattern is the same though: when the UI "just doesn't do what the code says it should," the gap between intent and render is always CSS specificity or a null DOM reference. Worth running the same diagnostic snippet when the next weird UI bug shows up.
+
+---
+
 ## [1.16.11] — 2026-04-22
 
 Fixed — the Settings modal (gear icon) refused to open.

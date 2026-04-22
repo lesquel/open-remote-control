@@ -1349,16 +1349,13 @@ body {
 
 
 /* ── Settings Modal ──────────────────────────────────────────────────────── */
-#settings-modal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  background: rgba(0,0,0,.7);
-  align-items: center;
-  justify-content: center;
-}
-#settings-modal.open { display: flex; }
+/* The pre-Wave-5 #settings-modal rules (display: none + .open → flex) were
+ * REMOVED in v1.16.12. They fought the .modal-backdrop class and won by
+ * specificity (ID > class), which meant the modal stayed invisible even when
+ * `modal.hidden = false` had been set. With those rules gone, the unified
+ * `.modal-backdrop` + `.modal-backdrop[hidden]` rules control visibility
+ * exactly like every other modal in the dashboard.
+ */
 .settings-box {
   background: var(--surface);
   border: 1px solid var(--border);
