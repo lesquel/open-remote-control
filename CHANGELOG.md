@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.2] — 2026-04-22
+
+Real fix for "dashboard doesn't update until I reload". After a four-agent audit of the entire SSE pipeline, two concrete root causes were identified and patched.
+
+### Fixed — SSE stream was being buffered
+
+`createSSEResponse` in `src/server/services/event-bus.ts` sent the welcome event and then nothing until the next 25-second keepalive. Bun's HTTP/1.1 streaming can coalesce small chunks before flushing, so from the browser's perspective `EventSource.onopen` never fired reliably — and when it did, subsequent single-event enqueues were also buffered. Three changes made the stream actually stream:
+
+- An immediate 2KiB padding comment is sent right after the welcome event. This is the standard trick for defeating SSE buffering across intermediate proxies and coalescing layers — it forces the first HTTP chunk to exceed any reasonable buffer threshold, which pushes the welcome (and the following events) out to the wire.
+- Keepalive ping interval is now 3 seconds instead of 25. Short enough that Bun never has more than a few hundred milliseconds of gap between writes, and the TCP stream stays flowing. Also serves as a silent-disconnect detector: a dead client drops off the client set in 3 seconds instead of 25.
+- Response headers now include `Cache-Control: no-store` (stricter than `no-cache`) and `X-Accel-Buffering: no`. The first defeats middleware that treats `no-cache` as "revalidate, you can hold it briefly." The second is a no-op on direct localhost but is **critical when `PILOT_TUNNEL=cloudflared|ngrok` is active** — without it, tunnel proxies accumulate a buffer before forwarding each SSE event, producing exactly the "no updates until reload" symptom on remote connections.
+
+### Fixed — boot-time race in the `sse-dir` subscriber closed the stream mid-handshake
+
+`src/server/dashboard/sse.js` had `_lastSSEDirectory = null` seeded at module load. At bootstrap, `restoreTabsFromStorage()` and `loadSessions()` both mutate state and fire `notifyAll()` BEFORE the first explicit `connect()`. The subscriber saw the transition `null → <real path>`, marked the directory as changed, and (if the EventSource had already been created in the same tick) closed and reconnected. In the gap, events emitted by the backend were broadcast to a dead stream.
+
+Fixed by seeding `_lastSSEDirectory = undefined` and treating the first notification as a silent seed (no close/reconnect side effect). Subsequent tab switches still close/reconnect correctly. The initial `connect()` call now gets to complete its handshake in peace.
+
+### Added — opt-in SSE debug logging
+
+To make any future SSE misbehavior traceable, `sse.js` now supports:
+
+```js
+localStorage.setItem('pilot:debug:sse', '1')
+// reload the dashboard
+```
+
+With the flag set, every incoming SSE event is logged to the console (both the raw `onmessage` path and the named-event listeners). Zero cost when the flag is absent. Parse errors also surface instead of being swallowed.
+
+### Trade-offs noted
+
+The 3-second keepalive is an order of magnitude more traffic than the old 25-second one, but each ping is literally 8 bytes on the wire and the server side already has the interval loop — the cost is negligible on localhost and still trivial over a tunnel.
+
+### Still TODO
+
+- Generation-guard for the SESSION_CREATED → first `message.part.delta` window, where `activeSession` may be `null` briefly and deltas fall into the "accumulate but don't render" branch. Accumulated text is preserved, so the user sees full content on the next session select — but live typewriter effect is delayed in that specific race. Tracked separately.
+
+---
+
 ## [1.16.1] — 2026-04-22
 
 Patch release for live dashboard updates and public contribution docs. No API breakage.

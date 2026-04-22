@@ -179,15 +179,34 @@ export function connect() {
   }
   eventSource.onerror = onError
 
+  // Opt-in debug log: `localStorage.setItem('pilot:debug:sse', '1')` then
+  // reload to trace every event to the console. Unchecked when the flag is
+  // absent, so zero cost in production.
+  const _sseDebug = () => {
+    try { return localStorage.getItem('pilot:debug:sse') === '1' } catch { return false }
+  }
+
   function onMessage(e) {
-    try { handleEvent(JSON.parse(e.data)) } catch (_) {}
+    try {
+      const parsed = JSON.parse(e.data)
+      if (_sseDebug()) console.debug('[sse] onmessage', parsed.type ?? '(untyped)', parsed)
+      handleEvent(parsed)
+    } catch (err) {
+      if (_sseDebug()) console.error('[sse] onmessage parse/handle error', err, e.data)
+    }
   }
   eventSource.onmessage = onMessage
 
   // Named event types
   SSE_EVENTS.forEach(name => {
     function onNamedEvent(e) {
-      try { handleEvent({ type: name, data: JSON.parse(e.data) }) } catch (_) {}
+      try {
+        const data = JSON.parse(e.data)
+        if (_sseDebug()) console.debug('[sse] event', name, data)
+        handleEvent({ type: name, data })
+      } catch (err) {
+        if (_sseDebug()) console.error('[sse] named event error', name, err, e.data)
+      }
     }
     eventSource.addEventListener(name, onNamedEvent)
     _activeListeners.push([name, onNamedEvent])
@@ -197,9 +216,26 @@ export function connect() {
 // When activeDirectory changes, close the current stream and reconnect so the
 // new URL (?directory=…) takes effect. The backend event bus is global, but
 // reconnecting keeps the SSE URL in sync and gives a clean state.
-let _lastSSEDirectory = null
+//
+// CRITICAL: `_lastSSEDirectory` starts as a sentinel (`undefined`) on purpose,
+// NOT `null`. During boot, `loadSessions()` and `restoreTabsFromStorage()`
+// both mutate state and fire `notifyAll()` BEFORE `connect()` is called. If
+// this subscriber ran with `_lastSSEDirectory = null` and then saw the
+// transition `null → <some path>`, it would think the directory changed and
+// (if `connect()` had already been called) close/reconnect mid-handshake. By
+// seeding from the current state on the FIRST notification (and only calling
+// close+connect when a LIVE EventSource exists AND the directory actually
+// changed from the last observed value), we avoid the boot-time race that
+// was dropping every event emitted before the second connect's onopen.
+let _lastSSEDirectory = undefined
 subscribe('sse-dir', (state) => {
   const dir = state.activeDirectory ?? null
+  if (_lastSSEDirectory === undefined) {
+    // First notification: seed without side effects — the fresh connect()
+    // in main.js's bootstrap will build the URL with this directory.
+    _lastSSEDirectory = dir
+    return
+  }
   if (dir === _lastSSEDirectory) return
   _lastSSEDirectory = dir
   // Only reconnect if we already have a live connection
