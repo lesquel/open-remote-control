@@ -32,6 +32,41 @@ const BACKOFF_MAX = LIMITS.SSE_BACKOFF_MAX_MS
 let _lastConnectTime = null
 let _reconnectAttempts = 0
 
+// OpenCode's `message.part.delta` payload intentionally carries only
+// { messageID, partID, field, delta } in current SDK builds. Older versions of
+// this dashboard assumed a `sessionID` was present, so every delta looked like
+// a background-session event and never reached the live DOM. Keep a tiny
+// client-side index from the richer `message.updated` / `message.part.updated`
+// snapshots so deltas can be routed to the active session without requiring a
+// page refresh.
+const _messageSession = new Map() // messageID -> sessionID
+const _partSession = new Map()    // partID -> sessionID
+
+function rememberMessageSession(messageID, sessionID) {
+  if (messageID && sessionID) _messageSession.set(messageID, sessionID)
+}
+
+function rememberPartSession(part) {
+  if (!part) return
+  const sessionID = part.sessionID ?? part.sessionId ?? _messageSession.get(part.messageID)
+  if (part.messageID && sessionID) rememberMessageSession(part.messageID, sessionID)
+  if (part.id && sessionID) _partSession.set(part.id, sessionID)
+}
+
+function inferDeltaSession({ explicitSessionID, messageID, partID, activeSession, multiviewActive }) {
+  if (explicitSessionID) return explicitSessionID
+  if (partID && _partSession.has(partID)) return _partSession.get(partID)
+  if (messageID && _messageSession.has(messageID)) return _messageSession.get(messageID)
+  // Last-resort fallback: if the user is watching a single active session,
+  // route otherwise-unscoped deltas there. This matches OpenCode's own reducer:
+  // deltas are meaningful only after a message/part exists, and the dashboard
+  // can still recover with the final message.updated full reload if this guess
+  // is wrong. Without this fallback, first-token deltas can be dropped until a
+  // manual refresh because the SDK does not include sessionID on delta events.
+  if (activeSession && !multiviewActive) return activeSession
+  return null
+}
+
 const SSE_EVENTS = [
   EVENTS.SESSION_UPDATED,
   EVENTS.SESSION_CREATED,
@@ -114,12 +149,26 @@ export function connect() {
   eventSource = new EventSource(url)
 
   eventSource.onopen = () => {
+    const wasReconnect = _reconnectAttempts > 0
     backoffMs = BACKOFF_MIN          // reset backoff on successful connection
     _lastConnectTime = Date.now()
     _reconnectAttempts = 0
     setConnectionStatus('connected')
     setState({ sse: { connected: true } })
     loadSessions(true)
+    if (wasReconnect) {
+      const { activeSession, multiviewActive, mvPanels } = getState()
+      // SSE has no replay buffer. Any message/tool events emitted while the
+      // browser was reconnecting are gone, so pull the canonical snapshot once
+      // the stream is healthy again. This is the difference between "the
+      // connection hiccuped" and "I have to refresh the whole page to catch up".
+      if (activeSession && !multiviewActive) {
+        loadMessages(activeSession).catch(() => {})
+      }
+      for (const sessionId of mvPanels ?? []) {
+        loadMVMessages(sessionId).catch(() => {})
+      }
+    }
   }
 
   function onError() {
@@ -186,18 +235,27 @@ async function handleEvent(ev) {
   }
 
   // ── Streaming deltas: incremental tokens for text / reasoning fields ─────
-  // The SDK emits `message.part.delta` per token with { sessionID, messageID,
-  // partID, field, delta }. This drives the typewriter effect. A separate
+  // The SDK emits `message.part.delta` per token with { messageID, partID,
+  // field, delta } (sessionID is not guaranteed). This drives the typewriter effect. A separate
   // `message.part.updated` event emits snapshots for NON-text parts (tools
   // moving pending → running → completed) — handled below.
   if (t === EVENTS.MESSAGE_PART_DELTA) {
-    const sessionId = d?.sessionID ?? ev.properties?.sessionID
+    const explicitSessionId =
+      d?.sessionID ?? d?.sessionId ?? ev.properties?.sessionID ?? ev.properties?.sessionId
     const messageId = d?.messageID ?? ev.properties?.messageID
     const partId    = d?.partID    ?? ev.properties?.partID
     const field     = d?.field     ?? ev.properties?.field
     const delta     = d?.delta     ?? ev.properties?.delta
+    const sessionId = inferDeltaSession({
+      explicitSessionID: explicitSessionId,
+      messageID: messageId,
+      partID: partId,
+      activeSession,
+      multiviewActive,
+    })
 
     if (typeof delta !== 'string' || delta.length === 0) return
+    if (!sessionId) return
     if (sessionId !== activeSession || multiviewActive) {
       // Still accumulate for background sessions so a later switch has
       // the full text, but don't touch the DOM.
@@ -223,7 +281,8 @@ async function handleEvent(ev) {
   // drop any in-flight text deltas from the delta stream).
   if (t === EVENTS.MESSAGE_PART_UPDATED) {
     const part = d?.part ?? ev.properties?.part
-    const sessionId = part?.sessionID
+    rememberPartSession(part)
+    const sessionId = part?.sessionID ?? part?.sessionId
     if (!part || sessionId !== activeSession || multiviewActive) {
       // TODO: invalidate bg session cache on MESSAGE_PART_UPDATED so the next
       // selectSession() forces a fresh fetch instead of showing stale data.
@@ -252,6 +311,7 @@ async function handleEvent(ev) {
     const messageId = info.id ?? d?.id ?? d?.messageId ?? null
     const evtSessionId =
       ev.properties?.sessionID ?? ev.properties?.sessionId ?? d?.sessionID ?? d?.sessionId ?? null
+    rememberMessageSession(messageId, info.sessionID ?? info.sessionId ?? evtSessionId)
     const isAssistant = msgRole === 'assistant'
     const isUser = msgRole === 'user'
     const isFinal =

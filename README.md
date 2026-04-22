@@ -323,31 +323,27 @@ If you want the deep version, see the [`docs/`](docs/) folder.
 
 ## Contributing
 
-Issues and PRs welcome at [github.com/lesquel/open-remote-control](https://github.com/lesquel/open-remote-control).
+Issues are welcome. Pull requests are welcome **only after maintainer approval**.
 
-**Before you open a PR, read [`AGENTS.md`](AGENTS.md).** It's short and it's the contract for how the repo is maintained — hard rules, release process, debugging playbook. Following it is the difference between a PR that gets merged in a day and one that needs three rounds of review.
+Please start with an issue first: bug report, feature request, or discussion. The maintainer will triage it and either:
 
-Local dev:
+- fix it directly and comment on the issue,
+- ask you to send a PR, or
+- close it as out of scope / duplicate / needs more information.
 
-```bash
-git clone https://github.com/lesquel/open-remote-control
-cd open-remote-control/opencode-pilot
-bun install
-bun test
-bun run typecheck
-```
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full issue-first workflow, PR rules, review expectations, contributor credit, and local development setup.
 
-To test changes against your local OpenCode without publishing:
+Maintainer notes for contributors:
 
-```bash
-# In opencode-pilot/
-bun pm pack        # creates lesquel-opencode-pilot-X.X.X.tgz
+- One PR per approved issue.
+- Keep PRs small and reviewable.
+- Add tests for behavior changes.
+- Do not bump versions, edit `CHANGELOG.md`, or publish releases.
+- Follow [`AGENTS.md`](AGENTS.md) for codebase conventions: no `any`, no server `console.log`, factory functions, release safety rules.
 
-# In a test project with opencode.json:
-bun add /path/to/lesquel-opencode-pilot-X.X.X.tgz
-```
+Security reports are private: see [`SECURITY.md`](SECURITY.md). Community expectations are in [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
-Shipping a new version: follow [`docs/RELEASE.md`](docs/RELEASE.md). Pushing a `vX.Y.Z` tag is the only supported way to publish.
+Shipping a new version is maintainer-only: follow [`docs/RELEASE.md`](docs/RELEASE.md). Pushing a `vX.Y.Z` tag is the only supported way to publish.
 
 ---
 

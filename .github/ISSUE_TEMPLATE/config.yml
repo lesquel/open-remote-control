@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/lesquel/open-remote-control/discussions
+    about: Use Discussions for questions, broad ideas, and support that is not an actionable bug.
+  - name: Security vulnerability
+    url: https://github.com/lesquel/open-remote-control/security/advisories/new
+    about: Please report security vulnerabilities privately. Do not open a public issue with exploit details.

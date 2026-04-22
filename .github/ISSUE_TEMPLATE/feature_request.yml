@@ -1,0 +1,55 @@
+name: Feature request
+description: Propose an improvement before anyone writes code
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please open an issue before writing code. PRs are accepted only after the maintainer explicitly approves the issue and asks for a PR.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem does this solve?
+      placeholder: "When I use OpenCode Pilot from my phone, I need..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Is there a workaround today? Why is it not enough?
+  - type: textarea
+    id: users
+    attributes:
+      label: Who benefits?
+      description: Is this only for your workflow, or useful to many users?
+    validations:
+      required: true
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: Are you willing to implement this if accepted?
+      options:
+        - "No — I am only proposing the idea"
+        - "Yes — if the maintainer asks for a PR"
+        - "Maybe — I can help with testing or docs"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I understand that opening this issue does not mean a PR is approved.
+          required: true
+        - label: I will wait for maintainer approval before opening a PR.
+          required: true

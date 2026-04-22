@@ -1,0 +1,93 @@
+name: Bug report
+description: Report a reproducible problem in OpenCode Pilot
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough detail for the maintainer to reproduce it.
+
+        Security issue? Stop here and follow `SECURITY.md` instead. Do not paste tokens, tunnel URLs, private logs, or credentials.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: "Example: /remote opens the dashboard but focuses the wrong project."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands/clicks/settings that trigger the bug.
+      placeholder: |
+        1. Run `opencode` in ...
+        2. Type `/remote`
+        3. Open ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include screenshots if helpful, but redact secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and diagnostics
+      description: Paste relevant logs only after removing tokens, tunnel URLs, credentials, and private paths if needed.
+      render: shell
+  - type: input
+    id: plugin-version
+    attributes:
+      label: OpenCode Pilot version
+      placeholder: "Example: 1.16.0"
+    validations:
+      required: true
+  - type: input
+    id: opencode-version
+    attributes:
+      label: OpenCode version
+      placeholder: "Example: output of `opencode --version`"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: features
+    attributes:
+      label: Enabled features
+      description: Check anything relevant.
+      options:
+        - label: Public tunnel (`PILOT_TUNNEL=cloudflared` or `ngrok`)
+        - label: Telegram notifications
+        - label: Web Push notifications
+        - label: Glob/file opener (`PILOT_ENABLE_GLOB_OPENER=true`)
+        - label: Multiple OpenCode windows/projects open
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues/discussions first.
+          required: true
+        - label: I removed tokens, tunnel URLs, credentials, and private secrets from this report.
+          required: true

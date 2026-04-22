@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.1] — 2026-04-22
+
+Patch release for live dashboard updates and public contribution docs. No API breakage.
+
+### Fixed — live assistant output no longer requires page refresh
+
+- Fixed `message.part.delta` routing in the dashboard SSE client. Current OpenCode delta events carry `messageID`, `partID`, `field`, and `delta`, but do not guarantee `sessionID`. The dashboard now indexes `messageID → sessionID` and `partID → sessionID` from richer `message.updated` / `message.part.updated` snapshots, with an active-session fallback for first-token deltas.
+- After an EventSource reconnect, the dashboard now refreshes the active session's messages and any multi-view panels because SSE does not replay events missed while disconnected. This prevents stale transcripts after browser sleep, reload timing, or transient `/events` interruptions.
+
+### Added — open-source contribution governance
+
+- Added `CONTRIBUTING.md` with the issue-first workflow: contributors open an issue first, wait for maintainer triage, and only open a PR when explicitly invited.
+- Added `CODE_OF_CONDUCT.md` and `SECURITY.md` for community expectations and private vulnerability reporting.
+- Added GitHub issue templates for bugs/features and a PR template that enforces linked approved issues, tests, no version/changelog edits, no secrets, and no AI attribution.
+- Updated the README Contributing section to clarify that issues are welcome but PRs require maintainer approval.
+- Included `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` in the npm package `files` list.
+
 ## [1.16.0] — 2026-04-22
 
 Wave 5 UX overhaul: state-aware onboarding, unified keyboard shortcuts with a discoverable help modal, a risk-aware permission banner, a reusable focus-trap modal helper applied to five dialogs, and a tabbed Settings redesign. No API breakage.

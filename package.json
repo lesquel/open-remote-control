@@ -1,6 +1,6 @@
 {
   "name": "@lesquel/opencode-pilot",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "description": "Remote control web dashboard for OpenCode — multi-project tabs, live SSE streaming, mobile-friendly, push/Telegram notifications, tunnel for phone access from anywhere.",
   "publishConfig": {
     "access": "public"
@@ -18,7 +18,10 @@
     "src/",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md"
   ],
   "engines": {
     "opencode": ">=0.1.0"
