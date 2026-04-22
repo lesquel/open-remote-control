@@ -4,6 +4,102 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.14.2] — 2026-04-22
+
+Follow-up release driven by a real user session that exposed three independent bugs the v1.14.1 fix alone could not cover. All fixes are defensive — no API changes.
+
+### Fixed — `/remote` finally auto-focuses the active project, even at boot
+
+**The report**
+
+Even after v1.14.1 (which replaced `process.cwd()` with `api.state.path.directory`), the user reported that `/remote` still opened the dashboard without auto-focusing the current project. Other project tabs from localStorage appeared; the active folder did not.
+
+**The root cause**
+
+`api.state.path.directory` CAN be an empty string during a narrow window right after OpenCode boot — before the TUI finishes resolving the active project path. The v1.14.1 code used `api.state?.path?.directory || process.cwd()`, which means `"" || process.cwd()` fell straight back to the broken `process.cwd()` value. The optional-chaining guard only handled `undefined`, not empty strings.
+
+**The fix**
+
+`src/tui/index.ts::resolveProjectDir` now uses three-level resolution with explicit trim:
+
+```ts
+const p = api.state?.path
+const d = p?.directory?.trim()
+if (d) return d
+const w = p?.worktree?.trim()
+if (w) return w
+return process.cwd()
+```
+
+- `directory.trim()` treats whitespace-only strings as empty.
+- Falls back to `path.worktree` (the repo root) before giving up on `process.cwd()`.
+- Both `directory` and `worktree` are valid "project" anchors for the dashboard's tab-matching logic.
+
+### Fixed — project tab switch now refreshes the files-changed panel
+
+**The report**
+
+When the user switched from one project tab to another, the "files changed" panel kept showing the previous tab's data. Reference list, label strip, right panel, and session list all updated — the files panel did not.
+
+**The root cause**
+
+`project-tabs.js::switchProjectTab()` fired `__refreshRightPanel`, `__refreshLabelStrip`, `__refreshReferences`, `renderSessions`, and `loadMessages(activeSession)`, but never called the files-changed panel's refresh. The files-changed panel is a passive module — it has no state subscription and only re-renders when explicitly told via `filesPanel.refresh(sessionId)`.
+
+**The fix**
+
+- `src/server/dashboard/main.js` exposes the refresh globally, matching the existing `window.__refresh*` pattern:
+  ```js
+  window.__refreshFilesChanged = (sessionId) => filesPanel.refresh(sessionId)?.catch(() => {})
+  ```
+- `src/server/dashboard/project-tabs.js::switchProjectTab()` calls it right after `loadMessages(activeSession)`:
+  ```js
+  try { window.__refreshFilesChanged?.(activeSession) } catch (_) {}
+  ```
+
+### Fixed — tab-switch race: stale fetch no longer pollutes the new tab
+
+**The root cause**
+
+v1.14.0 introduced `fetchGeneration` / `bumpFetchGen()` / `isStaleGen(gen)` infrastructure in `state.js` to drop results from promises that resolve after the user switched tabs, but the callers were never wired. If `loadSessions()` was in flight when the user switched tabs, its resolve still wrote the old data into the new tab's state.
+
+**The fix**
+
+`src/server/dashboard/sessions.js`:
+- `loadSessions()` — captures `const gen = currentFetchGen()` before the fetch, drops via `isStaleGen(gen)` before each `setState` call (two call sites: initial session/status write, then sessionMeta after `Promise.all`).
+- `refreshSessionMeta()` — same pattern before the `setState({ sessionMeta: ... })`.
+- `deleteSessionById`, `createSession`, `selectSession` deliberately left ungated — user-initiated actions must complete regardless of tab-switch.
+
+### Fixed — SSE desktop stops updating after token expiry
+
+**The report**
+
+On desktop (not on mobile), after the first message streamed fine, the dashboard stopped receiving SSE updates for subsequent events (tool calls, new messages, subagent spawns). User had to reload the page every time. Mobile kept working.
+
+**The root cause**
+
+Desktop browsers fire `visibilitychange` aggressively on alt-tab, minimize, or long idle. The v1.14.0 `visibilitychange` listener validates the token against `/status`; on 401 it calls `showTokenExpiredScreen()` which hides the `#app` DOM but leaves the EventSource open. SSE events still arrive — they just update a hidden DOM. When the user reloaded, a fresh token was fetched and a new EventSource was created, but no-one closed the stale one.
+
+**The fix**
+
+- `src/server/dashboard/sse.js` now exports `closeEventSource()` — a public wrapper around the private `_closeEventSource()` helper added in v1.14.0.
+- `src/server/dashboard/auth.js::showTokenExpiredScreen()` calls `closeEventSource()` at the very top, before any DOM work, wrapped in try/catch.
+
+### Fixed — SSE reconnect after directory change now refetches state
+
+**The root cause**
+
+When the user switched project tabs, `sse.js`'s `sse-dir` subscriber called `_closeEventSource()` and `connect()` to resync the EventSource URL with the new `?directory=`. But `connect()` only triggers `loadSessions(true)` inside its `onopen` handler — which fires AFTER `connect()` returns. During the reconnect gap, no explicit refetch happened, so the new tab could show stale counts until the user's next action.
+
+**The fix**
+
+`src/server/dashboard/sse.js` — inside the `sse-dir` subscriber, after `connect()`, now calls `try { loadSessions(true) } catch (_) {}` to force-refresh the session list for the new directory immediately.
+
+### Known TODO — background session tool-call cache
+
+A TODO is left inside the `MESSAGE_PART_UPDATED` handler in `sse.js`: when an event arrives for a non-active session, we return early without invalidating that session's cached message list. Next time the user switches to that session, they may see stale data until a manual refresh. Low priority — the user-reported symptoms are dominated by the fixes above.
+
+---
+
 ## [1.14.1] — 2026-04-22
 
 ### Fixed — `/remote` now opens the *active* project, not the launch cwd

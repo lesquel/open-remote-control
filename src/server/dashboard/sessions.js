@@ -1,5 +1,5 @@
 // sessions.js — Sessions list, single-session panel, send prompt, abort
-import { getState, setState } from './state.js'
+import { getState, setState, currentFetchGen, isStaleGen } from './state.js'
 import { fetchSessions, fetchMessages, createSession as apiCreateSession, sendPromptWithOpts, abortSession as apiAbortSession, updateSessionTitle, deleteSession as apiDeleteSession } from './api.js'
 import { loadMessages, normalizeMessage, appendOptimisticUserMessage, removeOptimisticUserMessage, showTypingIndicator } from './messages.js'
 import { loadDiff } from './diff.js'
@@ -148,11 +148,13 @@ async function fetchSessionLastMeta(id, directory) {
 }
 
 export async function loadSessions(autoSelectMostRecent) {
+  const gen = currentFetchGen()
   try {
     const data = await fetchSessions()
     const sessions = {}
     const statuses = data.statuses ?? {}
     for (const s of (data.sessions ?? [])) sessions[s.id] = s
+    if (isStaleGen(gen)) return
     setState({ sessions, statuses })
 
     // Fetch last-message meta for up to 50 most-recent sessions in parallel.
@@ -165,6 +167,7 @@ export async function loadSessions(autoSelectMostRecent) {
     )
     const sessionMeta = {}
     ids.forEach((id, i) => { sessionMeta[id] = metaResults[i] })
+    if (isStaleGen(gen)) return
     setState({ sessionMeta })
 
     updateAgentFilterOptions()
@@ -190,8 +193,10 @@ export async function refreshSessionMeta(sessionId) {
   const { sessions, sessionMeta } = getState()
   const s = sessions[sessionId]
   if (!s) return
+  const gen = currentFetchGen()
   try {
     const meta = await fetchSessionLastMeta(sessionId, s.directory)
+    if (isStaleGen(gen)) return
     setState({ sessionMeta: { ...sessionMeta, [sessionId]: meta } })
     renderSessions()
   } catch (_) {}

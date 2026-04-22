@@ -1,6 +1,7 @@
 // auth.js — Token handling: query param, localStorage, and no-token screen
 import { setState, getState } from './state.js'
 import { resetTokenInvalidated } from './api.js'
+import { closeEventSource } from './sse.js'
 
 const STORAGE_KEY = 'pilot_token'
 
@@ -89,6 +90,7 @@ function showNoTokenScreen() {
  * via `/remote` from the TUI to pick up the current token.
  */
 export function showTokenExpiredScreen() {
+  try { closeEventSource() } catch (_) {}
   const gate = document.getElementById('token-gate')
   if (!gate) return
   gate.innerHTML = `

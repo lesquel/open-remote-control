@@ -206,6 +206,7 @@ async function bootstrap() {
   if (filesContainer) {
     const filesPanel = createFilesChangedPanel({ container: filesContainer })
     registerFilesChangedPanel(filesPanel)
+    window.__refreshFilesChanged = (sessionId) => filesPanel.refresh(sessionId)?.catch(() => {})
   }
 
   // Mount label strip (prompt composer footer — agent · model · provider)

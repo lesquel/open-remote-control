@@ -147,10 +147,21 @@ async function diagnoseAndToast(api: TuiPluginApi, title: string): Promise<void>
 //
 // The TUI API exposes the live active directory on `api.state.path.directory`
 // (mirrors OpenCode's own `n.directory || process.cwd()` pattern used in
-// `opencode/.../feature-plugins/*/footer.tsx`). Fall back to cwd only if the
-// state is not ready yet (rare — slash commands run after mount).
+// `opencode/.../feature-plugins/*/footer.tsx`). v1.14.1 used ONLY `directory`,
+// but in practice `api.state.path.directory` can be an empty string during a
+// narrow window at TUI boot — then `"" || process.cwd()` falls back to the
+// broken value we were trying to escape. v1.14.2 adds two defences:
+//   1. `trim()` on the value so whitespace-only strings are treated as empty.
+//   2. Fallback to `path.worktree` (repo root) before `process.cwd()`. When
+//      the TUI is in a sub-directory of a project, `directory` and `worktree`
+//      may differ; both are valid "project" anchors for the dashboard.
 function resolveProjectDir(api: TuiPluginApi): string {
-  return api.state?.path?.directory || process.cwd()
+  const p = api.state?.path
+  const d = p?.directory?.trim()
+  if (d) return d
+  const w = p?.worktree?.trim()
+  if (w) return w
+  return process.cwd()
 }
 
 // ─── Command definitions ─────────────────────────────────────────────────────

@@ -94,6 +94,10 @@ function _closeEventSource() {
   eventSource = null
 }
 
+export function closeEventSource() {
+  _closeEventSource()
+}
+
 export function connect() {
   const { token } = getState()
   if (!token) return
@@ -153,6 +157,8 @@ subscribe('sse-dir', (state) => {
   if (eventSource) {
     _closeEventSource()
     connect()
+    // Refetch state for the new directory after reconnect
+    try { loadSessions(true) } catch (_) {}
   }
 })
 
@@ -218,7 +224,11 @@ async function handleEvent(ev) {
   if (t === EVENTS.MESSAGE_PART_UPDATED) {
     const part = d?.part ?? ev.properties?.part
     const sessionId = part?.sessionID
-    if (!part || sessionId !== activeSession || multiviewActive) return
+    if (!part || sessionId !== activeSession || multiviewActive) {
+      // TODO: invalidate bg session cache on MESSAGE_PART_UPDATED so the next
+      // selectSession() forces a fresh fetch instead of showing stale data.
+      return
+    }
     replacePartInDom(part)
     return
   }

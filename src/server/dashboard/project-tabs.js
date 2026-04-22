@@ -168,6 +168,9 @@ export async function switchProjectTab(id) {
         updateHeaderSession(title, status)
         updateInfoBar(activeSession, title, status, s)
         await loadMessages(activeSession)
+        // Refresh files-changed panel — it has no state subscription and
+        // would otherwise keep showing the previous tab's files.
+        try { window.__refreshFilesChanged?.(activeSession) } catch (_) {}
       }
     } catch (_) {}
   }
