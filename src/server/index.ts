@@ -3,7 +3,7 @@ import { loadConfigSafe, mergeStoredSettings, resolveSources } from "./config"
 import { loadDotEnv } from "./util/dotenv"
 import { generateToken } from "./util/auth"
 import { createAuditLog } from "./services/audit"
-import { createEventBus } from "./services/event-bus"
+import { getSharedEventBus } from "./services/event-bus"
 import { createPermissionQueue } from "./services/permission-queue"
 import { createTelegramBot } from "./services/telegram"
 import { createPushService } from "./services/push"
@@ -76,7 +76,10 @@ export default {
 
     let currentToken = generateToken()
     const audit = createAuditLog(ctx)
-    const eventBus = createEventBus()
+    // Shared across ALL plugin factory invocations in this process. See
+    // getSharedEventBus() docs — this is the real fix for the "dashboard
+    // shows pilot.connected then nothing" bug that survived v1.14 → v1.16.8.
+    const eventBus = getSharedEventBus()
     const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
     const telegram = createTelegramBot(config.telegram, permissionQueue, logger)
     const push = createPushService({ config, audit, logger })

@@ -124,3 +124,26 @@ export function createEventBus(): EventBus {
     closeAll,
   }
 }
+
+// ─── Process-wide singleton ──────────────────────────────────────────────────
+//
+// ROOT CAUSE of the "dashboard doesn't update live" bug (v1.14.x through
+// v1.16.8 all chased symptoms of this).
+//
+// OpenCode may invoke the plugin factory multiple times in the SAME process —
+// once per workspace / worktree / directory context. If each invocation calls
+// createEventBus() directly, every context gets its own isolated bus. The
+// dashboard's SSE connection lands on whichever bus was created first (the
+// one that bound port 4097), but the event hook of a DIFFERENT context's bus
+// receives all the SDK events for other workspaces. Result: emit() succeeds
+// with `clients=0` every single time, because nobody is listening to the bus
+// that's actually seeing the events.
+//
+// `getSharedEventBus()` returns a lazy-initialized singleton so ALL plugin
+// instances in the same process share one bus. Tests that need an isolated
+// bus still use the `createEventBus()` factory above directly.
+let _sharedBus: EventBus | null = null
+export function getSharedEventBus(): EventBus {
+  if (!_sharedBus) _sharedBus = createEventBus()
+  return _sharedBus
+}

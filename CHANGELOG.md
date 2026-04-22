@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.9] — 2026-04-22
+
+**The actual actual root cause** of the live-updates bug that survived every single SSE fix from v1.14.2 through v1.16.8. The server-side diagnostic markers from v1.16.8 finally revealed it:
+
+```
+[pilot:event-hook] message.part.delta clients=0
+[pilot:bus-emit]   message.part.delta clients=0
+[pilot:event-hook] message.updated    clients=0
+[pilot:bus-emit]   message.updated    clients=0
+...
+```
+
+The event hook IS firing. The bus IS emitting. But `clients=0` — no SSE clients on the bus that receives the events. And yet the browser DOES see `pilot.connected`. That means **there are two separate event buses in the same process**: one that the dashboard's SSE connection landed on, and a different one that the SDK events are flowing through.
+
+### The real root cause
+
+`createEventBus()` was being called **inside the plugin factory function**, which OpenCode invokes **multiple times in the same process** — once per workspace / worktree / directory context (that's the mechanism behind multi-project tabs). Each invocation produced an isolated bus.
+
+The dashboard's `EventSource` connection landed on whichever bus was created first (the one that successfully bound port 4097). The event hook for a different directory's context received all the SDK events for that workspace — but emitted them to a bus that no client was ever going to listen to.
+
+From the user's perspective the dashboard connected and then stayed silent. From the code's perspective every single one of the previous fixes (passive-gate removal, buffering defenses, bootstrap catch, watchdog, early connect, idempotent reconnect) was technically correct but operating on the wrong bus.
+
+### The fix
+
+`src/server/services/event-bus.ts` gets a lazy-initialized singleton:
+
+```ts
+let _sharedBus: EventBus | null = null
+export function getSharedEventBus(): EventBus {
+  if (!_sharedBus) _sharedBus = createEventBus()
+  return _sharedBus
+}
+```
+
+`src/server/index.ts` calls `getSharedEventBus()` instead of `createEventBus()`. Every plugin instance in the process now shares one bus: the dashboard's SSE connection and the event hook's emit calls both target the same client set. `createEventBus()` still exists for tests that need isolated buses.
+
+### What the eleven previous releases actually accomplished
+
+Not nothing. They collected evidence:
+
+- v1.14.x — ruled out `/remote` URL bugs, fixed real bugs in tab focus.
+- v1.15.0 — real security hardening. Introduced the passive-gate regression as a side effect (not the actual root cause; that was still the multi-bus issue).
+- v1.16.2 — real buffering defences against proxy coalescing. Still useful on tunnels.
+- v1.16.3 — `[sse-boot]` client markers. The first release that gave the client useful visibility.
+- v1.16.4 — removed the passive gate. Required but not sufficient.
+- v1.16.6 — watchdog + early connect + bootstrap catch. Made visible the `getElementById` exception.
+- v1.16.7 — fixed the dead `getElementById`. Bootstrap completed fully. SSE stream opened. Welcome arrived. Still no events.
+- v1.16.8 — server-side `[pilot:event-hook]` + `[pilot:bus-emit]` markers. Proved `clients=0` was the actual smoke. That was the release that finally pointed at the multi-bus issue.
+
+All of those defences stay in place. Each one solved a real, distinct problem. The singleton bus completes the cascade.
+
+### Noise from v1.16.8 stays (for now)
+
+The `[pilot:event-hook]` and `[pilot:bus-emit]` console.error markers are still active. Leaving them on for one release — once the user confirms v1.16.9 restores live updates, they come out or move behind a flag. Rationale: if for any reason this fix also turns out to be incomplete, the next diagnosis is still at our fingertips.
+
+---
+
 ## [1.16.8] — 2026-04-22
 
 Server-side diagnostic release. v1.16.7 fixed the bootstrap crash. The SSE stream now opens, the welcome (`pilot.connected`) reaches the browser, but no further events arrive. The missing link is server-side visibility — we can't tell if the SDK is firing the `event` hook at all, or if the hook fires and the bus buffers.
