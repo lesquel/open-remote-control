@@ -17,6 +17,13 @@ export function createEventBus(): EventBus {
   const clients = new Set<SSEClient>()
 
   function emit(event: BusEvent): void {
+    // Server-side diagnostic marker — goes to stderr / OpenCode log panel.
+    // Confirms from the OpenCode terminal whether the bus is actually
+    // emitting events and how many clients are receiving them.
+    try {
+      console.error(`[pilot:bus-emit] ${event.type} clients=${clients.size}`)
+    } catch (_) {}
+
     const data = `data: ${JSON.stringify(event)}\n\n`
     const dead: SSEClient[] = []
 

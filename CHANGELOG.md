@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.8] — 2026-04-22
+
+Server-side diagnostic release. v1.16.7 fixed the bootstrap crash. The SSE stream now opens, the welcome (`pilot.connected`) reaches the browser, but no further events arrive. The missing link is server-side visibility — we can't tell if the SDK is firing the `event` hook at all, or if the hook fires and the bus buffers.
+
+### Added — unconditional server-side markers
+
+Two `console.error` markers in the server plugin:
+
+- **`[pilot:event-hook] <type> clients=<N>`** — `src/server/index.ts`. Fires every time the SDK's `event` hook dispatches anything to the plugin. Shows the event type and how many SSE clients are currently connected.
+- **`[pilot:bus-emit] <type> clients=<N>`** — `src/server/services/event-bus.ts`. Fires every time `eventBus.emit()` runs. Shows whether the bus is actively forwarding events to clients.
+
+Both go to `stderr`, which OpenCode routes to its log panel. Open OpenCode's terminal (or the `:logs` view inside the TUI) after sending a prompt. Three patterns tell us the failure mode:
+
+- **Many `[pilot:event-hook]` lines, many `[pilot:bus-emit]` lines, `clients>=1`** → SDK fires, bus broadcasts to a live client. Dashboard doesn't see them = client-side filter bug.
+- **Many `[pilot:event-hook]` lines, no `[pilot:bus-emit]`** → events arrive but the hook isn't forwarding them to the bus (silent throw somewhere).
+- **No `[pilot:event-hook]` at all when a prompt is sent** → the SDK isn't firing the hook. Plugin isn't being called on this instance.
+
+### Noise
+
+`console.error` of two short lines per SDK event is loud during active agent runs. That's fine — this release exists to diagnose; the markers come out in the next one.
+
+### Everything from v1.16.7 carries over
+
+- Dead `getElementById('no-session-new-btn')` still gone from `initSessions`.
+- Every `addEventListener` in `initSessions` still null-safe.
+- SSE watchdog from v1.16.6 still running every 5s.
+- Bootstrap catch from v1.16.6 still active.
+
+---
+
 ## [1.16.7] — 2026-04-22
 
 **The actual root cause of the "dashboard doesn't update live" saga.** v1.16.6's `bootstrap().catch()` finally surfaced the real exception that had been aborting the bootstrap silently since v1.16.0:
