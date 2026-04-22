@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.3] — 2026-04-22
+
+Diagnostic release. v1.16.2 shipped two SSE fixes (stream buffering + boot-time `sse-dir` race) but a user report indicates updates still don't arrive without a reload. To find out exactly where the pipeline fails on the affected setup, this release adds unconditional `[sse-boot]` console markers in `src/server/dashboard/sse.js`. No functional changes to the SSE pipeline itself.
+
+### Added — unconditional SSE boot markers
+
+Three `console.info` / `console.warn` calls the user does NOT need to enable a flag for:
+
+- `[sse-boot] opening EventSource → <url>` — logged every time `connect()` is called. If this line is missing after reload, the bootstrap never reached the SSE step (token missing, bootstrap stalled, etc).
+- `[sse-boot] onopen fired — SSE connection is live` — logged when the EventSource handshake succeeds. If the `opening` line appears but this one doesn't, the server is rejecting or the stream is stalling before any byte arrives.
+- `[sse-boot] onerror fired...` with `readyState`, `reconnectAttempts`, and `backoffMs` — logged on every error. Tells us whether reconnect loops are happening or the connection just dies once.
+
+The existing opt-in `localStorage['pilot:debug:sse'] = '1'` flag (added in v1.16.2) continues to drive per-event logging once the connection is live.
+
+### Why this exists
+
+Diagnosing SSE issues across multiple user environments has been hard because the failure mode is silent. With these three markers printed by default, anyone reporting "dashboard doesn't update" can paste their console output and we immediately know which of three categories we're in: (1) connect never ran, (2) connect ran but stream never opened, (3) stream opened but no events arrived. All three need different fixes; guessing has cost us three release cycles.
+
+This is intentionally noisy for this one release. If v1.16.3 confirms the root cause, v1.16.4 will remove the markers or gate them behind the opt-in flag.
+
+---
+
 ## [1.16.2] — 2026-04-22
 
 Real fix for "dashboard doesn't update until I reload". After a four-agent audit of the entire SSE pipeline, two concrete root causes were identified and patched.

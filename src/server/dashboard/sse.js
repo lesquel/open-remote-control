@@ -135,7 +135,10 @@ export function closeEventSource() {
 
 export function connect() {
   const { token } = getState()
-  if (!token) return
+  if (!token) {
+    console.warn('[sse-boot] connect() called without a token — SSE will NOT start. State may not be hydrated yet.')
+    return
+  }
 
   if (eventSource) {
     _closeEventSource()
@@ -146,10 +149,14 @@ export function connect() {
   const base = buildApiUrl('/events')
   const sep = base.includes('?') ? '&' : '?'
   const url = `${base}${sep}token=${encodeURIComponent(token)}`
+  // Unconditional boot log so we can confirm the EventSource is actually
+  // being created and the URL is well-formed. No-op once SSE is working.
+  console.info('[sse-boot] opening EventSource →', url.replace(/token=[^&]+/, 'token=***'))
   eventSource = new EventSource(url)
 
   eventSource.onopen = () => {
     const wasReconnect = _reconnectAttempts > 0
+    console.info('[sse-boot] onopen fired — SSE connection is live')
     backoffMs = BACKOFF_MIN          // reset backoff on successful connection
     _lastConnectTime = Date.now()
     _reconnectAttempts = 0
@@ -171,7 +178,12 @@ export function connect() {
     }
   }
 
-  function onError() {
+  function onError(ev) {
+    console.warn('[sse-boot] onerror fired — SSE stream errored/disconnected.', {
+      readyState: eventSource?.readyState,
+      reconnectAttempts: _reconnectAttempts,
+      backoffMs,
+    })
     setConnectionStatus('reconnecting')
     setState({ sse: { connected: false } })
     _closeEventSource()
