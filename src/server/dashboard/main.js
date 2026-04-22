@@ -138,6 +138,16 @@ async function bootstrap() {
     if (gate) gate.style.display = 'none'
   }
 
+  // 2.5 Open SSE stream AS SOON AS the token is verified.
+  //     Doing this before the rest of the bootstrap means: even if ANY later
+  //     step throws unexpectedly (new imports, flaky endpoints, a stale
+  //     localStorage entry, etc.), the live stream is already established.
+  //     The watchdog in sse.js also keeps the stream alive if this ever
+  //     silently fails — but calling it here makes recovery immediate.
+  try { sseConnect() } catch (err) {
+    console.warn('[sse-boot] early connect() threw — watchdog will retry', err)
+  }
+
   // 3. Show app shell
   const app = document.getElementById('app')
   app.style.display = 'flex'
@@ -594,4 +604,9 @@ async function bootstrap() {
   if (multiviewActive) showMultiview()
 }
 
-bootstrap()
+// Defensive entry: if bootstrap throws at any step, log it loudly so we never
+// end up with a silently-stuck UI. The SSE watchdog in sse.js will still
+// maintain the live stream even if a later bootstrap step blew up.
+bootstrap().catch((err) => {
+  console.error('[bootstrap] fatal error — UI may be partially initialized. SSE watchdog will keep updates flowing.', err)
+})

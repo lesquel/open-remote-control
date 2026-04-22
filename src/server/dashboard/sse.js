@@ -140,6 +140,14 @@ export function connect() {
     return
   }
 
+  // Idempotent: if a healthy EventSource already exists, reuse it instead of
+  // closing + reopening. This lets callers invoke connect() defensively (e.g.
+  // from the watchdog below, or multiple times during bootstrap) without
+  // ever dropping a working stream.
+  if (eventSource && eventSource.readyState === 1 /* OPEN */) {
+    return
+  }
+
   if (eventSource) {
     _closeEventSource()
   }
@@ -520,4 +528,37 @@ async function handleEvent(ev) {
       window.__refreshRightPanel?.()
     }).catch(() => {})
   }
+}
+
+// ─── SSE watchdog ────────────────────────────────────────────────────────────
+// Defensive auto-recovery. Every 5 seconds verify there's a live EventSource.
+// If `eventSource` is null (connect() was never called, or it was called but
+// errored before handshake) OR the stream is CLOSED (readyState 2), re-invoke
+// connect() so the dashboard always recovers without a page reload — even if
+// the bootstrap threw before reaching the main sseConnect() call, or an
+// unrelated bug paused the reconnect loop.
+//
+// This is idempotent with connect()'s own `readyState === OPEN` guard, so
+// calling it while the stream is healthy is a free no-op.
+let _watchdogTimer = null
+export function startSseWatchdog() {
+  if (_watchdogTimer) return
+  _watchdogTimer = setInterval(() => {
+    const { token } = getState()
+    if (!token) return
+    const rs = eventSource?.readyState
+    if (!eventSource || rs === 2 /* CLOSED */) {
+      console.info('[sse-boot] watchdog: no live stream, calling connect()', { readyState: rs })
+      try { connect() } catch (err) {
+        console.warn('[sse-boot] watchdog reconnect failed', err)
+      }
+    }
+  }, 5_000)
+}
+
+// Auto-start the watchdog at module load. No token yet = no-op until a token
+// appears; then the watchdog picks it up on its next tick. This makes SSE
+// recovery automatic regardless of bootstrap call order.
+if (typeof window !== 'undefined') {
+  startSseWatchdog()
 }

@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.6] — 2026-04-22
+
+Defensive hardening of the SSE bootstrap. After v1.16.4 fixed the real root cause (the `event` hook passive gate regression), a user still reported that updates weren't flowing on their browser — with the code verified correct in-place. The symptom pointed at bootstrap-time silent failures, not a code bug. v1.16.6 makes the SSE bootstrap **robust by design** so no environment (stale state, flaky import, unexpected exception in an unrelated module) can leave the stream dead.
+
+### Added — early connect + idempotent `connect()`
+
+`main.js` now calls `sseConnect()` **immediately after the token is verified** (step 2.5), not at the end of the bootstrap sequence. If any later step throws — a flaky API endpoint, a stale localStorage entry, an unexpected module load issue — the live SSE stream is already open. The rest of the UI may end up partially initialized, but updates keep flowing.
+
+`connect()` is now **idempotent**: if an EventSource with `readyState === OPEN` already exists, calling `connect()` again is a free no-op. This lets the watchdog (below) and any other defensive caller invoke it safely without ever tearing down a working connection.
+
+### Added — SSE watchdog auto-recovery
+
+New `startSseWatchdog()` in `sse.js` runs a `setInterval(5_000)` that checks whether a live EventSource exists. If `eventSource` is `null` (connect never ran) or `readyState === 2` (CLOSED), it invokes `connect()` to recover. Auto-starts at module load time — if there's no token yet it's a no-op until one appears, then the next tick picks it up.
+
+This means the dashboard is now self-healing: an exception anywhere in bootstrap, a network hiccup that beats the exponential backoff, a browser quirk that silently closes a stream — all recover within 5 seconds without user intervention.
+
+### Added — fatal bootstrap catch
+
+`bootstrap()` is now invoked with `.catch()` at the entry point:
+
+```js
+bootstrap().catch((err) => {
+  console.error('[bootstrap] fatal error — UI may be partially initialized. SSE watchdog will keep updates flowing.', err)
+})
+```
+
+Any unhandled rejection is logged loudly. Combined with the watchdog, even a completely broken bootstrap can't stop the streaming updates.
+
+### Why this matters
+
+The user's session showed `/sse.js` served correctly with the v1.16.4 fix present (`has [sse-boot]: true`, `passive gate: false`), but `[sse-boot] opening EventSource` logs never appearing. That narrows the problem to "bootstrap never reached the connect call." Previously that was fatal; now the watchdog catches it within 5 seconds and the UI self-heals.
+
+No functional changes to the event pipeline — just insurance that it always runs.
+
+---
+
 ## [1.16.5] — 2026-04-22
 
 Republish of v1.16.4. No functional changes.
