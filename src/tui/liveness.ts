@@ -12,7 +12,7 @@
 //     - EPERM             → process exists but we can't signal it → return true.
 //     - Any other error   → conservatively return false.
 //  2. If state.pid is absent (remote-host / older state-file): fall back to an
-//     HTTP HEAD to `${url}/health` with a 500ms timeout.
+//     HTTP GET to `${url}/health` with a 500ms timeout.
 
 import type { PilotState } from "./types"
 
@@ -78,7 +78,7 @@ async function httpIsAlive(url: string): Promise<boolean> {
     const timer = setTimeout(() => controller.abort(), 500)
     try {
       const res = await fetch(url, {
-        method: "HEAD",
+        method: "GET",
         signal: controller.signal,
       })
       return res.ok

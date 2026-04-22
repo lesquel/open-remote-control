@@ -3,6 +3,7 @@ import { CORS_HEADERS, corsPreflightResponse } from "./cors"
 import { jsonError } from "./json"
 import { matchRoute } from "./routes"
 import type { RouteDeps } from "./routes"
+import { MAX_REQUEST_BODY_BYTES } from "../constants"
 
 export interface RemoteServer {
   /**
@@ -21,6 +22,37 @@ function isEaddrInUse(err: unknown): boolean {
   const anyErr = err as { code?: string; message?: string }
   if (anyErr.code === "EADDRINUSE") return true
   return typeof anyErr.message === "string" && /EADDRINUSE|address already in use|port is already in use/i.test(anyErr.message)
+}
+
+/**
+ * Guard against large-body DoS attacks. Call this early in any fetch handler
+ * that will read a request body.
+ *
+ * - If Content-Length is present and exceeds maxBytes, returns a 413 response
+ *   immediately without touching the body stream.
+ * - If Content-Length is absent or zero, returns null so the caller can proceed
+ *   to read the body normally (Bun's `req.json()` / `req.arrayBuffer()` will
+ *   buffer it; callers that need strict enforcement on chunked uploads should
+ *   use a streaming size-limiter instead, but for dashboard traffic this is
+ *   sufficient).
+ *
+ * Returns a Response to send back on violation, or null when the request is
+ * within limits.
+ */
+export function checkBodySize(req: Request, maxBytes = MAX_REQUEST_BODY_BYTES): Response | null {
+  const cl = req.headers.get("content-length")
+  if (cl !== null) {
+    const len = Number(cl)
+    if (Number.isFinite(len) && len > maxBytes) {
+      return jsonError(
+        "PAYLOAD_TOO_LARGE",
+        `Request body exceeds the ${maxBytes}-byte limit`,
+        413,
+        CORS_HEADERS,
+      )
+    }
+  }
+  return null
 }
 
 export function createRemoteServer(deps: RouteDeps): RemoteServer {
@@ -70,6 +102,13 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
             return jsonError("UNAUTHORIZED", "Unauthorized", 401, CORS_HEADERS)
           }
           deps.audit.log("request", { method: req.method, path, ip: getIP(req) })
+        }
+
+        // Reject oversized bodies before they reach any handler that calls
+        // req.json() / req.arrayBuffer(). SSE and GET routes are unaffected.
+        if (req.method === "POST" || req.method === "PATCH" || req.method === "PUT") {
+          const sizeError = checkBodySize(req)
+          if (sizeError) return sizeError
         }
 
         try {

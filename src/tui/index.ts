@@ -2,8 +2,8 @@ import type { TuiPlugin, TuiPluginApi, TuiPluginMeta } from "@opencode-ai/plugin
 import type { PluginOptions } from "@opencode-ai/plugin"
 import { join } from "path"
 import { existsSync, readFileSync } from "fs"
-import { homedir } from "os"
 import { isServerAlive, probeHealth, defaultProbeTarget, type HealthProbe } from "./liveness"
+import { getPluginStateDir, stateFile } from "./paths"
 import { buildDashboardUrl } from "./url-builder"
 
 // ─── State file reader ───────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ interface PilotState {
 
 // Search order for the state/banner files:
 //   1. The current project's .opencode/ folder (process.cwd())
-//   2. The global fallback at ~/.opencode-pilot/
+//   2. The global fallback resolved via getPluginStateDir() (XDG-aware)
 //
 // The global path is what the server writes unconditionally. The project
 // path is a nice-to-have for workspaces that have an .opencode/ folder.
@@ -27,9 +27,10 @@ interface PilotState {
 // ~/Desktop don't have .opencode/, the TUI always reported "Remote
 // control server not running or token not yet available" — even when
 // the server was perfectly healthy.
-function globalDir(): string {
-  return join(homedir(), ".opencode-pilot")
-}
+//
+// readPilotState is async because it probes each candidate with isServerAlive
+// to avoid returning a stale per-project state when the global state file
+// points to an actually-live server.
 
 function readFirst<T>(paths: string[], parse: (raw: string) => T): T | null {
   for (const path of paths) {
@@ -43,21 +44,37 @@ function readFirst<T>(paths: string[], parse: (raw: string) => T): T | null {
   return null
 }
 
-function readPilotState(dir: string): PilotState | null {
-  return readFirst(
-    [
-      join(dir, ".opencode", "pilot-state.json"),
-      join(globalDir(), "pilot-state.json"),
-    ],
-    (raw) => JSON.parse(raw) as PilotState,
-  )
+async function readPilotState(dir: string): Promise<PilotState | null> {
+  const candidates = [
+    join(dir, ".opencode", "pilot-state.json"),
+    stateFile("pilot-state.json"),
+  ]
+
+  const parsed: PilotState[] = []
+  for (const path of candidates) {
+    if (!existsSync(path)) continue
+    try {
+      parsed.push(JSON.parse(readFileSync(path, "utf-8")) as PilotState)
+    } catch {
+      // skip unreadable
+    }
+  }
+
+  // Return the first candidate whose server is actually alive.
+  for (const state of parsed) {
+    if (await isServerAlive(state)) return state
+  }
+
+  // None are alive — return the first readable state so callers can still
+  // display connection info or a meaningful error message.
+  return parsed[0] ?? null
 }
 
 function readBanner(dir: string): string | null {
   return readFirst(
     [
       join(dir, ".opencode", "pilot-banner.txt"),
-      join(globalDir(), "pilot-banner.txt"),
+      stateFile("pilot-banner.txt"),
     ],
     (raw) => raw,
   )
@@ -76,7 +93,7 @@ interface MissingStateToast {
 }
 
 function diagnoseMissingState(probe: HealthProbe, title: string): MissingStateToast {
-  const statePath = join(globalDir(), "pilot-state.json")
+  const statePath = stateFile("pilot-state.json")
   if (probe.kind === "pilot") {
     return {
       title,
@@ -176,7 +193,7 @@ const commands = [
     slash: { name: "remote-control", aliases: ["pilot", "rc"] },
     onSelect: async (api: TuiPluginApi) => {
       const dir = resolveProjectDir(api)
-      const state = readPilotState(dir)
+      const state = await readPilotState(dir)
 
       if (state) {
         if (!(await isServerAlive(state))) {
@@ -228,7 +245,7 @@ const commands = [
     slash: { name: "pilot-token" },
     onSelect: async (api: TuiPluginApi) => {
       const dir = resolveProjectDir(api)
-      const state = readPilotState(dir)
+      const state = await readPilotState(dir)
 
       if (state) {
         if (!(await isServerAlive(state))) {
@@ -270,7 +287,7 @@ const commands = [
     slash: { name: "remote", aliases: ["dashboard"] },
     onSelect: async (api: TuiPluginApi) => {
       const dir = resolveProjectDir(api)
-      const state = readPilotState(dir)
+      const state = await readPilotState(dir)
 
       if (!state) {
         await diagnoseAndToast(api, "OpenCode Pilot — Dashboard")

@@ -23,5 +23,10 @@ export const TUNNEL_URL_PATTERNS = {
 export const HTTP_STATUS = {
   OK: 200, CREATED: 201, NO_CONTENT: 204,
   BAD_REQUEST: 400, UNAUTHORIZED: 401, FORBIDDEN: 403, NOT_FOUND: 404,
-  CONFLICT: 409, INTERNAL: 500, UNAVAILABLE: 503,
+  CONFLICT: 409, PAYLOAD_TOO_LARGE: 413, INTERNAL: 500, UNAVAILABLE: 503,
 } as const
+
+/** Maximum accepted request body size (1 MiB). Requests with a larger
+ *  Content-Length header, or whose streamed body exceeds this, are rejected
+ *  with 413 Payload Too Large. */
+export const MAX_REQUEST_BODY_BYTES = 1_048_576 // 1 MiB

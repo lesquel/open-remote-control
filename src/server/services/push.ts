@@ -26,7 +26,12 @@ export interface PushPayload {
 
 export interface PushService {
   isEnabled(): boolean
-  addSubscription(sub: PushSubscriptionJson): void
+  /**
+   * Add a Web Push subscription. Returns `{ ok: true }` on success.
+   * Returns `{ ok: false; reason }` if the subscription object is malformed or
+   * the endpoint fails SSRF-guard validation (non-HTTPS, localhost, private IP).
+   */
+  addSubscription(sub: PushSubscriptionJson): { ok: true } | { ok: false; reason: string }
   removeSubscription(endpoint: string): void
   broadcast(payload: PushPayload): Promise<void>
   sendTo(endpoint: string, payload: PushPayload): Promise<boolean>
@@ -41,6 +46,47 @@ function isValidSubscription(v: unknown): v is PushSubscriptionJson {
   if (!keys || typeof keys !== "object") return false
   const k = keys as Record<string, unknown>
   return typeof k.p256dh === "string" && typeof k.auth === "string"
+}
+
+/**
+ * Validate a Web Push endpoint URL against SSRF vectors.
+ *
+ * Push endpoints MUST use HTTPS and MUST NOT resolve to localhost, link-local,
+ * or RFC 1918 private ranges. An attacker registering a subscription with an
+ * endpoint pointing at an internal service would turn the server into an SSRF
+ * proxy — each broadcast call would make an outgoing POST to that URL.
+ */
+export function validateEndpoint(raw: string): { ok: true } | { ok: false; reason: string } {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return { ok: false, reason: "invalid URL" }
+  }
+  if (url.protocol !== "https:") {
+    return { ok: false, reason: "endpoint must use https:" }
+  }
+  const host = url.hostname.toLowerCase()
+  // Loopback / unspecified
+  if (
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host === "127.0.0.1" ||
+    host === "::1"
+  ) {
+    return { ok: false, reason: "localhost endpoints are not allowed" }
+  }
+  // RFC 1918 private ranges (IPv4)
+  if (/^10\./.test(host)) return { ok: false, reason: "private IP range not allowed" }
+  if (/^192\.168\./.test(host)) return { ok: false, reason: "private IP range not allowed" }
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return { ok: false, reason: "private IP range not allowed" }
+  // Link-local (IPv4)
+  if (/^169\.254\./.test(host)) return { ok: false, reason: "link-local address not allowed" }
+  // Unique-local / link-local (IPv6)
+  if (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) {
+    return { ok: false, reason: "private IPv6 range not allowed" }
+  }
+  return { ok: true }
 }
 
 export interface PushDeps {
@@ -106,10 +152,22 @@ export function createPushService(deps: PushDeps): PushService {
     return vapid !== null
   }
 
-  function addSubscription(sub: PushSubscriptionJson): void {
-    if (!isValidSubscription(sub)) return
+  function addSubscription(sub: PushSubscriptionJson): { ok: true } | { ok: false; reason: string } {
+    if (!isValidSubscription(sub)) {
+      return { ok: false, reason: "invalid subscription shape" }
+    }
+    const endpointCheck = validateEndpoint(sub.endpoint)
+    if (!endpointCheck.ok) {
+      audit.log("push.subscribe_rejected", { endpoint: sub.endpoint, reason: endpointCheck.reason })
+      logger.warn("push: rejected subscription endpoint (SSRF guard)", {
+        endpoint: sub.endpoint,
+        reason: endpointCheck.reason,
+      })
+      return endpointCheck
+    }
     subscriptions.set(sub.endpoint, sub)
     audit.log("push.subscribed", { endpoint: sub.endpoint })
+    return { ok: true }
   }
 
   function removeSubscription(endpoint: string): void {

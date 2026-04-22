@@ -16,7 +16,7 @@
 //
 // No external deps — plain node:fs + node:os + node:path.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import type { Logger } from "../util/logger"
 import { configFile } from "../util/paths"
@@ -140,6 +140,16 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
     const dir = dirname(path)
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
+      // Best-effort: restrict the config directory to the owner only.
+      // chmod is effectively a no-op on Windows — the call is safe there.
+      try {
+        chmodSync(dir, 0o700)
+      } catch (err) {
+        logger.debug("settings-store: could not chmod config dir (non-critical)", {
+          dir,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
     }
   }
 
@@ -151,8 +161,22 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
     // Remove keys that the patch explicitly set to undefined (not possible via
     // sanitize, but future-proofs us). For now sanitize already drops them.
     const tmp = path + ".tmp"
-    writeFileSync(tmp, JSON.stringify(merged, null, 2), { encoding: "utf-8" })
+    // Write with mode 0600 so the file is owner-readable only from the start.
+    // This matters because config.json contains VAPID private keys and Telegram
+    // tokens. On Windows the mode argument is ignored — that's acceptable.
+    writeFileSync(tmp, JSON.stringify(merged, null, 2), { encoding: "utf-8", mode: 0o600 })
     renameSync(tmp, path)
+    // After rename, normalise permissions in case the file existed previously
+    // with broader permissions (e.g. created by an earlier version of the plugin).
+    // Best-effort: skip on Windows where chmod is a no-op or may throw EPERM.
+    try {
+      chmodSync(path, 0o600)
+    } catch (err) {
+      logger.debug("settings-store: could not chmod config file (non-critical)", {
+        path,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
     return merged
   }
 

@@ -74,23 +74,39 @@ self.addEventListener("activate", (event) => {
   self.clients.claim()
 })
 
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url)
+// Allowlist of URL patterns that are safe to cache. Anything not matching
+// this list (API endpoints, SSE streams, mutations) falls through to the
+// network without touching the cache. This replaces the old denylist that
+// missed authenticated paths like /agents, /providers, /projects,
+// /connect-info, /auth/rotate, /file/list, /file/content, /lsp/status,
+// /mcp/status, etc. — a stale cached response to any of those could leak
+// outdated token/session/project data across sessions.
+const STATIC_ASSET_PATTERNS = [
+  /^\/(?:index\.html)?$/,                                                    // bare origin root
+  /^\/dashboard\/(?:index\.html)?$/,                                         // dashboard shell
+  /\.(?:js|css|png|jpg|jpeg|svg|woff2?|ttf|otf|ico|webmanifest)(?:\?.*)?$/, // typed static files
+  /^\/manifest\.json$/,                                                       // web app manifest
+  /^\/sw\.js$/,                                                               // service worker itself
+]
 
-  // Never cache API calls — those go to the plugin server (same-origin or tunnel)
-  const apiPaths = [
-    "/sessions",
-    "/events",
-    "/permissions",
-    "/status",
-    "/tools",
-    "/project",
-    "/push",
-    "/fs",
-    "/settings",
-  ]
-  const isApiCall = apiPaths.some((p) => url.pathname.startsWith(p))
-  if (isApiCall) return // Pass through, browser handles natively
+function isStaticAsset(url) {
+  const path = new URL(url).pathname
+  return STATIC_ASSET_PATTERNS.some((rx) => rx.test(path))
+}
+
+self.addEventListener("fetch", (event) => {
+  const { request } = event
+
+  // Only intercept GET — never cache mutations (POST, PATCH, DELETE, etc.)
+  if (request.method !== "GET") return
+
+  // Only intercept same-origin requests — avoids caching CDN / Cloudflared
+  const url = new URL(request.url)
+  if (url.origin !== self.location.origin) return
+
+  // Only cache known static assets — everything else (API, SSE, etc.) falls
+  // through to the network untouched, so the browser handles it natively.
+  if (!isStaticAsset(request.url)) return
 
   // Stale-while-revalidate for app shell assets: serve the cache instantly
   // (if present), and in parallel fetch from the network to refresh the
@@ -99,13 +115,13 @@ self.addEventListener("fetch", (event) => {
   // etc.) was sitting on disk but browsers kept running the cached copy.
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
-      const cached = await cache.match(event.request)
-      const networkFetch = fetch(event.request)
+      const cached = await cache.match(request)
+      const networkFetch = fetch(request)
         .then((res) => {
           // Only cache successful, same-origin basic responses (skip opaque
           // cross-origin + error responses to avoid polluting the cache).
           if (res && res.ok && res.type === "basic") {
-            cache.put(event.request, res.clone()).catch(() => {})
+            cache.put(request, res.clone()).catch(() => {})
           }
           return res
         })
@@ -122,7 +138,7 @@ self.addEventListener("fetch", (event) => {
       // navigation requests if we're offline.
       const res = await networkFetch
       if (res) return res
-      if (event.request.mode === "navigate") {
+      if (request.mode === "navigate") {
         return (await caches.match("./index.html")) ?? Response.error()
       }
       return Response.error()

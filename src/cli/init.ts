@@ -26,6 +26,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { homedir, platform } from "node:os"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
+import { getPluginStateDir, stateFile } from "../tui/paths"
 
 const PACKAGE_NAME = "@lesquel/opencode-pilot"
 
@@ -488,7 +489,7 @@ function removePackage(configDir: string, installer: string): boolean {
 
 function cleanupStateDir(keepConfig: boolean): string[] {
   const removed: string[] = []
-  const dir = join(homedir(), ".opencode-pilot")
+  const dir = getPluginStateDir()
   if (!existsSync(dir)) return removed
 
   const ephemeral = ["pilot-state.json", "pilot-banner.txt"]
@@ -733,7 +734,7 @@ async function doctorCheckHealthEndpoint(): Promise<DoctorFinding> {
 }
 
 function doctorCheckStateFile(): DoctorFinding {
-  const path = join(homedir(), ".opencode-pilot", "pilot-state.json")
+  const path = stateFile("pilot-state.json")
   if (!existsSync(path)) {
     return {
       label: "Global pilot-state.json",
