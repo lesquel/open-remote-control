@@ -4905,6 +4905,10 @@ body {
   justify-content: center;
   z-index: 1000;
 }
+/* Honour the HTML `hidden` attribute even when the class sets display:flex —
+ * without this, <div class="modal-backdrop" hidden> stays visible because the
+ * class wins over the user-agent `[hidden]` default. */
+.modal-backdrop[hidden] { display: none !important; }
 .modal-panel {
   background: var(--surface);
   border: 1px solid var(--border);

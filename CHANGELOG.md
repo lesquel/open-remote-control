@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.11] — 2026-04-22
+
+Fixed — the Settings modal (gear icon) refused to open.
+
+### Two problems, both real
+
+**1. CSS overrode the `hidden` HTML attribute.** The markup was `<div id="settings-modal" class="modal-backdrop" hidden>`. The `hidden` attribute relies on the user-agent default `display: none`, but `.modal-backdrop { display: flex }` from our stylesheet overrode that default. Result: toggling `modal.hidden = true/false` in JS had no visible effect, since the CSS kept forcing `display: flex`. The modal stayed in whatever visibility state the initial paint left it in.
+
+Fix: added `.modal-backdrop[hidden] { display: none !important; }` to `styles.css` so the `hidden` attribute is actually honoured.
+
+**2. `initSettings` could be silently aborted.** Same class of regression that hit `initSessions` in v1.16.0 → v1.16.7. Unnecessary `document.getElementById(id).addEventListener(...)` chains throw `TypeError` the moment any ID is missing, and the rest of `initSettings` stops — including the `settings-btn` gear-icon handler.
+
+Fix: optional chaining (`?.`) on every `addEventListener` wire-up in `initSettings` and `initPluginConfig`. Also null-guarded `loadPluginConfig` which touches `plugin-config-status` before any work. Any one missing element can no longer stop the rest from wiring.
+
+### Port field: already configurable, just couldn't be reached
+
+The port field (`#pcf-port`) was already wired in the Connection tab — `FIELD_MAP.port = { id: 'pcf-port', kind: 'int' }`, with bounds-validation, save-via-PATCH `/settings`, and the "restart required" note that appears when you touch fields like `port`, `host`, or `tunnel`. It just needed the modal to actually open.
+
+After installing v1.16.11:
+
+1. Click the gear (⚙) in the header.
+2. Go to the **Connection** tab.
+3. Change **Port**. The "Changes to these fields require an OpenCode restart" note lights up.
+4. Click **Save**.
+5. Restart OpenCode. The new port takes effect.
+
+### Why initSessions didn't teach us to blind initSettings at the same time
+
+Good question. v1.16.7 blinded `initSessions` because the crash was visible via the v1.16.6 `bootstrap().catch()`. `initSettings` runs AFTER `initSessions` in the bootstrap order, and as long as `initSessions` completes (which it now does thanks to v1.16.7), `initSettings` was reachable and its IDs all existed — nothing threw during that session. But the class-of-bug was latent: one markup change and it would have reproduced the same symptom. v1.16.11 preemptively closes that door.
+
+### Small CSS rule, big payoff
+
+The `.modal-backdrop[hidden] { display: none !important; }` rule also hardens the other modals that use the same pattern (help, connect, file viewer, command palette, debug). They all now honour `hidden` as the single source of truth for visibility, regardless of what the class stylesheet says.
+
+---
+
 ## [1.16.10] — 2026-04-22
 
 Cleanup release. v1.16.9 confirmed working: user logs showed `[pilot:event-hook] clients=1` + `[pilot:bus-emit] clients=1` during a prompt, and the browser received `[sse] onmessage message.part.updated`, `message.updated`, `session.status`, `session.idle`, `session.updated`, `session.diff` — all in live time. The singleton event bus was the real root cause.

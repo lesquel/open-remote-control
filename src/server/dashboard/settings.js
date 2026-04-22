@@ -122,17 +122,22 @@ function closeSettingsModal() {
 }
 
 export function initSettings() {
-  document.getElementById('settings-btn').addEventListener('click', openSettingsModal)
+  // Every `addEventListener` below is wrapped in optional chaining (`?.`).
+  // Same class of regression that bit `initSessions` in v1.16.0 → v1.16.7:
+  // a single missing element throws TypeError and aborts the rest of init,
+  // so the gear-icon listener never gets attached and the modal refuses to
+  // open. This blinds it against any future markup change.
+  document.getElementById('settings-btn')?.addEventListener('click', openSettingsModal)
 
-  document.getElementById('settings-close').addEventListener('click', closeSettingsModal)
+  document.getElementById('settings-close')?.addEventListener('click', closeSettingsModal)
 
-  document.getElementById('s-sound').addEventListener('change', e => {
+  document.getElementById('s-sound')?.addEventListener('change', e => {
     const settings = { ...getState().settings, sound: e.target.checked }
     setState({ settings })
     saveSettings()
   })
 
-  document.getElementById('s-notif').addEventListener('change', async e => {
+  document.getElementById('s-notif')?.addEventListener('change', async e => {
     let settings = { ...getState().settings, notif: e.target.checked }
     setState({ settings })
     saveSettings()
@@ -155,14 +160,14 @@ export function initSettings() {
     }
   })
 
-  document.getElementById('s-theme').addEventListener('change', e => {
+  document.getElementById('s-theme')?.addEventListener('change', e => {
     const settings = { ...getState().settings, theme: e.target.checked }
     setState({ settings })
     saveSettings()
     applySettings()
   })
 
-  document.getElementById('s-tools').addEventListener('change', e => {
+  document.getElementById('s-tools')?.addEventListener('change', e => {
     const settings = { ...getState().settings, tools: e.target.checked }
     setState({ settings })
     saveSettings()
@@ -287,9 +292,9 @@ function initPluginConfig() {
     })
   })
 
-  document.getElementById('settings-save').addEventListener('click', onSave)
-  document.getElementById('pcf-reset').addEventListener('click', onReset)
-  document.getElementById('pcf-vapid-generate').addEventListener('click', onGenerateVapid)
+  document.getElementById('settings-save')?.addEventListener('click', onSave)
+  document.getElementById('pcf-reset')?.addEventListener('click', onReset)
+  document.getElementById('pcf-vapid-generate')?.addEventListener('click', onGenerateVapid)
 
   // Inline validation hints (advisory only — do not block save)
   attachInlineValidation('pcf-telegram-token', v => {
@@ -320,16 +325,18 @@ function initPluginConfig() {
 
 async function loadPluginConfig() {
   const statusEl = document.getElementById('plugin-config-status')
-  statusEl.style.display = 'none'
+  if (statusEl) statusEl.style.display = 'none'
   try {
     const data = await fetchPluginSettings()
     _lastLoadedSnapshot = data
     applySnapshotToInputs(data)
     updateRestartNote(data)
   } catch (err) {
-    statusEl.className = 'plugin-config-status error'
-    statusEl.textContent = 'Could not load plugin settings: ' + (err?.message || err)
-    statusEl.style.display = 'block'
+    if (statusEl) {
+      statusEl.className = 'plugin-config-status error'
+      statusEl.textContent = 'Could not load plugin settings: ' + (err?.message || err)
+      statusEl.style.display = 'block'
+    }
   }
 }
 
