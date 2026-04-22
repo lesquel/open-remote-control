@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.10] — 2026-04-22
+
+Cleanup release. v1.16.9 confirmed working: user logs showed `[pilot:event-hook] clients=1` + `[pilot:bus-emit] clients=1` during a prompt, and the browser received `[sse] onmessage message.part.updated`, `message.updated`, `session.status`, `session.idle`, `session.updated`, `session.diff` — all in live time. The singleton event bus was the real root cause.
+
+### Changed — diagnostic markers gated behind flags
+
+Now that live updates are working, the noisy markers are silenced by default but kept accessible:
+
+- **Server-side** `[pilot:bus-emit]` and `[pilot:event-hook]` → gated behind `PILOT_DEBUG_BUS=1` (environment variable). The hook wrapper itself was simplified back to `event: eventHook` — no runtime overhead when the flag is off.
+- **Client-side** `[sse-boot]` markers (opening EventSource, onopen, onerror, watchdog) → gated behind the existing `localStorage['pilot:debug:sse']='1'` flag.
+
+If a future SSE issue appears, flip either flag to get the full trace back.
+
+### On the noise you saw in the OpenCode terminal
+
+The logs like `[pilot:bus-emit] tui.toast.show clients=0` that appeared in the OpenCode terminal were NOT errors. `tui.toast.show` is an internal event the TUI plugin emits to display toast notifications inside the terminal UI — the dashboard has no business receiving them, so `clients=0` is the correct state. The loud output was purely the diagnostic markers from v1.16.8 / v1.16.9. This release stops that unless you explicitly enable the flag.
+
+### What everything accumulates into
+
+Starting from v1.16.10 the plugin has, for SSE alone, defences at every layer:
+
+- **Process singleton bus** (v1.16.9) — the real fix; all contexts share one bus.
+- **Passive-gate narrowed** (v1.16.4) — only `permission.ask` skips when passive.
+- **Stream buffering defences** (v1.16.2) — 2KiB padding, 3s keepalive, `X-Accel-Buffering: no`, `Cache-Control: no-store`.
+- **initSessions is null-safe** (v1.16.7) — every `addEventListener` in bootstrap guards against missing DOM.
+- **Early `connect()` in bootstrap** (v1.16.6) — stream opens immediately after token validation.
+- **`connect()` is idempotent** (v1.16.6) — safe to call multiple times.
+- **5-second watchdog** (v1.16.6) — auto-recovers if the stream ever drops.
+- **`bootstrap().catch()`** (v1.16.6) — surfaces any unhandled error instead of dying silent.
+- **Dashboard client-side normalisation** (v1.15.0) — `ev.properties ?? ev.data` shape tolerance.
+- **EventBus client lifecycle** (v1.15.0) — cancel and ping-failure both clean up the Set.
+
+Nothing in this stack is being removed. Each piece solved a distinct real problem.
+
+---
+
 ## [1.16.9] — 2026-04-22
 
 **The actual actual root cause** of the live-updates bug that survived every single SSE fix from v1.14.2 through v1.16.8. The server-side diagnostic markers from v1.16.8 finally revealed it:

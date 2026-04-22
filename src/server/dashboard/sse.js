@@ -133,10 +133,16 @@ export function closeEventSource() {
   _closeEventSource()
 }
 
+// Opt-in boot-time SSE tracing. Set localStorage['pilot:debug:sse']='1' to
+// revive the [sse-boot] markers that helped diagnose the pre-v1.16.9 bug.
+function _sseBootDebug() {
+  try { return localStorage.getItem('pilot:debug:sse') === '1' } catch { return false }
+}
+
 export function connect() {
   const { token } = getState()
   if (!token) {
-    console.warn('[sse-boot] connect() called without a token — SSE will NOT start. State may not be hydrated yet.')
+    if (_sseBootDebug()) console.warn('[sse-boot] connect() called without a token — SSE will NOT start. State may not be hydrated yet.')
     return
   }
 
@@ -157,14 +163,12 @@ export function connect() {
   const base = buildApiUrl('/events')
   const sep = base.includes('?') ? '&' : '?'
   const url = `${base}${sep}token=${encodeURIComponent(token)}`
-  // Unconditional boot log so we can confirm the EventSource is actually
-  // being created and the URL is well-formed. No-op once SSE is working.
-  console.info('[sse-boot] opening EventSource →', url.replace(/token=[^&]+/, 'token=***'))
+  if (_sseBootDebug()) console.info('[sse-boot] opening EventSource →', url.replace(/token=[^&]+/, 'token=***'))
   eventSource = new EventSource(url)
 
   eventSource.onopen = () => {
     const wasReconnect = _reconnectAttempts > 0
-    console.info('[sse-boot] onopen fired — SSE connection is live')
+    if (_sseBootDebug()) console.info('[sse-boot] onopen fired — SSE connection is live')
     backoffMs = BACKOFF_MIN          // reset backoff on successful connection
     _lastConnectTime = Date.now()
     _reconnectAttempts = 0
@@ -187,7 +191,7 @@ export function connect() {
   }
 
   function onError(ev) {
-    console.warn('[sse-boot] onerror fired — SSE stream errored/disconnected.', {
+    if (_sseBootDebug()) console.warn('[sse-boot] onerror fired — SSE stream errored/disconnected.', {
       readyState: eventSource?.readyState,
       reconnectAttempts: _reconnectAttempts,
       backoffMs,
@@ -548,9 +552,9 @@ export function startSseWatchdog() {
     if (!token) return
     const rs = eventSource?.readyState
     if (!eventSource || rs === 2 /* CLOSED */) {
-      console.info('[sse-boot] watchdog: no live stream, calling connect()', { readyState: rs })
+      if (_sseBootDebug()) console.info('[sse-boot] watchdog: no live stream, calling connect()', { readyState: rs })
       try { connect() } catch (err) {
-        console.warn('[sse-boot] watchdog reconnect failed', err)
+        if (_sseBootDebug()) console.warn('[sse-boot] watchdog reconnect failed', err)
       }
     }
   }, 5_000)

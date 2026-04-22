@@ -421,16 +421,7 @@ export default {
     // looked exactly like "dashboard never updates without reload" and
     // consumed four release cycles before the audit caught it.
     return {
-      event: async (input) => {
-        // Unconditional server-side marker. Goes to OpenCode's log panel
-        // (stderr). Lets us confirm in seconds whether the SDK is actually
-        // firing the `event` hook with SDK events (message.part.delta,
-        // message.updated, etc) or if the plugin is receiving nothing.
-        try {
-          console.error(`[pilot:event-hook] ${input?.event?.type ?? 'unknown'} clients=${eventBus.clientCount()}`)
-        } catch (_) {}
-        return eventHook(input)
-      },
+      event: eventHook,
       "permission.ask": async (input, output) => {
         if (role === "passive") return
         return permissionAskHook(input, output)
