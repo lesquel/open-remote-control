@@ -762,21 +762,27 @@ function initTabs() {
 export function initSessions() {
   initTabs()
 
-  document.getElementById('send-btn').addEventListener('click', sendPrompt)
+  // Defensive null checks on every getElementById to keep bootstrap resilient.
+  // None of these elements should ever be missing, but if the markup changes
+  // (as happened with #no-session-new-btn in v1.16.0), a null here used to
+  // abort the bootstrap silently — and with it, sseConnect().
+  document.getElementById('send-btn')?.addEventListener('click', sendPrompt)
 
-  document.getElementById('prompt-input').addEventListener('keydown', e => {
-    if ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Enter' && e.ctrlKey)) {
-      e.preventDefault()
-      sendPrompt()
-    }
-  })
+  const promptInput = document.getElementById('prompt-input')
+  if (promptInput) {
+    promptInput.addEventListener('keydown', e => {
+      if ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Enter' && e.ctrlKey)) {
+        e.preventDefault()
+        sendPrompt()
+      }
+    })
+    promptInput.addEventListener('input', function() {
+      this.style.height = ''
+      this.style.height = Math.min(this.scrollHeight, 120) + 'px'
+    })
+  }
 
-  document.getElementById('prompt-input').addEventListener('input', function() {
-    this.style.height = ''
-    this.style.height = Math.min(this.scrollHeight, 120) + 'px'
-  })
-
-  document.getElementById('abort-btn').addEventListener('click', async () => {
+  document.getElementById('abort-btn')?.addEventListener('click', async () => {
     const { activeSession } = getState()
     if (!activeSession) return
     try {
@@ -787,9 +793,14 @@ export function initSessions() {
     }
   })
 
-  document.getElementById('header-new-btn').addEventListener('click', createSession)
-  document.getElementById('new-session-big').addEventListener('click', createSession)
-  document.getElementById('no-session-new-btn').addEventListener('click', createSession)
+  // New Session wireups. The #no-session-new-btn was removed in v1.16.0 —
+  // renderMessages now produces a declarative button with
+  // data-action="create-session" handled by main.js's delegation listener.
+  // Wrap all lookups in null checks so one missing element can never crash
+  // the whole bootstrap (was the real root cause of "SSE doesn't start" —
+  // the thrown TypeError aborted before sseConnect ever ran).
+  document.getElementById('header-new-btn')?.addEventListener('click', createSession)
+  document.getElementById('new-session-big')?.addEventListener('click', createSession)
 
   const agentFilterSelect = document.getElementById('agent-filter')
   if (agentFilterSelect) {

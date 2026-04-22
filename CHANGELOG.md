@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.7] — 2026-04-22
+
+**The actual root cause of the "dashboard doesn't update live" saga.** v1.16.6's `bootstrap().catch()` finally surfaced the real exception that had been aborting the bootstrap silently since v1.16.0:
+
+```
+TypeError: can't access property "addEventListener", document.getElementById(...) is null
+    initSessions sessions.js:792
+```
+
+### The trail in plain language
+
+v1.16.0 (Wave 5 UX) changed how the "no session" empty state is rendered. `messages.js::renderMessages` now produces markup with declarative `data-action="create-session"` buttons, handled by the global click delegation listener in `main.js`. The old `#no-session-new-btn` element was removed from that dynamic markup.
+
+What nobody noticed: `sessions.js::initSessions` at line 792 still had this:
+
+```js
+document.getElementById('no-session-new-btn').addEventListener('click', createSession)
+```
+
+The element only exists in the static `index.html` when the page first loads. The moment `renderMessages` runs (which happens early, before `initSessions`), the messages area's innerHTML is replaced and that button is gone. By the time initSessions runs, `getElementById` returns `null`, `.addEventListener` throws TypeError, and the bootstrap aborts mid-function.
+
+Every step of `bootstrap()` after that line was silently skipped — **including `sseConnect()`**. The server was healthy, the SSE endpoint was working, the hook fix from v1.16.4 was active. The dashboard just never even tried to open the stream, because the bootstrap died two steps earlier.
+
+### The fix
+
+1. Remove the dead `document.getElementById('no-session-new-btn').addEventListener(...)` line. The replacement markup uses `data-action="create-session"` which is already wired by the global delegation listener in `main.js`.
+2. Wrap EVERY other `document.getElementById(id).addEventListener(...)` in `initSessions` with optional chaining (`?.`) so a future markup change for any of `send-btn`, `prompt-input`, `abort-btn`, `header-new-btn`, `new-session-big` can't repeat this class of regression.
+
+### Why the fix in v1.16.6 (early SSE + watchdog) was necessary but not sufficient
+
+Without the watchdog, this bug would have been invisible on every environment — same as it was for the user. With the watchdog, the user still saw `[bootstrap] fatal error` in the console, which was the breadcrumb that finally pointed at the right line. The two fixes complement each other:
+
+- **v1.16.6** made the failure visible and self-healing for the SSE stream.
+- **v1.16.7** fixes the actual bug so the UI is fully initialized too, not just "streaming events successfully to a half-broken UI."
+
+### Lesson
+
+When an initialization function does multiple `document.getElementById(...)` without null checks, one missing element can take down everything after it. Every module that touches the DOM in a bootstrap path should be defensive. We've blinded the whole `initSessions` now; an audit pass on other init functions is worth doing separately.
+
+---
+
 ## [1.16.6] — 2026-04-22
 
 Defensive hardening of the SSE bootstrap. After v1.16.4 fixed the real root cause (the `event` hook passive gate regression), a user still reported that updates weren't flowing on their browser — with the code verified correct in-place. The symptom pointed at bootstrap-time silent failures, not a code bug. v1.16.6 makes the SSE bootstrap **robust by design** so no environment (stale state, flaky import, unexpected exception in an unrelated module) can leave the stream dead.
