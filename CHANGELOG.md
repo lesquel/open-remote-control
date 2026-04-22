@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.14.1] — 2026-04-22
+
+### Fixed — `/remote` now opens the *active* project, not the launch cwd
+
+**The report**
+
+Running `/remote` (or `/dashboard`, `/remote-control`, `/pilot-token`) from a project the user had just opened would show the dashboard with **other** projects as tabs but never the one the command was run from. If the active project already had a tab in localStorage, it should have auto-focused; instead nothing happened. The user reported this as long-standing — "I've tried to fix this several times and it doesn't work."
+
+**The root cause**
+
+All three slash commands in `src/tui/index.ts` used `process.cwd()` to build the `#dir=<encoded>` hash the dashboard reads to auto-focus the project tab. But `process.cwd()` in an OpenCode plugin is the cwd of the *OpenCode process at launch* — it does NOT change when the user navigates to another workspace inside the TUI, and it never matched the active project unless the user happened to `cd` into that project before typing `opencode`.
+
+So `buildDashboardUrl(raw, process.cwd())` always encoded the wrong directory, and `resolveDirFromHash()` on the dashboard side either created a tab for a stale cwd or matched nothing at all.
+
+**The fix**
+
+New helper `resolveProjectDir(api)` reads `api.state.path.directory` (the TUI's live active project, exposed on `TuiPluginApi`) and falls back to `process.cwd()` only if state isn't ready. All three slash-command `onSelect` handlers now use it. This mirrors the pattern OpenCode's own plugins follow (`opencode/.../feature-plugins/*/footer.tsx`: `const dir = props.n.directory || process.cwd()`).
+
+**Files**
+
+- `src/tui/index.ts` — added `resolveProjectDir()` helper and wired all 3 `onSelect`.
+
+---
+
 ## [1.14.0] — 2026-04-21
 
 Audit-driven release: user-reported review across bugs, UI, hardcoding, and onboarding. 27 files touched, 3 new files, +488 / -101 LOC. No breaking changes to HTTP API or env vars.

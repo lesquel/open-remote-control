@@ -138,6 +138,21 @@ async function diagnoseAndToast(api: TuiPluginApi, title: string): Promise<void>
   })
 }
 
+// ─── Project directory resolution ────────────────────────────────────────────
+// `process.cwd()` is the cwd of the OpenCode process at launch — it does NOT
+// follow the user's active project inside the TUI. When the user opens a
+// second project or switches workspaces, cwd stays stuck at the original
+// launch directory, so `/remote` would build a dashboard URL pointing at the
+// wrong folder and the dashboard could never auto-focus the matching tab.
+//
+// The TUI API exposes the live active directory on `api.state.path.directory`
+// (mirrors OpenCode's own `n.directory || process.cwd()` pattern used in
+// `opencode/.../feature-plugins/*/footer.tsx`). Fall back to cwd only if the
+// state is not ready yet (rare — slash commands run after mount).
+function resolveProjectDir(api: TuiPluginApi): string {
+  return api.state?.path?.directory || process.cwd()
+}
+
 // ─── Command definitions ─────────────────────────────────────────────────────
 
 const commands = [
@@ -149,7 +164,7 @@ const commands = [
     suggested: true,
     slash: { name: "remote-control", aliases: ["pilot", "rc"] },
     onSelect: async (api: TuiPluginApi) => {
-      const dir = process.cwd()
+      const dir = resolveProjectDir(api)
       const state = readPilotState(dir)
 
       if (state) {
@@ -201,7 +216,7 @@ const commands = [
     category: "Pilot",
     slash: { name: "pilot-token" },
     onSelect: async (api: TuiPluginApi) => {
-      const dir = process.cwd()
+      const dir = resolveProjectDir(api)
       const state = readPilotState(dir)
 
       if (state) {
@@ -243,7 +258,7 @@ const commands = [
     suggested: true,
     slash: { name: "remote", aliases: ["dashboard"] },
     onSelect: async (api: TuiPluginApi) => {
-      const dir = process.cwd()
+      const dir = resolveProjectDir(api)
       const state = readPilotState(dir)
 
       if (!state) {
