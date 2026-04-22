@@ -23,8 +23,16 @@ export function showNextPerm() {
 
   try {
     const p = pendingPerms[0]
-    document.getElementById('perm-desc').textContent =
-      p.description ?? p.command ?? p.tool ?? JSON.stringify(p)
+    const descEl = document.getElementById('perm-desc')
+    if (descEl) {
+      descEl.textContent = p.description ?? p.command ?? p.tool ?? JSON.stringify(p)
+      if (pendingPerms.length > 1) {
+        const badge = document.createElement('span')
+        badge.className = 'badge'
+        badge.textContent = ` (1/${pendingPerms.length})`
+        descEl.appendChild(badge)
+      }
+    }
     banner.classList.add('visible')
 
     if (settings.sound) playNotifySound()

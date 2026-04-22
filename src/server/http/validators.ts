@@ -237,8 +237,9 @@ export function validateFsGlob(
 // semantics); absent fields are left untouched on the server.
 
 import type { PilotSettings } from "../services/settings-store"
+import { LOCALHOST_ADDRESSES } from "../constants"
 
-const VALID_HOSTS = new Set(["127.0.0.1", "0.0.0.0", "localhost", "::1"])
+const VALID_HOSTS = new Set<string>(LOCALHOST_ADDRESSES)
 // Loose IPv4 regex — four octets 0-255; good enough to catch typos without
 // pretending to handle IPv6 edge cases.
 const IPV4_RE = /^(25[0-5]|2[0-4]\d|[01]?\d?\d)(\.(25[0-5]|2[0-4]\d|[01]?\d?\d)){3}$/

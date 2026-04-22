@@ -2,6 +2,7 @@ import type { TelegramConfig } from "../config"
 import type { PermissionQueue } from "./permission-queue"
 import type { Logger } from "../util/logger"
 import { createCircuitBreaker } from "../util/circuit-breaker"
+import { TELEGRAM_ERROR_MAX_CHARS } from "../constants"
 
 /** Default fetch timeout for all Telegram API calls. */
 const DEFAULT_FETCH_TIMEOUT_MS = 10_000
@@ -148,7 +149,7 @@ export function createTelegramBot(
     error: string,
   ): Promise<void> {
     await sendMessage(
-      `❌ Session error\n\n<b>${escapeHtml(title)}</b>\n\n<code>${escapeHtml(error.slice(0, 500))}</code>`,
+      `❌ Session error\n\n<b>${escapeHtml(title)}</b>\n\n<code>${escapeHtml(error.slice(0, TELEGRAM_ERROR_MAX_CHARS))}</code>`,
     )
   }
 

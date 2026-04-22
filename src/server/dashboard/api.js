@@ -18,6 +18,16 @@ function handleUnauthorized() {
 }
 
 /**
+ * Reset the tokenInvalidated guard after a successful re-auth.
+ * Called from auth.js after a new token is saved so that subsequent
+ * 401s (e.g. from a second OpenCode restart) can surface the recovery
+ * UI again instead of being silently swallowed.
+ */
+export function resetTokenInvalidated() {
+  tokenInvalidated = false
+}
+
+/**
  * Base URL for API calls.
  * - Embedded mode (localhost): empty string → same-origin fetch
  * - Standalone mode (GitHub Pages / other host): full tunnel URL stored in state

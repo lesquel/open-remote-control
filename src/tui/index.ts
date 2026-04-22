@@ -265,7 +265,17 @@ const commands = [
       const rawUrl = `http://${state.host}:${state.port}/?token=${state.token}`
       const url = buildDashboardUrl(rawUrl, dir)
 
-      // Platform-specific open command
+      // Platform-specific open command. Skipped when PILOT_NO_AUTO_OPEN=1.
+      if (process.env.PILOT_NO_AUTO_OPEN === "1") {
+        api.ui.toast({
+          title: "OpenCode Pilot — Dashboard",
+          message: `Dashboard URL:\n\n${url}`,
+          variant: "info",
+          duration: 15000,
+        })
+        return
+      }
+
       let cmd: string[]
       if (process.platform === "darwin") {
         cmd = ["open", url]

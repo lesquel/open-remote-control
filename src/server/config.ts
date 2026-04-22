@@ -14,7 +14,7 @@
 // in process.env, so config resolution passes the original shell snapshot
 // separately (`shellEnv`) to distinguish the two.
 
-import { DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT } from "./constants"
+import { DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, VAPID_DEFAULT_SUBJECT } from "./constants"
 import type { PilotSettings } from "./services/settings-store"
 
 export type TunnelProvider = "off" | "cloudflared" | "ngrok"
@@ -152,7 +152,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       ? {
           publicKey: env.PILOT_VAPID_PUBLIC_KEY,
           privateKey: env.PILOT_VAPID_PRIVATE_KEY,
-          subject: env.PILOT_VAPID_SUBJECT ?? "mailto:admin@opencode-pilot.local",
+          subject: env.PILOT_VAPID_SUBJECT ?? VAPID_DEFAULT_SUBJECT,
         }
       : null
 

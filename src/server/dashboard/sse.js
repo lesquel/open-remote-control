@@ -21,6 +21,8 @@ import { playNotifySound } from './notif-sound.js'
 
 let eventSource = null
 let reconnectTimer = null
+// Tracks (eventName, handler) pairs so they can be removed symmetrically on close
+let _activeListeners = []
 // Backoff state: starts at 1s, doubles to max 30s, resets on successful open
 let backoffMs = LIMITS.SSE_BACKOFF_MIN_MS
 const BACKOFF_MIN = LIMITS.SSE_BACKOFF_MIN_MS
@@ -78,13 +80,26 @@ function setConnectionStatus(status) {
   dot.title = `SSE: ${status} · ${timeStr}${attemptsStr}`
 }
 
+function _closeEventSource() {
+  if (!eventSource) return
+  // Remove all named listeners before closing to prevent stale handlers firing
+  for (const [name, handler] of _activeListeners) {
+    eventSource.removeEventListener(name, handler)
+  }
+  _activeListeners = []
+  eventSource.onmessage = null
+  eventSource.onerror = null
+  eventSource.onopen = null
+  eventSource.close()
+  eventSource = null
+}
+
 export function connect() {
   const { token } = getState()
   if (!token) return
 
   if (eventSource) {
-    eventSource.close()
-    eventSource = null
+    _closeEventSource()
   }
 
   // Build /events URL via api.js so activeDirectory is appended when set
@@ -103,23 +118,26 @@ export function connect() {
     loadSessions(true)
   }
 
-  eventSource.onerror = () => {
+  function onError() {
     setConnectionStatus('reconnecting')
     setState({ sse: { connected: false } })
-    eventSource.close()
-    eventSource = null
+    _closeEventSource()
     scheduleReconnect()
   }
+  eventSource.onerror = onError
 
-  eventSource.onmessage = e => {
+  function onMessage(e) {
     try { handleEvent(JSON.parse(e.data)) } catch (_) {}
   }
+  eventSource.onmessage = onMessage
 
   // Named event types
   SSE_EVENTS.forEach(name => {
-    eventSource.addEventListener(name, e => {
+    function onNamedEvent(e) {
       try { handleEvent({ type: name, data: JSON.parse(e.data) }) } catch (_) {}
-    })
+    }
+    eventSource.addEventListener(name, onNamedEvent)
+    _activeListeners.push([name, onNamedEvent])
   })
 }
 
@@ -133,8 +151,7 @@ subscribe('sse-dir', (state) => {
   _lastSSEDirectory = dir
   // Only reconnect if we already have a live connection
   if (eventSource) {
-    eventSource.close()
-    eventSource = null
+    _closeEventSource()
     connect()
   }
 })

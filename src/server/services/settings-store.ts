@@ -17,9 +17,9 @@
 // No external deps — plain node:fs + node:os + node:path.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
-import { homedir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname } from "node:path"
 import type { Logger } from "../util/logger"
+import { configFile } from "../util/paths"
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -86,7 +86,7 @@ export interface SettingsStoreDeps {
 }
 
 function defaultFilePath(): string {
-  return join(homedir(), ".opencode-pilot", "config.json")
+  return configFile("config.json")
 }
 
 /** Strip unknown keys and invalid types so a malformed file can't poison config. */

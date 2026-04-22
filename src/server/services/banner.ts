@@ -1,10 +1,10 @@
 import { mkdirSync, writeFileSync } from "fs"
-import { homedir } from "os"
 import { dirname, join } from "path"
 import { generateQR } from "./qr"
+import { stateFile } from "../util/paths"
 
 export function globalBannerPath(): string {
-  return join(homedir(), ".opencode-pilot", "pilot-banner.txt")
+  return stateFile("pilot-banner.txt")
 }
 
 function safeWrite(path: string, content: string): void {

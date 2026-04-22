@@ -18,7 +18,8 @@ import { generateToken } from "../util/auth"
 import { updateStateToken } from "../services/state"
 import { getLocalIP } from "../util/network"
 import { getTunnelInfo } from "../services/tunnel"
-import { PILOT_VERSION } from "../constants"
+import { PILOT_VERSION, LOCALHOST_ADDRESSES, VAPID_DEFAULT_SUBJECT } from "../constants"
+import { MSG } from "../strings"
 import {
   RESTART_REQUIRED_FIELDS,
   envKeyFor,
@@ -298,7 +299,7 @@ export async function getStatus({ deps }: RouteContext): Promise<Response> {
 export async function listSessions({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.list({ query: { ...dirParam } })
   const statuses = await deps.client.session.status({ query: { ...dirParam } })
   return json(
@@ -311,7 +312,7 @@ export async function listSessions({ url, deps }: RouteContext): Promise<Respons
 export async function createSession({ req, url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
 
   // Body is optional for POST /sessions (no-title session). Tolerate:
   // - no body
@@ -326,7 +327,7 @@ export async function createSession({ req, url, deps }: RouteContext): Promise<R
       try {
         rawBody = JSON.parse(raw)
       } catch {
-        return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+        return jsonError("INVALID_JSON", "Failed to parse the request body. Try refreshing the dashboard; if it persists, restart OpenCode.", 400, CORS_HEADERS)
       }
     }
   }
@@ -345,7 +346,7 @@ export async function createSession({ req, url, deps }: RouteContext): Promise<R
 export async function getSession({ url, params, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.get({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? null, result.error ? 404 : 200, CORS_HEADERS)
 }
@@ -358,13 +359,13 @@ export async function updateSession({
 }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
 
   let rawBody: unknown
   try {
     rawBody = await req.json()
   } catch {
-    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+    return jsonError("INVALID_JSON", "Failed to parse the request body. Try refreshing the dashboard; if it persists, restart OpenCode.", 400, CORS_HEADERS)
   }
 
   const validation = validateUpdateSession(rawBody)
@@ -399,7 +400,7 @@ export async function deleteSession({
 }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
 
   const sessionID = params.id
 
@@ -452,7 +453,7 @@ export async function getSessionMessages({
 }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.messages({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
@@ -460,7 +461,7 @@ export async function getSessionMessages({
 export async function getSessionDiff({ url, params, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.diff({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
@@ -476,7 +477,7 @@ export async function getSessionChildren({
 }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.children({ path: { id: params.id }, query: { ...dirParam } })
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
@@ -489,12 +490,12 @@ export async function postSessionPrompt({
 }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   let rawBody: unknown
   try {
     rawBody = await req.json()
   } catch {
-    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+    return jsonError("INVALID_JSON", "Failed to parse the request body. Try refreshing the dashboard; if it persists, restart OpenCode.", 400, CORS_HEADERS)
   }
 
   const validation = validatePromptBody(rawBody)
@@ -537,7 +538,7 @@ export async function postSessionPrompt({
 export async function abortSession({ url, params, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   deps.audit.log("session.aborted", { sessionID: params.id })
   const result = await deps.client.session.abort({ path: { id: params.id }, query: { ...dirParam } })
   return json({ ok: true }, result.error ? 500 : 200, CORS_HEADERS)
@@ -582,7 +583,7 @@ export async function streamEvents({ req, url, deps }: RouteContext): Promise<Re
 
   if (!headerValid && !queryValid) {
     deps.audit.log("auth.failed", { path: "/events", ip: getIP(req) })
-    return jsonError("UNAUTHORIZED", "Unauthorized", 401, CORS_HEADERS)
+    return jsonError("UNAUTHORIZED", MSG.UNAUTHORIZED_BANNER, 401, CORS_HEADERS)
   }
 
   deps.audit.log("sse.connected", { ip: getIP(req) })
@@ -592,7 +593,7 @@ export async function streamEvents({ req, url, deps }: RouteContext): Promise<Re
 export async function listTools({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.tool.ids({ query: { ...dirParam } })
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
@@ -621,7 +622,7 @@ export async function getConnectInfo({ deps }: RouteContext): Promise<Response> 
   const localIp = getLocalIP()
   const isExposed =
     config.host === "0.0.0.0" ||
-    (config.host !== "127.0.0.1" && config.host !== "localhost" && config.host !== "::1")
+    !(LOCALHOST_ADDRESSES as readonly string[]).includes(config.host)
 
   const lanUrl = localIp ? `http://${localIp}:${port}/?token=${token}` : null
 
@@ -799,7 +800,7 @@ export async function rotateAuthToken({ deps }: RouteContext): Promise<Response>
 export async function listAgents({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   try {
     const result = await deps.client.app.agents({ query: { ...dirParam } })
     const agents: Array<Agent> = result.data ?? []
@@ -814,7 +815,7 @@ export async function listAgents({ url, deps }: RouteContext): Promise<Response>
 export async function listProviders({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   try {
     const result = await deps.client.provider.list({ query: { ...dirParam } })
     return json(result.data ?? {}, 200, CORS_HEADERS)
@@ -828,7 +829,7 @@ export async function listProviders({ url, deps }: RouteContext): Promise<Respon
 export async function getMcpStatus({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   try {
     const result = await deps.client.mcp.status({ query: { ...dirParam } })
     const servers: Record<string, McpStatus> = result.data ?? {}
@@ -855,7 +856,7 @@ export async function listProjects({ deps }: RouteContext): Promise<Response> {
 export async function getCurrentProject({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   try {
     const result = await deps.client.project.current({ query: { ...dirParam } })
     return json({ project: result.data ?? null }, 200, CORS_HEADERS)
@@ -871,7 +872,7 @@ export async function getCurrentProject({ url, deps }: RouteContext): Promise<Re
 export async function listFileTree({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
 
   const path = url.searchParams.get("path")
   if (!path) return jsonError("MISSING_PATH", "path is required", 400, CORS_HEADERS)
@@ -895,7 +896,7 @@ export async function listFileTree({ url, deps }: RouteContext): Promise<Respons
 export async function readFileContent({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
 
   const path = url.searchParams.get("path")
   if (!path) return jsonError("MISSING_PATH", "path is required", 400, CORS_HEADERS)
@@ -921,7 +922,7 @@ export async function readFileContent({ url, deps }: RouteContext): Promise<Resp
 export async function getLspStatus({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
-    return jsonError("INVALID_DIRECTORY", "Invalid directory parameter", 400, CORS_HEADERS)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   try {
     const result = await deps.client.lsp.status({ query: { ...dirParam } })
     const clients: Array<LspStatus> = result.data ?? []
@@ -939,7 +940,7 @@ export async function getPushPublicKey({ deps }: RouteContext): Promise<Response
   if (!deps.config.vapid) {
     return jsonError(
       "PUSH_DISABLED",
-      "Web Push is not configured. Set PILOT_VAPID_PUBLIC_KEY and PILOT_VAPID_PRIVATE_KEY.",
+      MSG.WEB_PUSH_NOT_CONFIGURED,
       503,
       CORS_HEADERS,
     )
@@ -965,7 +966,7 @@ export async function subscribePush({ req, deps }: RouteContext): Promise<Respon
   try {
     body = await req.json()
   } catch {
-    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+    return jsonError("INVALID_JSON", "Failed to parse the request body. Try refreshing the dashboard; if it persists, restart OpenCode.", 400, CORS_HEADERS)
   }
   const validation = validatePushSubscribe(body)
   if (!validation.ok) {
@@ -996,7 +997,7 @@ export async function unsubscribePush({ req, deps }: RouteContext): Promise<Resp
   try {
     body = await req.json()
   } catch {
-    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+    return jsonError("INVALID_JSON", "Failed to parse the request body. Try refreshing the dashboard; if it persists, restart OpenCode.", 400, CORS_HEADERS)
   }
   if (!body || typeof body !== "object") {
     return jsonError("INVALID_BODY", "Request body must be a JSON object", 400, CORS_HEADERS)
@@ -1018,7 +1019,7 @@ export async function testPush({ req, deps }: RouteContext): Promise<Response> {
     const raw = await req.text()
     rawBody = raw ? JSON.parse(raw) : {}
   } catch {
-    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+    return jsonError("INVALID_JSON", "Failed to parse the request body. Try refreshing the dashboard; if it persists, restart OpenCode.", 400, CORS_HEADERS)
   }
 
   const validation = validatePushTest(rawBody)
@@ -1092,7 +1093,7 @@ export async function globFiles({ url, deps }: RouteContext): Promise<Response> 
   if (!deps.config.enableGlobOpener) {
     return jsonError(
       "GLOB_DISABLED",
-      "Glob opener is disabled. Set PILOT_ENABLE_GLOB_OPENER=true to enable.",
+      MSG.GLOB_DISABLED,
       403,
       CORS_HEADERS,
     )
@@ -1150,7 +1151,7 @@ export async function readFileAbs({ url, deps }: RouteContext): Promise<Response
   if (!deps.config.enableGlobOpener) {
     return jsonError(
       "GLOB_DISABLED",
-      "Glob opener is disabled. Set PILOT_ENABLE_GLOB_OPENER=true to enable.",
+      MSG.GLOB_DISABLED,
       403,
       CORS_HEADERS,
     )
@@ -1228,7 +1229,7 @@ export async function patchSettings({ req, deps }: RouteContext): Promise<Respon
   try {
     rawBody = await req.json()
   } catch {
-    return jsonError("INVALID_JSON", "Request body must be valid JSON", 400, CORS_HEADERS)
+    return jsonError("INVALID_JSON", "Failed to parse the request body. Try refreshing the dashboard; if it persists, restart OpenCode.", 400, CORS_HEADERS)
   }
 
   const validation = validateSettingsPatch(rawBody)
@@ -1299,7 +1300,7 @@ export async function generateVapidKeys({ deps }: RouteContext): Promise<Respons
       {
         publicKey,
         privateKey,
-        subject: "mailto:admin@opencode-pilot.local",
+        subject: VAPID_DEFAULT_SUBJECT,
       },
       200,
       CORS_HEADERS,

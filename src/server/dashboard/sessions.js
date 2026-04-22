@@ -334,7 +334,7 @@ function _renderSessionsImpl() {
   let ids = Object.keys(sessions)
 
   if (!ids.length) {
-    list.innerHTML = '<div style="padding:16px;color:var(--text-dim);font-size:.82rem;text-align:center">No sessions yet</div>'
+    list.innerHTML = '<div class="empty-state">No sessions yet. Start a prompt below, or run <code>opencode</code> in a project terminal.</div>'
     return
   }
 

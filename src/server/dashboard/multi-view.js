@@ -49,6 +49,13 @@ export function hideMultiview() {
 export function renderMultiviewGrid() {
   const { mvPanels } = getState()
   const grid = document.getElementById('multiview-grid')
+  // Tear down existing panels before wiping the DOM so any registered cleanup
+  // hooks (AbortControllers, listeners, etc.) run before innerHTML nukes them.
+  Array.from(grid.querySelectorAll('.mv-panel')).forEach(panel => {
+    if (typeof panel.__mvCleanup === 'function') {
+      try { panel.__mvCleanup() } catch (_) {}
+    }
+  })
   grid.innerHTML = ''
   mvPanels.forEach(id => grid.appendChild(createMVPanel(id)))
 
@@ -168,6 +175,13 @@ function createMVPanel(id) {
 
   sendBtn.addEventListener('click', doSend)
   inp.addEventListener('keydown', e => { if (e.key === 'Enter') doSend() })
+
+  // Cleanup hook: called by renderMultiviewGrid before innerHTML wipe.
+  // TODO: wire panel-specific cleanup (AbortController on fetches) once
+  //       loadMVMessages is updated to expose an abort handle.
+  panel.__mvCleanup = () => {
+    // Placeholder — infrastructure is in place for future teardown logic.
+  }
 
   // NOTE: do NOT call loadMVMessages here — see renderMultiviewGrid below.
   return panel

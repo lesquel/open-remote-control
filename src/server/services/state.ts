@@ -1,6 +1,6 @@
 import { dirname, join } from "path"
 import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync } from "fs"
-import { homedir } from "os"
+import { stateFile } from "../util/paths"
 
 export interface PilotState {
   token: string
@@ -27,7 +27,7 @@ function projectStatePath(directory: string): string {
 // which may be running with a different cwd than the server plugin — read
 // it without guessing the workspace path.
 export function globalStatePath(): string {
-  return join(homedir(), ".opencode-pilot", "pilot-state.json")
+  return stateFile("pilot-state.json")
 }
 
 function safeMkdir(path: string) {

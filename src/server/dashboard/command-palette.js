@@ -7,6 +7,21 @@ import { getAgents, getProviders, getConnectedProviders } from './references.js'
 import { sendPromptWithOpts, fetchProjects, updateSessionTitle } from './api.js'
 import { openDebugModal } from './debug-modal.js'
 
+// ── Palette listener registry (unified cleanup) ────────────────────────────
+let paletteListeners = []
+
+function registerPaletteListener(target, event, handler) {
+  target.addEventListener(event, handler)
+  paletteListeners.push({ target, event, handler })
+}
+
+function cleanupPaletteListeners() {
+  for (const { target, event, handler } of paletteListeners) {
+    try { target.removeEventListener(event, handler) } catch (_) {}
+  }
+  paletteListeners = []
+}
+
 // Per-session agent preference (client-side only, resets on reload)
 const _sessionAgentPrefs = new Map()
 
@@ -90,6 +105,7 @@ export function closePalette() {
   if (!el) return
   el.classList.remove('open')
   isOpen = false
+  cleanupPaletteListeners()
 }
 
 export function togglePalette() {
@@ -1020,7 +1036,9 @@ export function initCommandPalette() {
     renderPaletteList(e.target.value)
   })
 
-  input?.addEventListener('keydown', e => {
+  // TODO: per-picker keyHandlers in openAgentPicker / openModelPicker / openFolderPicker /
+  // openProjectPicker also need registerPaletteListener to be covered by cleanupPaletteListeners.
+  if (input) registerPaletteListener(input, 'keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); updateSelection(1); return }
     if (e.key === 'ArrowUp')   { e.preventDefault(); updateSelection(-1); return }
     if (e.key === 'Enter')     { e.preventDefault(); confirmSelection(); return }

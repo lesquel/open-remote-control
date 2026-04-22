@@ -13,28 +13,28 @@ export interface PermissionQueue {
 export function createPermissionQueue(timeoutMs: number): PermissionQueue {
   const waiters = new Map<
     string,
-    { resolve: (value: { action: "allow" | "deny" } | null) => void; createdAt: number }
+    { resolve: (value: { action: "allow" | "deny" } | null) => void; createdAt: number; timeoutId: ReturnType<typeof setTimeout> }
   >()
 
   function waitForResponse(
     permissionID: string,
   ): Promise<{ action: "allow" | "deny" } | null> {
     return new Promise((resolvePromise) => {
-      waiters.set(permissionID, { resolve: resolvePromise, createdAt: Date.now() })
-
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         const waiter = waiters.get(permissionID)
         if (waiter) {
           waiters.delete(permissionID)
           waiter.resolve(null)
         }
       }, timeoutMs)
+      waiters.set(permissionID, { resolve: resolvePromise, createdAt: Date.now(), timeoutId })
     })
   }
 
   function resolve(permissionID: string, action: "allow" | "deny"): void {
     const waiter = waiters.get(permissionID)
     if (waiter) {
+      clearTimeout(waiter.timeoutId)
       waiters.delete(permissionID)
       waiter.resolve({ action })
     }

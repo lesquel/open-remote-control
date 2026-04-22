@@ -372,15 +372,12 @@ function main(): InitResult {
   if (cacheInvalidationSkipped) {
     printCacheSkipBanner()
   } else {
-    console.log(`\n  Done.`)
+    console.log(`\n  ✓ Installed.`)
     console.log(`  Next steps:`)
-    console.log(`    1. Close ALL running OpenCode sessions (fully quit).`)
-    console.log(`    2. Reopen OpenCode from any project: \`opencode\`.`)
-    console.log(`    3. A toast "OpenCode Pilot — Remote control plugin loaded" should appear.`)
-    console.log(`    4. Type \`/remo\` + <Tab> — slash commands /remote, /dashboard,`)
-    console.log(`       /pilot, /pilot-token, /remote-control should autocomplete.`)
-    console.log(`    5. Click the gear (⚙) in the dashboard → Plugin configuration`)
-    console.log(`       to set tunnel, Telegram, VAPID, etc.\n`)
+    console.log(`    1. Reopen OpenCode (fully quit first if it's running)`)
+    console.log(`    2. Type /remote in OpenCode`)
+    console.log(`    3. Open the printed URL in your browser — or scan the QR from your phone`)
+    console.log(`  Need help? See https://github.com/lesquel/open-remote-control#readme\n`)
   }
 
   return {

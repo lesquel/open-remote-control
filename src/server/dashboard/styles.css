@@ -41,8 +41,8 @@
   --border:   #c8c4d8;
   --border2:  #b0accc;
   --text:     #1e1b2e;
-  --text-dim: #6b6880;
-  --text-muted: #9896a8;
+  --text-dim: #524f63;
+  --text-muted: #706d82;
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────── */
@@ -3491,6 +3491,13 @@ body {
   font-style: italic;
 }
 .file-tree-error { color: var(--danger); }
+.empty-state {
+  padding: 16px;
+  color: var(--text-dim);
+  font-size: .82rem;
+  text-align: center;
+  line-height: 1.5;
+}
 
 .file-tree-truncated {
   color: var(--text-muted);

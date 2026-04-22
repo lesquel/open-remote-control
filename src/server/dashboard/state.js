@@ -1,6 +1,20 @@
 // state.js — Single source of truth for app state with simple pub/sub
 const listeners = new Map() // key → Set<callback>
 
+// ── Fetch-generation counter (tab-switch race guard) ─────────────────────────
+// When the user switches tabs mid-flight, the old tab's loadSessions() promise
+// may resolve AFTER the active tab has changed and overwrite the new tab's
+// data with stale results.  The pattern:
+//   1. bumpFetchGen() in switchProjectTab → increments the counter
+//   2. Callers capture currentFetchGen() before their async fetch
+//   3. On resolve, check isStaleGen(capturedGen) — if true, discard the result
+// syncStateToActiveTab() also guards via _genTag stamped by setState().
+// TODO: wire callers (sessions.js, etc.) to capture + check the generation
+let fetchGeneration = 0
+export function currentFetchGen() { return fetchGeneration }
+export function bumpFetchGen()    { fetchGeneration += 1; return fetchGeneration }
+export function isStaleGen(gen)   { return gen !== fetchGeneration }
+
 const state = {
   token: null,
   serverUrl: "",     // empty = same-origin (embedded); set to tunnel URL in standalone mode
@@ -131,11 +145,16 @@ export function switchProjectTab(id) {
     state.statuses      = {}
     state.sessionMeta   = {}
     state.activeSession = null
+    bumpFetchGen()
     notifyAll()
     return null
   }
   const tab = state.projectTabs.find(t => t.id === id)
   if (!tab) return null
+  if (tab.id !== state.activeProjectId) {
+    // Tab actually changed — invalidate any in-flight fetches for the old tab
+    bumpFetchGen()
+  }
   state.activeProjectId = tab.id
   state.activeDirectory = tab.directory ?? null
   syncActiveTabToState()
@@ -172,6 +191,10 @@ export function syncActiveTabToState() {
 export function syncStateToActiveTab() {
   const tab = getActiveProjectTab()
   if (!tab) return
+  // Guard against stale async writes: if the state was stamped with a
+  // _genTag that no longer matches the current generation (i.e. the user
+  // switched tabs AFTER the fetch started), discard this mirror entirely.
+  if (typeof state._genTag === 'number' && state._genTag !== fetchGeneration) return
   tab.sessions      = state.sessions
   tab.statuses      = state.statuses
   tab.sessionMeta   = state.sessionMeta
@@ -198,7 +221,10 @@ export function getState() {
 const _TAB_MIRRORED_KEYS = ['sessions', 'statuses', 'sessionMeta', 'activeSession']
 
 export function setState(patch) {
-  Object.assign(state, patch)
+  // Stamp the current fetch generation so syncStateToActiveTab can detect stale writes.
+  // Local UI writes (no _genTag) are always forwarded as-is.
+  const stamped = Object.assign({}, patch, { _genTag: fetchGeneration })
+  Object.assign(state, stamped)
   // Mirror tab-scoped fields back into the active tab's cache so the cached
   // copy stays in sync with what UI modules just wrote.
   const tab = getActiveProjectTab()

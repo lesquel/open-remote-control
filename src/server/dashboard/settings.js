@@ -13,7 +13,7 @@ const STORAGE_KEY = 'pilot_settings'
 
 export function loadSettings() {
   try {
-    const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}')
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
     const settings = { ...getState().settings, ...saved }
     setState({ settings })
   } catch (_) {}
@@ -21,7 +21,7 @@ export function loadSettings() {
 }
 
 export function saveSettings() {
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(getState().settings))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(getState().settings))
 }
 
 export function applySettings() {
@@ -85,6 +85,14 @@ export function initSettings() {
     setState({ settings })
     saveSettings()
     if (settings.notif && Notification.permission !== 'granted') {
+      if (Notification.permission === 'denied') {
+        settings = { ...getState().settings, notif: false }
+        e.target.checked = false
+        setState({ settings })
+        saveSettings()
+        toast('Notifications are blocked in your browser. Enable them in site settings and reload.')
+        return
+      }
       const p = await Notification.requestPermission()
       if (p !== 'granted') {
         settings = { ...getState().settings, notif: false }
@@ -160,9 +168,61 @@ const FIELD_MAP = {
 
 let _lastLoadedSnapshot = null // { settings, sources, restartRequired, configFilePath }
 
+/**
+ * Attach a blur-time advisory validator to an input.
+ * `validate(value)` returns a string error message or null if valid.
+ * Shows/hides a <small> element injected immediately after the input (or its wrapper).
+ */
+function attachInlineValidation(inputId, validate) {
+  const el = document.getElementById(inputId)
+  if (!el) return
+  const hint = document.createElement('small')
+  hint.className = 'pcf-hint'
+  hint.style.color = '#ff8585'
+  hint.style.display = 'none'
+  // Insert after the input's closest wrapping element (.pcf-secret-wrap) or the input itself.
+  const anchor = el.closest('.pcf-secret-wrap') || el
+  anchor.insertAdjacentElement('afterend', hint)
+  el.addEventListener('blur', () => {
+    const msg = validate(el.value.trim())
+    if (msg) {
+      hint.textContent = msg
+      hint.style.display = 'block'
+    } else {
+      hint.style.display = 'none'
+    }
+  })
+}
+
+/**
+ * Inject a one-line field hint adjacent to a given input element.
+ * Hint is placed immediately after the input (or its .pcf-secret-wrap).
+ */
+function addFieldHint(inputId, text) {
+  const el = document.getElementById(inputId)
+  if (!el) return
+  const hint = document.createElement('small')
+  hint.className = 'pcf-hint'
+  hint.style.display = 'block'
+  hint.style.marginTop = '2px'
+  hint.textContent = text
+  const anchor = el.closest('.pcf-secret-wrap') || el
+  anchor.insertAdjacentElement('afterend', hint)
+}
+
 function initPluginConfig() {
   const section = document.getElementById('plugin-config-section')
   if (!section) return
+
+  // Field hints (advisory, one line each)
+  addFieldHint('pcf-port', 'HTTP port for the dashboard. Default 4097.')
+  addFieldHint('pcf-host', 'Bind address. Use 0.0.0.0 to accept LAN/phone access — localhost only by default.')
+  addFieldHint('pcf-tunnel', 'Expose the dashboard via a public URL. Needs cloudflared or ngrok installed.')
+  addFieldHint('pcf-telegram-token', 'Optional. Get one from @BotFather on Telegram.')
+  addFieldHint('pcf-telegram-chat', 'Your numeric chat ID. Message @userinfobot to find yours.')
+  addFieldHint('pcf-vapid-public', 'Web Push credentials. Use the Generate button if unsure.')
+  addFieldHint('pcf-vapid-private', 'Web Push credentials. Use the Generate button if unsure.')
+  addFieldHint('pcf-glob', 'Allows the dashboard’s file browser to list and read project files. Off by default for security.')
 
   // Password-eye toggles
   section.querySelectorAll('.pcf-eye-btn').forEach(btn => {
@@ -176,6 +236,32 @@ function initPluginConfig() {
   document.getElementById('pcf-save').addEventListener('click', onSave)
   document.getElementById('pcf-reset').addEventListener('click', onReset)
   document.getElementById('pcf-vapid-generate').addEventListener('click', onGenerateVapid)
+
+  // Inline validation hints (advisory only — do not block save)
+  attachInlineValidation('pcf-telegram-token', v => {
+    if (!v) return null
+    return /^\d+:[A-Za-z0-9_-]+$/.test(v)
+      ? null
+      : "That doesn’t look like a Telegram bot token (expected format: 123456789:ABC...)."
+  })
+  attachInlineValidation('pcf-telegram-chat', v => {
+    if (!v) return null
+    return /^-?\d+$/.test(v)
+      ? null
+      : 'Chat ID should be a number (may start with - for groups).'
+  })
+  attachInlineValidation('pcf-vapid-public', v => {
+    if (!v) return null
+    return /^[A-Za-z0-9_-]{40,}$/.test(v)
+      ? null
+      : 'Invalid VAPID key format.'
+  })
+  attachInlineValidation('pcf-vapid-private', v => {
+    if (!v) return null
+    return /^[A-Za-z0-9_-]{40,}$/.test(v)
+      ? null
+      : 'Invalid VAPID key format.'
+  })
 }
 
 async function loadPluginConfig() {
@@ -289,8 +375,32 @@ async function onSave() {
     statusEl.style.display = 'block'
     try { toast('Settings saved') } catch (_) {}
   } catch (err) {
-    statusEl.className = 'plugin-config-status error'
-    statusEl.textContent = 'Save failed: ' + (err?.message || err)
+    if (err?.status === 409 && err?.code === 'SHELL_ENV_PINNED') {
+      // Roll back inputs to the server's actual state, then explain what's locked.
+      try {
+        const current = await fetchPluginSettings()
+        _lastLoadedSnapshot = current
+        applySnapshotToInputs(current)
+        updateRestartNote(current)
+        // Extract field names from the error message (format: "Cannot override: field1, field2 (set via shell env)...")
+        const match = err.message.match(/Cannot override:\s*([^(]+)/)
+        const fieldList = match ? match[1].trim() : err.message
+        statusEl.className = 'plugin-config-status error'
+        statusEl.textContent =
+          'These fields are locked by your shell environment: ' + fieldList +
+          '. Unset them in your shell to edit here.'
+      } catch (_) {
+        statusEl.className = 'plugin-config-status error'
+        statusEl.textContent =
+          'Some fields are locked by your shell environment. Unset the relevant env vars to edit here.'
+      }
+    } else if (err?.status >= 500 || !err?.status) {
+      statusEl.className = 'plugin-config-status error'
+      statusEl.textContent = 'Could not save settings. Check the server log or try again.'
+    } else {
+      statusEl.className = 'plugin-config-status error'
+      statusEl.textContent = 'Save failed: ' + (err?.message || err)
+    }
     statusEl.style.display = 'block'
   } finally {
     saveBtn.disabled = false

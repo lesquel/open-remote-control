@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "child_process"
 import { existsSync } from "fs"
+import { delimiter } from "path"
 import type { TunnelProvider } from "../config"
+import { TUNNEL_URL_PATTERNS, TUNNEL_START_TIMEOUT_MS, TUNNEL_KILL_GRACE_MS } from "../constants"
 
 export type { TunnelProvider }
 
@@ -77,7 +79,7 @@ async function startCloudflared(port: number): Promise<TunnelInstance> {
     { stdio: ["ignore", "pipe", "pipe"] },
   )
 
-  const publicUrl = await waitForUrl(proc, /https:\/\/[a-z0-9-]+\.trycloudflare\.com/, 20_000)
+  const publicUrl = await waitForUrl(proc, TUNNEL_URL_PATTERNS.cloudflared, TUNNEL_START_TIMEOUT_MS)
 
   return {
     publicUrl,
@@ -99,8 +101,8 @@ async function startNgrok(port: number): Promise<TunnelInstance> {
 
   const publicUrl = await waitForUrl(
     proc,
-    /https:\/\/[a-z0-9-]+\.ngrok(-free)?\.app/,
-    20_000,
+    TUNNEL_URL_PATTERNS.ngrok,
+    TUNNEL_START_TIMEOUT_MS,
   )
 
   return {
@@ -135,7 +137,7 @@ function killTunnelProcess(proc: ChildProcess, onDead: () => void): void {
         // already gone
       }
     }
-  }, 400)
+  }, TUNNEL_KILL_GRACE_MS)
   const onExit = () => {
     clearTimeout(killTimer)
     onDead()
@@ -183,7 +185,7 @@ function waitForUrl(
 }
 
 function isCommandAvailable(cmd: string): boolean {
-  const paths = (process.env.PATH ?? "").split(":")
+  const paths = (process.env.PATH ?? "").split(delimiter)
   for (const p of paths) {
     if (existsSync(`${p}/${cmd}`)) return true
   }

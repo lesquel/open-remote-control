@@ -194,6 +194,7 @@ export function createPushNotifications() {
     try {
       let sub = await reg.pushManager.getSubscription()
       if (!sub) {
+        try { localStorage.removeItem(LS_PUSH_ENDPOINT_KEY) } catch (_) {}
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey),
@@ -217,9 +218,9 @@ export function createPushNotifications() {
       const sub = await reg.pushManager.getSubscription()
       if (sub) {
         const endpoint = sub.endpoint
+        try { localStorage.removeItem(LS_PUSH_ENDPOINT_KEY) } catch (_) {}
         await sub.unsubscribe().catch(() => {})
         try { await pushUnsubscribe(endpoint) } catch (_) {}
-        try { localStorage.removeItem(LS_PUSH_ENDPOINT_KEY) } catch (_) {}
       }
     } catch (_) {}
     _setWebPushStatus('')

@@ -1,10 +1,12 @@
 // main.js — Entry point: resolves auth, bootstraps all modules
+import { initWelcome } from './welcome.js'
 import { resolveToken, showTokenExpiredScreen, clearStoredToken } from './auth.js'
 import { setState, getActiveDirectory, subscribe, getProjectTabs } from './state.js'
 import { initMarkdown } from './markdown.js'
 import { loadSettings } from './settings.js'
 import { loadMVState, initMultiView, showMultiview } from './multi-view.js'
 import { loadSessions, initSessions } from './sessions.js'
+import { toast } from './toast.js'
 import { loadPermissions, initPermissions } from './permissions.js'
 import { initSettings } from './settings.js'
 import { initShortcuts } from './shortcuts.js'
@@ -137,6 +139,9 @@ async function bootstrap() {
   // 3. Show app shell
   const app = document.getElementById('app')
   app.style.display = 'flex'
+
+  // 3.1 Getting-started welcome card (dismissible, first-visit only)
+  initWelcome()
 
   // 3.5 Restore project tabs + active directory from localStorage (v1.11).
   //     This MUST happen before any API call so api.js appends the right
@@ -539,6 +544,12 @@ async function bootstrap() {
   }
 
   await loadSessions(true)
+
+  // One-time mobile hint: let user know the (i) button reveals session details
+  if (window.innerWidth <= 768 && !localStorage.getItem('pilot_mobile_panel_hint_shown')) {
+    localStorage.setItem('pilot_mobile_panel_hint_shown', '1')
+    setTimeout(() => toast('Tap the (i) button to see session details'), 1200)
+  }
 
   // Mark the active tab as loaded and mirror the fetched data into its cache
   // so switching away and back doesn't refetch.

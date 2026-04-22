@@ -72,15 +72,13 @@ function openFileModal(filePath, content) {
 
   document.body.appendChild(modal)
 
-  const close = () => modal.remove()
+  const close = () => { document.removeEventListener('keydown', onKey); modal.remove() }
   modal.addEventListener('click', e => { if (e.target === modal) close() })
   document.getElementById('file-viewer-close').addEventListener('click', close)
 
-  const onKey = e => {
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onKey) }
-  }
+  const onKey = e => { if (e.key === 'Escape') close() }
   document.addEventListener('keydown', onKey)
-  modal.addEventListener('remove', () => document.removeEventListener('keydown', onKey))
+  // cleanup is done in close(); removed dead 'remove' event listener
 }
 
 // ── Tree node rendering ───────────────────────────────────────────────────────
@@ -238,12 +236,14 @@ export function createFileBrowser({ container }) {
     wireClicks()
   }
 
-  // Debounce helper
+  // Debounce helpers
   let _filterTimer = null
   function debouncedFilter(text) {
     clearTimeout(_filterTimer)
     _filterTimer = setTimeout(() => applyLiveFilter(text), 200)
   }
+
+  let debounceTimer = null
 
   // ── Glob search wiring ──────────────────────────────────────────────────
   async function runGlob() {
@@ -319,11 +319,17 @@ export function createFileBrowser({ container }) {
     renderTree()
   }
 
-  // Live substring filter fires on every keystroke (debounced 200ms)
+  // Live substring filter fires on every keystroke (debounced 200ms).
+  // Glob patterns (containing * ? { } [ ]) are debounced 300ms before running
+  // a server fetch, so rapid typing doesn't fire a request per keystroke.
   globInput?.addEventListener('input', (e) => {
     const val = e.target.value || ''
-    // If the pattern looks like a glob (contains * or ?), don't live-filter
-    if (/[*?{}\[\]]/.test(val)) return
+    if (/[*?{}\[\]]/.test(val)) {
+      // Debounce glob fetch — 300ms
+      clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => { runGlob() }, 300)
+      return
+    }
     debouncedFilter(val)
     // Show/hide clear button
     if (globClear) globClear.style.display = val ? '' : 'none'

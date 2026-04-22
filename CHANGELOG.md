@@ -4,6 +4,68 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.14.0] — 2026-04-21
+
+Audit-driven release: user-reported review across bugs, UI, hardcoding, and onboarding. 27 files touched, 3 new files, +488 / -101 LOC. No breaking changes to HTTP API or env vars.
+
+### Added — in-app onboarding
+
+- **Welcome / Getting Started card** (`src/server/dashboard/welcome.js`, new). First-time dashboard visitors see a 4-step primer (send a prompt, approve permissions, connect your phone, open Settings). Dismissal persists in `localStorage[pilot_welcome_dismissed]`. Mounted inside `#main-panel` via `#welcome-mount`.
+- **URL-paste token recovery**. `showTokenExpiredScreen()` now offers two paths: paste a fresh `/remote` URL (we extract the token via `new URL().searchParams.get('token')` and save it), or the original clear-and-reload. Eliminates the "close tab, go back to terminal, run /remote, copy, paste, reopen" context-switch.
+- **`PILOT_NO_AUTO_OPEN=1` escape hatch** for the TUI auto-open-browser feature.
+- **Inline validation** on Settings plugin-config fields: Telegram token (format `\d+:[A-Za-z0-9_-]+`), chat ID (numeric), VAPID keys (base64url ≥ 40 chars). Advisory only — never blocks save.
+- **Field hints** under all 8 plugin-config inputs (port, host, tunnel, telegram token, chat id, VAPID public/private, glob opener). Plain-language explanations with where-to-find pointers (e.g. "Get a Telegram token from @BotFather").
+- **Startup warnings** — server logs `logger.warn(...)` at boot if VAPID or Telegram are unconfigured, pointing users to the Settings UI or env vars.
+
+### Fixed — P0 bugs
+
+- **Settings lost on page reload.** `src/server/dashboard/settings.js` used `sessionStorage` for prefs; theme, sound, notifications, reasoning, budget all reset on reload. Switched to `localStorage`.
+- **Stale token survived OpenCode restart.** Added `visibilitychange` listener in `auth.js` with a 30s cooldown that validates the stored token against `/status` when the tab regains focus. 401 → `showTokenExpiredScreen()`.
+- **Right panel silently hidden on mobile.** First-time mobile visitors now see a one-time toast pointing at the `(i)` button; stored under `localStorage[pilot_mobile_panel_hint_shown]`.
+- **Unhandled rejection in promotion watcher.** `src/server/index.ts` wrapped the `setInterval` async callback with a `promotingNow` flag + try/catch/finally so concurrent promotion attempts are serialized and thrown errors are logged instead of crashing the interval.
+- **Web Push endpoint orphaned on unsubscribe failure.** `push-notifications.js` now clears `localStorage[LS_PUSH_ENDPOINT_KEY]` *before* calling `pushUnsubscribe(endpoint)`, plus an additional cleanup path in `_enableWebPush` when `getSubscription()` returns null but the LS endpoint exists (stale-subscription recovery).
+- **Silent fallback when VAPID / Telegram are missing** — see Startup warnings above.
+
+### Fixed — P1 bugs
+
+- **Permission-queue timer leak** (`src/server/services/permission-queue.ts`). `waitForResponse()` spawned `setTimeout` timers that never got cleared when the permission resolved early. Timer handle now lives on the waiter; `clearTimeout` fires on every resolve path.
+- **SSE listener leak on reconnect** (`src/server/dashboard/sse.js`). Refactored anonymous `addEventListener` callbacks into named functions and tracked them in `_activeListeners`. New `_closeEventSource()` helper iterates the array and `removeEventListener`s each before `eventSource.close()`.
+- **`Notification.requestPermission()` re-prompt with no feedback.** `settings.js` now checks `Notification.permission === 'denied'` *before* requesting and surfaces an inline toast instead of silently re-triggering the browser prompt.
+- **File-browser modal keydown leak** (`file-browser.js`). Keydown listener was added to `document` but cleanup relied on a dead `modal.addEventListener('remove', ...)` that never fires on native DOM. Cleanup moved into `close()`.
+- **Command palette keydown leaks across force-close** (`command-palette.js`). Added `registerPaletteListener(target, event, handler)` + `cleanupPaletteListeners()` helpers; main navigation keydown and `closePalette()` now use them. Per-picker (agent/model/folder/project) inputs still TODO.
+- **Multi-view teardown missing before `innerHTML = ''`** (`multi-view.js`). Each panel now has a `panel.__mvCleanup` hook; `renderMultiviewGrid` iterates existing panels and calls cleanup before wiping the grid. AbortController wiring on `loadMVMessages` left TODO.
+- **Settings save had no rollback on 409.** `settings.js::onSave()` now re-fetches `GET /settings` on 409, rolls the inputs back to server state, and surfaces the locked field names: *"These fields are locked by your shell environment: …"*.
+- **No empty state on `renderSessions`** (`sessions.js`). Added `.empty-state` placeholder with text pointing the user at the terminal.
+- **Mobile sidebar closed unreliably on nested clicks** (`main.js::createMobileDrawer`). Previous build already used `closest('.session-item')` — no change needed, verified during audit.
+- **Tab-switch fetch race** (`state.js`). Added `fetchGeneration` counter + `bumpFetchGen()` / `currentFetchGen()` / `isStaleGen(gen)` exports. `switchProjectTab` bumps the generation; `setState` stamps a `_genTag` on writes; `syncStateToActiveTab` drops mirrors whose `_genTag` is stale. Infrastructure only — caller wiring left as a follow-up.
+- **Light theme contrast below WCAG AA.** Darkened `--text-dim` from `#6b6880` → `#524f63` and `--text-muted` from `#9896a8` → `#706d82`. Dark theme unchanged.
+- **Glob input fired a fetch per keystroke** (`file-browser.js`). 300ms debounce.
+- **Permissions banner omitted queue size** (`permissions.js`). Added `(1/N)` badge when more than one request is pending.
+
+### Changed — error messages rewritten
+
+`src/server/http/handlers.ts` — ~22 callsites of three user-hostile messages now tell users how to fix:
+
+- `"Unauthorized"` → *"Unauthorized. Run /remote in OpenCode to get a fresh dashboard URL."* (via `MSG.UNAUTHORIZED_BANNER`).
+- `"Invalid directory parameter"` → *"Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues."*
+- `"Request body must be valid JSON"` → *"Failed to parse the request body. Try refreshing the dashboard; if it persists, restart OpenCode."*
+
+Error **codes** (`UNAUTHORIZED`, `INVALID_DIRECTORY`, `INVALID_JSON`) are unchanged — machine-readable contract preserved.
+
+### Changed — CLI post-install output
+
+`src/cli/init.ts` 9-line verbose block → 4-line actionable checklist (reopen OpenCode, run `/remote`, open URL, link to README).
+
+### Internal — hardcoded values centralized
+
+- **New `src/server/util/paths.ts`** — cross-platform config/state dir helpers (`getPluginConfigDir`, `getPluginStateDir`, `configFile`, `stateFile`). Respects `XDG_CONFIG_HOME` / `XDG_STATE_HOME` on Linux/macOS and `APPDATA` / `LOCALAPPDATA` on Windows. Replaces duplicated `join(homedir(), ".opencode-pilot", ...)` in `settings-store.ts`, `state.ts`, `banner.ts`.
+- **New `src/server/strings.ts`** — `MSG` object with 7 centralized user-facing messages (`WEB_PUSH_NOT_CONFIGURED`, `TELEGRAM_NOT_CONFIGURED`, `GLOB_DISABLED`, `TUNNEL_DISABLED`, `UNAUTHORIZED_BANNER`, `INVALID_PORT`, `INVALID_TUNNEL`).
+- **`src/server/constants.ts` expanded** — `LOCALHOST_ADDRESSES`, `VAPID_DEFAULT_SUBJECT`, `TUNNEL_URL_PATTERNS`, `TUNNEL_START_TIMEOUT_MS`, `TUNNEL_KILL_GRACE_MS`, `TOAST_DURATION_MS`, `TOAST_PROMOTION_DURATION_MS`, `PROMOTION_POLL_INTERVAL_MS`, `TELEGRAM_ERROR_MAX_CHARS`, `HTTP_STATUS`. Wired at call sites in `tunnel.ts`, `handlers.ts`, `validators.ts`, `config.ts`, `telegram.ts`, `index.ts`.
+- **Windows PATH parsing fixed** (`tunnel.ts`). `(process.env.PATH ?? "").split(":")` → `split(delimiter)` from `node:path`, so `isCommandAvailable()` works on Windows.
+- **`resetTokenInvalidated()` exported** from `api.js` and called from `auth.js` on successful token resolution / save. The global invalidation flag now resets across re-auth, so future 401s still surface the recovery screen.
+
+---
+
 ## [1.13.15] — 2026-04-21
 
 ### Fixed — dashboard "token inválido" with no recovery path ([#1](https://github.com/lesquel/open-remote-control/issues/1) follow-up)

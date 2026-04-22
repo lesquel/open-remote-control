@@ -16,7 +16,7 @@ import { createNotificationService } from "./services/notifications"
 import { createRemoteServer } from "./http/server"
 import { createEventHook, createPermissionAskHook, createToolHooks } from "./hooks"
 import { createLogger } from "./util/logger"
-import { PILOT_VERSION } from "./constants"
+import { PILOT_VERSION, TOAST_DURATION_MS, TOAST_PROMOTION_DURATION_MS, PROMOTION_POLL_INTERVAL_MS } from "./constants"
 
 export default {
   id: "opencode-pilot",
@@ -107,6 +107,17 @@ export default {
       settingsStore,
       shellEnv,
       envFileApplied: dotenv.applied,
+    }
+
+    if (config.vapid == null) {
+      logger.warn(
+        "Web Push is not configured. Set PILOT_VAPID_PUBLIC_KEY and PILOT_VAPID_PRIVATE_KEY — or use Settings > Plugin configuration > Generate VAPID keys.",
+      )
+    }
+    if (config.telegram == null) {
+      logger.warn(
+        "Telegram notifications disabled. Set PILOT_TELEGRAM_TOKEN and PILOT_TELEGRAM_CHAT_ID to enable.",
+      )
     }
 
     const server = createRemoteServer(deps)
@@ -251,7 +262,7 @@ export default {
               ? `Previous primary window closed. This window now hosts the dashboard on port ${config.port}.`
               : `Remote control active on port ${config.port}. Use /remote-control for details.`,
             variant: "success",
-            duration: isPromotion ? 7000 : 5000,
+            duration: isPromotion ? TOAST_PROMOTION_DURATION_MS : TOAST_DURATION_MS,
           },
         })
         .catch(() => {})
@@ -259,12 +270,14 @@ export default {
 
     function startPromotionWatcher(): void {
       if (promotionTimer) return
+      let promotingNow = false
       promotionTimer = setInterval(async () => {
         if (role === "primary") {
           if (promotionTimer) clearInterval(promotionTimer)
           promotionTimer = null
           return
         }
+        if (promotingNow) return
         // Quick retry: if we can bind the port now, the primary is gone and
         // we take over. server.start() returns { ok: false } with no side
         // effects if the port is still taken — safe to poll.
@@ -273,9 +286,16 @@ export default {
           audit.log("boot.promoted", { port: config.port })
           if (promotionTimer) clearInterval(promotionTimer)
           promotionTimer = null
-          await activatePrimary(true)
+          promotingNow = true
+          try {
+            await activatePrimary(true)
+          } catch (err) {
+            logger.warn("promotion failed", { error: err instanceof Error ? err.message : String(err) })
+          } finally {
+            promotingNow = false
+          }
         }
-      }, 500)
+      }, PROMOTION_POLL_INTERVAL_MS)
     }
 
     // ─── Initial boot: try to become primary ───────────────────────────────
