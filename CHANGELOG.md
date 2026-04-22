@@ -4,6 +4,125 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.0] — 2026-04-22
+
+Wave 5 UX overhaul: state-aware onboarding, unified keyboard shortcuts with a discoverable help modal, a risk-aware permission banner, a reusable focus-trap modal helper applied to five dialogs, and a tabbed Settings redesign. No API breakage.
+
+### Added — state-aware onboarding and empty/error states
+
+Messages area, session list, and files-changed panel now render three distinct states instead of one passive placeholder:
+
+- **No session selected** — shows "No session selected" with two CTAs: *Create new session* and *Open command palette (Ctrl/Cmd+K)*.
+- **Session ready but empty** — "Session ready. Type your first prompt below and press Enter." plus a small idea list ("Explain this project", "Run the tests", "Find TODO comments").
+- **Loading / in-flight fetch** — inline spinner with a clear label.
+
+Session list:
+- Empty state now says "No sessions yet. Run `opencode` in a project terminal, or create one from here." with a *Create new session* button.
+- New error state (`_lastLoadError` flag on `loadSessions()`): shows "Couldn't load sessions" with a *Retry* button that re-invokes `loadSessions()` and clears the flag on success.
+
+Files-changed panel gets the same treatment: empty ("No file changes in this session."), loading (spinner), and error (retry button) states.
+
+All CTAs are wired through `data-action` attributes and a single event-delegation listener in `main.js`, so modules stay loosely coupled via `window.__createSession`, `window.__retrySessions`, `window.__retryFilesChanged`, `window.__openPalette`.
+
+### Added — unified keyboard shortcut model + discoverable help modal
+
+The keybinding map is now a single table adopted across `shortcuts.js` and `command-palette.js`:
+
+| Keys | Action |
+|------|--------|
+| `Cmd/Ctrl+K` | Open command palette (the one way) |
+| `Cmd/Ctrl+Enter` | Send prompt |
+| `Esc` | Close topmost modal |
+| `?` (not while typing) | Open help modal |
+| `/` (not while typing) | Focus prompt input |
+| `n` `s` `m` `t` `c` | New session, toggle sidebar, toggle multi-view, toggle theme, connect modal |
+| `Alt+B` | Toggle sidebar (legacy but distinct) |
+
+Removed `Alt+P` (it was an undocumented duplicate of `Ctrl+K`). Removed two dead `openShortcutsModal()` / palette "Show Shortcuts" handlers that pointed at DOM IDs that never existed.
+
+New `help-modal.js`: a dismissible dialog listing all keybindings plus a short tips section. Mounted lazily on first `openHelpModal()`, exposed as `window.__openHelpModal` / `window.__closeHelpModal`. The command palette gained a "Help — Keyboard shortcuts" entry that triggers it.
+
+### Changed — permission banner shows risk context
+
+Old banner: `[description text] [Allow] [Deny]`. Approving something felt like flipping a coin.
+
+New banner (`#perm-banner`):
+
+```
+[⚠]  SHELL COMMAND                                             1 of 3 pending
+     Run bash command
+     `rm -rf node_modules`
+     session: ses_2c5af8… · project: opencode-pilot        [Allow once] [Deny]
+```
+
+A `classifyRisk()` helper maps the permission's `type`/`tool`/`metadata` into one of `{shell, network, write, read, unknown}` and picks an icon + label + colour:
+- `shell` → red ⚠
+- `network` → amber ↗
+- `write` → amber ✎
+- `read` → green 👁
+- `unknown` → neutral ?
+
+The banner now includes the actual command/pattern/path from `metadata`, the originating session, the project name (derived from `metadata.project` / `.worktree` / `.directory`), and a queue counter when more than one request is pending. `role="alertdialog"` + `aria-live="polite"` make it accessible.
+
+### Added — reusable `openModal()` helper with focus trap + a11y
+
+`src/server/dashboard/modal-helper.js` is new. One entry point, five adoptions in a single batch:
+
+- Manages `role="dialog"`, `aria-modal="true"`, optional `aria-labelledby`.
+- Traps Tab within the modal (skips disabled/hidden focusables).
+- Auto-focuses the first focusable element on open.
+- Restores focus to the previously-focused element on close.
+- `Esc` key dismisses.
+- Backdrop click dismisses (clicks on the panel interior do not).
+
+Adopted in: `help-modal.js`, `connect-modal.js`, `file-browser.js` (file viewer modal), `command-palette.js`, `debug-modal.js`, and `settings.js` (see below). Ad-hoc backdrop listeners, orphan `document.keydown` handlers, and inconsistent Esc wiring were removed. The command palette's existing Up/Down/Enter logic is untouched — the helper only Tab-traps and handles Esc.
+
+### Changed — Settings redesign with 4 tabs
+
+The flat, scroll-forever Settings modal is now a tabbed layout:
+
+- **Preferences** — theme, sound, desktop notifications, reasoning, token budget
+- **Connection** — port, host, tunnel, permission timeout, plugin-config path display
+- **Notifications** — Web Push toggle/test, Telegram token + chat id, VAPID public/private/subject + generate button
+- **Advanced** — glob opener toggle, fetch timeout, reset-to-defaults, keyboard-shortcut hints
+
+All field IDs preserved verbatim. Inline validation, field hints, 409-conflict rollback, VAPID generation, and Web Push subscribe/unsubscribe/test all continue to work against the same IDs — only the layout moved. Tabs support `ArrowLeft` / `ArrowRight` navigation (WAI-ARIA Authoring Practices), and the last-used tab persists in `localStorage[pilot:settings:last-tab]`. Settings now uses `openModal()` for open/close: backdrop click, Esc, focus trap, focus restore all come for free.
+
+### Added — CSS for all new UX primitives
+
+`styles.css` gets a single appended `/* === Wave 5 UX styles === */` section (and a `/* === Settings tabs === */` section) with non-duplicating rules for:
+
+- `.empty-state` + `.onboarding-empty` / `.onboarding-loading` / `.error-state` / `.muted` variants
+- `.onboarding-actions` row
+- `.spinner-small` (CSS-only, uses `@keyframes pilot-spin`)
+- `.modal-backdrop`, `.modal-panel`, `.modal-close`, `.help-modal .modal-header`
+- `.help-section`, `.help-keys` (CSS grid for dt/dd), `kbd` element
+- `.settings-tabs` + `.settings-tab[aria-selected="true"]` + `:focus-visible` outline
+- `.settings-panes`, `.settings-pane`, `.settings-footer`, `.settings-status`
+
+All existing rules are untouched. Mobile breakpoint under 600px flattens the modal to full-screen.
+
+### Accessibility improvements
+
+- Every dashboard modal now has `role="dialog"` + `aria-modal="true"`.
+- Focus trap + focus restore on open/close.
+- Arrow-key tab navigation in the Settings tab strip.
+- `aria-live="polite"` on the permission banner and the settings save status.
+- `aria-labelledby` linking modal dialogs to their visible headings.
+- `:focus-visible` outlines on interactive elements.
+
+### Developer-facing
+
+- New global handles for modules that want to trigger UX from anywhere: `window.__openPalette`, `window.__openHelpModal`, `window.__createSession`, `window.__retrySessions`, `window.__retryFilesChanged` (added alongside the existing `__refreshRightPanel`, `__refreshLabelStrip`, `__refreshReferences`, `__refreshFilesChanged`).
+
+### Known
+
+- The `MESSAGE_PART_UPDATED` handler in `sse.js` still returns early for background sessions without invalidating their cache — same TODO as v1.15.0, not regressed.
+- Body size limit still relies on `Content-Length` header only; chunked-transfer bypass unchanged.
+- Welcome card (v1.14.0) and new onboarding states coexist — the welcome card is a first-visit primer, the onboarding empty states are session-state-aware. Both have their place; a future pass could merge them.
+
+---
+
 ## [1.15.0] — 2026-04-22
 
 Security and robustness audit. A second external review flagged four P0 workflow/safety bugs and several P1 security/robustness issues on top of the Wave 1 fixes already in v1.14.2. This release closes those Waves 2–4. No HTTP or env-var API breakage.

@@ -147,6 +147,9 @@ async function fetchSessionLastMeta(id, directory) {
   }
 }
 
+// Module-scoped error flag — set on fetch failure, cleared on success.
+let _lastLoadError = false
+
 export async function loadSessions(autoSelectMostRecent) {
   const gen = currentFetchGen()
   try {
@@ -155,6 +158,7 @@ export async function loadSessions(autoSelectMostRecent) {
     const statuses = data.statuses ?? {}
     for (const s of (data.sessions ?? [])) sessions[s.id] = s
     if (isStaleGen(gen)) return
+    _lastLoadError = false
     setState({ sessions, statuses })
 
     // Fetch last-message meta for up to 50 most-recent sessions in parallel.
@@ -179,8 +183,16 @@ export async function loadSessions(autoSelectMostRecent) {
     // the SET of pinned panes changes (addToMultiview / removeFromMultiview).
     // Per-pane content updates flow through loadMVMessages() in sse.js.
   } catch (_) {
+    _lastLoadError = true
+    renderSessions()
     toast('Failed to load sessions')
   }
+}
+
+// Exposed globally so the data-action delegation in main.js can call it.
+window.__retrySessions = function() {
+  _lastLoadError = false
+  loadSessions(false).catch(() => {})
 }
 
 /**
@@ -339,7 +351,21 @@ function _renderSessionsImpl() {
   let ids = Object.keys(sessions)
 
   if (!ids.length) {
-    list.innerHTML = '<div class="empty-state">No sessions yet. Start a prompt below, or run <code>opencode</code> in a project terminal.</div>'
+    if (_lastLoadError) {
+      // Fix 3 — error state with retry CTA
+      list.innerHTML = `<div class="empty-state error-state">
+        <h3>Couldn't load sessions</h3>
+        <p class="muted">The server returned an error.</p>
+        <button class="btn btn-primary" data-action="retry-sessions">Retry</button>
+      </div>`
+    } else {
+      // Fix 2 — actionable empty state
+      list.innerHTML = `<div class="empty-state">
+        <h3>No sessions yet</h3>
+        <p>Run <code>opencode</code> in a project terminal, or create one from here.</p>
+        <button class="btn btn-primary" data-action="create-session">Create new session</button>
+      </div>`
+    }
     return
   }
 
@@ -661,6 +687,11 @@ export async function createSession() {
   } catch (_) {
     toast('Failed to create session')
   }
+}
+
+// Expose for data-action delegation (main.js global click handler)
+window.__createSession = function() {
+  createSession().catch(() => {})
 }
 
 // ── Send prompt ────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ import { loadPermissions, initPermissions } from './permissions.js'
 import { initSettings } from './settings.js'
 import { initShortcuts } from './shortcuts.js'
 import { connect as sseConnect } from './sse.js'
-import { initCommandPalette, openProjectPicker, openCustomFolderModal } from './command-palette.js'
+import { initCommandPalette, openPalette, openProjectPicker, openCustomFolderModal } from './command-palette.js'
 import {
   getConnection,
   saveConnection,
@@ -37,6 +37,8 @@ import { resolveDirFromHash, resolveTabAction } from './hash-dir-router.js'
 
 // Expose references refresh globally so command-palette can call it
 window.__refreshReferences = refreshReferences
+// Expose palette open for data-action delegation and any other callers
+window.__openPalette = () => openPalette()
 
 // ── PWA: register service worker (HTTPS or localhost) ────────────────────
 // Service Workers require a secure context, but localhost / 127.0.0.1 count as
@@ -142,6 +144,28 @@ async function bootstrap() {
 
   // 3.1 Getting-started welcome card (dismissible, first-visit only)
   initWelcome()
+
+  // 3.2 Global data-action delegation — declarative button wiring for empty/error states.
+  //     Handlers are exposed as window.__* by sessions.js and files-changed.js.
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target?.closest('[data-action]')
+    if (!btn) return
+    const action = btn.dataset.action
+    switch (action) {
+      case 'create-session':
+        window.__createSession?.()
+        break
+      case 'open-palette':
+        window.__openPalette?.()
+        break
+      case 'retry-sessions':
+        window.__retrySessions?.()
+        break
+      case 'retry-files-changed':
+        window.__retryFilesChanged?.()
+        break
+    }
+  })
 
   // 3.5 Restore project tabs + active directory from localStorage (v1.11).
   //     This MUST happen before any API call so api.js appends the right

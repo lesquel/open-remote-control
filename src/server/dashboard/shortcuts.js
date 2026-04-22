@@ -1,4 +1,19 @@
 // shortcuts.js — Keyboard shortcuts, session picker (Ctrl+K legacy), sidebar toggle
+//
+// Canonical shortcut map (source of truth):
+//   Cmd/Ctrl+K   → Open command palette
+//   ?            → Open help modal (not in input)
+//   Esc          → Close topmost modal / picker / palette
+//   Cmd/Ctrl+Enter → Submit current prompt
+//   /            → Focus prompt input (not in input)
+//   n            → New session
+//   s            → Toggle sidebar
+//   m            → Toggle multi-view
+//   t            → Toggle theme
+//   c            → Connect from phone
+//
+// Removed: Alt+P (duplicated Ctrl+K and was never documented)
+// Kept:    Alt+B (sidebar toggle — distinct action, retained for muscle memory)
 import { getState, setState } from './state.js'
 import { createSession, selectSession, statusClass } from './sessions.js'
 import { addToMultiview } from './multi-view.js'
@@ -108,16 +123,16 @@ async function triggerSend() {
   document.getElementById('send-btn').click()
 }
 
-// ── Shortcuts modal ────────────────────────────────────────────────────────
+// ── Shortcuts modal (legacy stubs — delegates to help-modal.js) ───────────
+// These are kept so that any existing call sites don't break while the
+// codebase transitions to the new help-modal module.
 
 export function openShortcutsModal() {
-  const modal = document.getElementById('shortcuts-modal') || document.getElementById('keymap-modal')
-  modal?.classList.add('open')
+  window.__openHelpModal?.()
 }
 
 export function closeShortcutsModal() {
-  const modal = document.getElementById('shortcuts-modal') || document.getElementById('keymap-modal')
-  modal?.classList.remove('open')
+  window.__closeHelpModal?.()
 }
 
 // ── Input focus guard ──────────────────────────────────────────────────────
@@ -176,7 +191,7 @@ export function initShortcuts() {
   document.addEventListener('keydown', e => {
     // Esc — close any open modal / picker / palette (always works)
     if (e.key === 'Escape') {
-      closeShortcutsModal()
+      window.__closeHelpModal?.()
       document.getElementById('settings-modal')?.classList.remove('open')
       closeSessionPicker()
       closePalette()
@@ -184,22 +199,22 @@ export function initShortcuts() {
     }
 
     // Modifier shortcuts — always active regardless of focus
-    // Cmd+K / Ctrl+K — command palette
+    // Cmd+K / Ctrl+K — command palette (canonical)
     if (isCombo(e, { meta: true, key: 'k' })) { e.preventDefault(); openPalette(); return }
     if (isCombo(e, { ctrl: true, key: 'k' })) { e.preventDefault(); openPalette(); return }
     // Cmd+Enter / Ctrl+Enter — send prompt
     if (isCombo(e, { ctrl: true, key: 'enter' })) { e.preventDefault(); triggerSend(); return }
     if (isCombo(e, { meta: true, key: 'enter' })) { e.preventDefault(); triggerSend(); return }
 
-    // Legacy Alt aliases (keep for muscle memory)
-    if (isCombo(e, { alt: true, key: 'p' })) { e.preventDefault(); openPalette(); return }
+    // Alt+B — toggle sidebar (kept for muscle memory; distinct from palette)
+    // Alt+P was removed: it duplicated Ctrl+K and was never documented.
     if (isCombo(e, { alt: true, key: 'b' })) { e.preventDefault(); toggleSidebar(); return }
 
     // Single-key shortcuts — only fire when NOT typing in an input
     if (isTypingFocused()) return
 
-    // ? — open shortcuts modal (and palette)
-    if (e.key === '?') { e.preventDefault(); openShortcutsModal(); return }
+    // ? — open help modal
+    if (e.key === '?') { e.preventDefault(); window.__openHelpModal?.(); return }
     // n — new session
     if (e.key === 'n') { e.preventDefault(); createSession(); return }
     // s — toggle sidebar

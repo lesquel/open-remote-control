@@ -8,6 +8,7 @@ import {
   generateVapidKeys,
 } from './api.js'
 import { toast } from './toast.js'
+import { openModal } from './modal-helper.js'
 
 const STORAGE_KEY = 'pilot_settings'
 
@@ -56,23 +57,74 @@ export function playBeep() {
   } catch (_) {}
 }
 
-export function initSettings() {
+function initSettingsTabs() {
+  const tabs = document.querySelectorAll('.settings-tab')
+  const panes = document.querySelectorAll('.settings-pane')
+  if (!tabs.length) return
+
+  function selectTab(tabId) {
+    tabs.forEach(t => {
+      const active = t.dataset.tab === tabId
+      t.setAttribute('aria-selected', active ? 'true' : 'false')
+      t.classList.toggle('is-active', active)
+    })
+    panes.forEach(p => {
+      const match = p.dataset.pane === tabId
+      p.hidden = !match
+    })
+    try { localStorage.setItem('pilot:settings:last-tab', tabId) } catch (_) {}
+  }
+
+  tabs.forEach(t => {
+    t.addEventListener('click', () => selectTab(t.dataset.tab))
+    // Arrow key navigation for accessibility
+    t.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'ArrowLeft' && ev.key !== 'ArrowRight') return
+      ev.preventDefault()
+      const ordered = Array.from(tabs)
+      const idx = ordered.indexOf(t)
+      const next = ev.key === 'ArrowLeft'
+        ? (idx - 1 + ordered.length) % ordered.length
+        : (idx + 1) % ordered.length
+      ordered[next].focus()
+      selectTab(ordered[next].dataset.tab)
+    })
+  })
+
+  // Restore last-used tab or default to prefs
+  let last = 'prefs'
+  try { last = localStorage.getItem('pilot:settings:last-tab') ?? 'prefs' } catch (_) {}
+  selectTab(last)
+}
+
+let _settingsHandle = null
+
+function openSettingsModal() {
   const modal = document.getElementById('settings-modal')
-
-  document.getElementById('settings-btn').addEventListener('click', () => {
-    modal.classList.add('open')
-    // Refresh the plugin config each time the modal opens so source badges
-    // and values reflect whatever was last saved (or shell-env changes).
-    loadPluginConfig().catch(() => {})
+  if (!modal) return
+  modal.hidden = false
+  initSettingsTabs()
+  // Refresh the plugin config each time the modal opens so source badges
+  // and values reflect whatever was last saved (or shell-env changes).
+  loadPluginConfig().catch(() => {})
+  _settingsHandle = openModal({
+    node: modal,
+    onClose: () => {
+      modal.hidden = true
+      _settingsHandle = null
+    },
+    labelledBy: 'settings-modal-title',
   })
+}
 
-  document.getElementById('settings-close').addEventListener('click', () => {
-    modal.classList.remove('open')
-  })
+function closeSettingsModal() {
+  _settingsHandle?.close()
+}
 
-  modal.addEventListener('click', e => {
-    if (e.target === modal) modal.classList.remove('open')
-  })
+export function initSettings() {
+  document.getElementById('settings-btn').addEventListener('click', openSettingsModal)
+
+  document.getElementById('settings-close').addEventListener('click', closeSettingsModal)
 
   document.getElementById('s-sound').addEventListener('change', e => {
     const settings = { ...getState().settings, sound: e.target.checked }
@@ -224,8 +276,10 @@ function initPluginConfig() {
   addFieldHint('pcf-vapid-private', 'Web Push credentials. Use the Generate button if unsure.')
   addFieldHint('pcf-glob', 'Allows the dashboard’s file browser to list and read project files. Off by default for security.')
 
-  // Password-eye toggles
-  section.querySelectorAll('.pcf-eye-btn').forEach(btn => {
+  // Password-eye toggles (scoped to the whole modal — fields span multiple panes)
+  const modal = document.getElementById('settings-modal')
+  const eyeScope = modal ?? section
+  eyeScope.querySelectorAll('.pcf-eye-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const target = document.getElementById(btn.getAttribute('data-toggle-for'))
       if (!target) return
@@ -233,7 +287,7 @@ function initPluginConfig() {
     })
   })
 
-  document.getElementById('pcf-save').addEventListener('click', onSave)
+  document.getElementById('settings-save').addEventListener('click', onSave)
   document.getElementById('pcf-reset').addEventListener('click', onReset)
   document.getElementById('pcf-vapid-generate').addEventListener('click', onGenerateVapid)
 
@@ -359,9 +413,11 @@ function readInputsAsPatch() {
 }
 
 async function onSave() {
-  const statusEl = document.getElementById('plugin-config-status')
-  statusEl.style.display = 'none'
-  const saveBtn = document.getElementById('pcf-save')
+  const statusEl = document.getElementById('settings-status')
+  const pcfStatusEl = document.getElementById('plugin-config-status')
+  if (pcfStatusEl) pcfStatusEl.style.display = 'none'
+  statusEl.textContent = ''
+  const saveBtn = document.getElementById('settings-save')
   saveBtn.disabled = true
 
   try {
@@ -370,9 +426,7 @@ async function onSave() {
     _lastLoadedSnapshot = updated
     applySnapshotToInputs(updated)
     updateRestartNote(updated)
-    statusEl.className = 'plugin-config-status ok'
     statusEl.textContent = 'Saved to ' + updated.configFilePath
-    statusEl.style.display = 'block'
     try { toast('Settings saved') } catch (_) {}
   } catch (err) {
     if (err?.status === 409 && err?.code === 'SHELL_ENV_PINNED') {
@@ -385,23 +439,17 @@ async function onSave() {
         // Extract field names from the error message (format: "Cannot override: field1, field2 (set via shell env)...")
         const match = err.message.match(/Cannot override:\s*([^(]+)/)
         const fieldList = match ? match[1].trim() : err.message
-        statusEl.className = 'plugin-config-status error'
         statusEl.textContent =
-          'These fields are locked by your shell environment: ' + fieldList +
-          '. Unset them in your shell to edit here.'
+          'Locked by shell env: ' + fieldList + '. Unset them to edit here.'
       } catch (_) {
-        statusEl.className = 'plugin-config-status error'
         statusEl.textContent =
-          'Some fields are locked by your shell environment. Unset the relevant env vars to edit here.'
+          'Some fields are locked by your shell environment.'
       }
     } else if (err?.status >= 500 || !err?.status) {
-      statusEl.className = 'plugin-config-status error'
       statusEl.textContent = 'Could not save settings. Check the server log or try again.'
     } else {
-      statusEl.className = 'plugin-config-status error'
       statusEl.textContent = 'Save failed: ' + (err?.message || err)
     }
-    statusEl.style.display = 'block'
   } finally {
     saveBtn.disabled = false
   }
@@ -412,19 +460,15 @@ async function onReset() {
     'Reset plugin settings to defaults? This deletes ~/.opencode-pilot/config.json and takes effect on the next OpenCode restart.',
   )
   if (!confirmed) return
-  const statusEl = document.getElementById('plugin-config-status')
-  statusEl.style.display = 'none'
+  const statusEl = document.getElementById('settings-status')
+  statusEl.textContent = ''
   try {
     await resetPluginSettings()
     await loadPluginConfig()
-    statusEl.className = 'plugin-config-status ok'
     statusEl.textContent = 'Config file deleted. Restart OpenCode for changes to take effect.'
-    statusEl.style.display = 'block'
     try { toast('Settings reset') } catch (_) {}
   } catch (err) {
-    statusEl.className = 'plugin-config-status error'
     statusEl.textContent = 'Reset failed: ' + (err?.message || err)
-    statusEl.style.display = 'block'
   }
 }
 

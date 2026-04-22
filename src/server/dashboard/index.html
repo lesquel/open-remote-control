@@ -43,7 +43,7 @@
 <script>
 (function() {
   try {
-    var GEN = "1.15.0";
+    var GEN = "1.16.0";
     var KEY = "pilot:asset-gen";
     if (localStorage.getItem(KEY) === GEN) return;
     localStorage.setItem(KEY, GEN);
@@ -129,13 +129,21 @@
   </div>
 
   <!-- ── Permission Banner ──────────────────────────────────────────────── -->
-  <div id="perm-banner">
-    <div class="perm-item">
-      <div class="perm-title">⚠ Permission Request</div>
-      <div class="perm-desc" id="perm-desc"></div>
-      <div class="perm-actions">
-        <button class="btn btn-allow" id="btn-allow">Allow</button>
-        <button class="btn btn-deny"  id="btn-deny">Deny</button>
+  <div id="perm-banner" role="alertdialog" aria-live="polite" aria-atomic="true">
+    <div class="perm-banner-row">
+      <div class="perm-banner-icon" data-risk="shell" aria-hidden="true">⚠</div>
+      <div class="perm-banner-body">
+        <div class="perm-banner-header">
+          <span class="perm-banner-risk" id="perm-risk">Shell command</span>
+          <span class="perm-banner-queue" id="perm-queue" hidden></span>
+        </div>
+        <div class="perm-banner-title" id="perm-title">—</div>
+        <div class="perm-banner-detail" id="perm-detail"></div>
+        <div class="perm-banner-meta" id="perm-meta"></div>
+      </div>
+      <div class="perm-banner-actions">
+        <button id="btn-allow" class="btn btn-primary">Allow once</button>
+        <button id="btn-deny" class="btn btn-ghost">Deny</button>
       </div>
     </div>
   </div>
@@ -331,79 +339,92 @@
 </div>
 
 <!-- Settings modal -->
-<div id="settings-modal">
-  <div class="settings-box">
-    <h3>Settings</h3>
-    <div class="setting-row">
-      <label>Sound notifications</label>
-      <label class="toggle"><input type="checkbox" id="s-sound"><span class="toggle-slider"></span></label>
+<div id="settings-modal" class="modal-backdrop" hidden>
+  <div class="modal-panel">
+    <header class="modal-header">
+      <h2 id="settings-modal-title">Settings</h2>
+      <button class="modal-close" id="settings-close" aria-label="Close">×</button>
+    </header>
+    <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+      <button class="settings-tab" role="tab" data-tab="prefs" aria-selected="true" aria-controls="settings-pane-prefs">Preferences</button>
+      <button class="settings-tab" role="tab" data-tab="conn" aria-selected="false" aria-controls="settings-pane-conn">Connection</button>
+      <button class="settings-tab" role="tab" data-tab="notif" aria-selected="false" aria-controls="settings-pane-notif">Notifications</button>
+      <button class="settings-tab" role="tab" data-tab="adv" aria-selected="false" aria-controls="settings-pane-adv">Advanced</button>
     </div>
-    <div class="setting-row">
-      <label>Browser notifications</label>
-      <label class="toggle"><input type="checkbox" id="s-notif"><span class="toggle-slider"></span></label>
-    </div>
-    <div class="setting-row" id="push-notif-setting-row">
-      <label>Push notifications for permissions</label>
-      <div style="display:flex;align-items:center;gap:8px">
-        <label class="toggle"><input type="checkbox" id="s-push-notif"><span class="toggle-slider"></span></label>
-        <button class="btn btn-ghost" id="push-notif-test-btn" style="font-size:10px;padding:2px 8px;min-height:22px;display:none">Test</button>
-      </div>
-    </div>
-    <div class="setting-row">
-      <label>Light theme</label>
-      <label class="toggle"><input type="checkbox" id="s-theme"><span class="toggle-slider"></span></label>
-    </div>
-    <div class="setting-row">
-      <label>Show tool calls</label>
-      <label class="toggle"><input type="checkbox" id="s-tools" checked><span class="toggle-slider"></span></label>
-    </div>
-    <div class="setting-row">
-      <label>Show reasoning by default</label>
-      <label class="toggle"><input type="checkbox" id="s-reasoning"><span class="toggle-slider"></span></label>
-    </div>
-    <div class="setting-row">
-      <label>Daily budget limit ($)</label>
-      <input type="number" id="s-daily-budget" class="setting-number-input" placeholder="off" min="0" step="0.01" style="width:72px">
-    </div>
-    <!-- ── Plugin configuration (v1.12) ─────────────────────────────────── -->
-    <div id="plugin-config-section" class="plugin-config-section">
-      <div class="plugin-config-header">
-        <h4>Plugin configuration</h4>
-        <div class="plugin-config-path" id="plugin-config-path" title="Config file path">
-          Stored in <code id="plugin-config-path-code">~/.opencode-pilot/config.json</code>
+    <div id="plugin-config-status" class="plugin-config-status" style="display:none"></div>
+    <div class="settings-panes">
+      <!-- ── Preferences ──────────────────────────────────────────────────── -->
+      <section id="settings-pane-prefs" role="tabpanel" aria-labelledby="settings-tab-prefs" class="settings-pane" data-pane="prefs">
+        <div class="setting-row">
+          <label>Light theme</label>
+          <label class="toggle"><input type="checkbox" id="s-theme"><span class="toggle-slider"></span></label>
         </div>
-      </div>
-      <div id="plugin-config-status" class="plugin-config-status" style="display:none"></div>
+        <div class="setting-row">
+          <label>Sound notifications</label>
+          <label class="toggle"><input type="checkbox" id="s-sound"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <label>Browser notifications</label>
+          <label class="toggle"><input type="checkbox" id="s-notif"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <label>Show reasoning by default</label>
+          <label class="toggle"><input type="checkbox" id="s-reasoning"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <label>Show tool calls</label>
+          <label class="toggle"><input type="checkbox" id="s-tools" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <label>Daily budget limit ($)</label>
+          <input type="number" id="s-daily-budget" class="setting-number-input" placeholder="off" min="0" step="0.01" style="width:72px">
+        </div>
+      </section>
 
-      <details class="pcf-group" open>
-        <summary>Server</summary>
-        <div class="pcf-row">
-          <label for="pcf-port">Port</label>
-          <input type="number" id="pcf-port" min="1" max="65535" class="setting-number-input">
-          <span class="pcf-source" data-source-for="port"></span>
+      <!-- ── Connection ───────────────────────────────────────────────────── -->
+      <section id="settings-pane-conn" role="tabpanel" class="settings-pane" data-pane="conn" hidden>
+        <div id="plugin-config-section" class="plugin-config-section">
+          <div class="plugin-config-header">
+            <div class="plugin-config-path" id="plugin-config-path" title="Config file path">
+              Stored in <code id="plugin-config-path-code">~/.opencode-pilot/config.json</code>
+            </div>
+          </div>
+          <div class="pcf-row">
+            <label for="pcf-port">Port</label>
+            <input type="number" id="pcf-port" min="1" max="65535" class="setting-number-input">
+            <span class="pcf-source" data-source-for="port"></span>
+          </div>
+          <div class="pcf-row">
+            <label for="pcf-host">Host</label>
+            <input type="text" id="pcf-host" placeholder="127.0.0.1" class="setting-number-input">
+            <span class="pcf-source" data-source-for="host"></span>
+          </div>
+          <div class="pcf-row">
+            <label for="pcf-tunnel">Tunnel provider</label>
+            <select id="pcf-tunnel" class="setting-number-input">
+              <option value="off">off</option>
+              <option value="cloudflared">cloudflared</option>
+              <option value="ngrok">ngrok</option>
+            </select>
+            <span class="pcf-source" data-source-for="tunnel"></span>
+          </div>
+          <div class="pcf-row">
+            <label for="pcf-perm-timeout">Permission timeout (ms)</label>
+            <input type="number" id="pcf-perm-timeout" min="1000" class="setting-number-input">
+            <span class="pcf-source" data-source-for="permissionTimeoutMs"></span>
+          </div>
         </div>
-        <div class="pcf-row">
-          <label for="pcf-host">Host</label>
-          <input type="text" id="pcf-host" placeholder="127.0.0.1" class="setting-number-input">
-          <span class="pcf-source" data-source-for="host"></span>
-        </div>
-      </details>
+      </section>
 
-      <details class="pcf-group">
-        <summary>Tunnel</summary>
-        <div class="pcf-row">
-          <label for="pcf-tunnel">Provider</label>
-          <select id="pcf-tunnel" class="setting-number-input">
-            <option value="off">off</option>
-            <option value="cloudflared">cloudflared</option>
-            <option value="ngrok">ngrok</option>
-          </select>
-          <span class="pcf-source" data-source-for="tunnel"></span>
+      <!-- ── Notifications ────────────────────────────────────────────────── -->
+      <section id="settings-pane-notif" role="tabpanel" class="settings-pane" data-pane="notif" hidden>
+        <div class="setting-row" id="push-notif-setting-row">
+          <label>Push notifications for permissions</label>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label class="toggle"><input type="checkbox" id="s-push-notif"><span class="toggle-slider"></span></label>
+            <button class="btn btn-ghost" id="push-notif-test-btn" style="font-size:10px;padding:2px 8px;min-height:22px;display:none">Test</button>
+          </div>
         </div>
-      </details>
-
-      <details class="pcf-group">
-        <summary>Notifications</summary>
         <div class="pcf-row">
           <label for="pcf-telegram-token">Telegram bot token</label>
           <div class="pcf-secret-wrap">
@@ -439,19 +460,10 @@
           <button type="button" class="btn btn-ghost" id="pcf-vapid-generate">Generate VAPID keys</button>
           <span class="pcf-hint">Fills public + private above — click Save to persist.</span>
         </div>
-      </details>
+      </section>
 
-      <details class="pcf-group">
-        <summary>Permissions</summary>
-        <div class="pcf-row">
-          <label for="pcf-perm-timeout">Timeout (ms)</label>
-          <input type="number" id="pcf-perm-timeout" min="1000" class="setting-number-input">
-          <span class="pcf-source" data-source-for="permissionTimeoutMs"></span>
-        </div>
-      </details>
-
-      <details class="pcf-group">
-        <summary>Advanced</summary>
+      <!-- ── Advanced ─────────────────────────────────────────────────────── -->
+      <section id="settings-pane-adv" role="tabpanel" class="settings-pane" data-pane="adv" hidden>
         <div class="pcf-row">
           <label for="pcf-glob">Enable glob opener</label>
           <label class="toggle"><input type="checkbox" id="pcf-glob"><span class="toggle-slider"></span></label>
@@ -462,26 +474,26 @@
           <input type="number" id="pcf-fetch-timeout" min="1000" class="setting-number-input">
           <span class="pcf-source" data-source-for="fetchTimeoutMs"></span>
         </div>
-      </details>
-
-      <div class="plugin-config-actions">
-        <button type="button" class="btn btn-primary" id="pcf-save">Save</button>
-        <button type="button" class="btn btn-ghost" id="pcf-reset">Reset to defaults</button>
-      </div>
-      <div class="plugin-config-note" id="pcf-restart-note" style="display:none">
-        Some of these changes require an OpenCode restart to take effect.
-      </div>
+        <div class="pcf-row pcf-row--action">
+          <button type="button" class="btn btn-ghost" id="pcf-reset">Reset to defaults</button>
+        </div>
+        <div class="plugin-config-note" id="pcf-restart-note" style="display:none">
+          Some of these changes require an OpenCode restart to take effect.
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:10px;line-height:1.8;margin-top:12px">
+          <b style="color:var(--text-dim)">Alt+P</b> command palette &nbsp;·&nbsp;
+          <b style="color:var(--text-dim)">Alt+N</b> new session &nbsp;·&nbsp;
+          <b style="color:var(--text-dim)">Ctrl+Enter</b> send &nbsp;·&nbsp;
+          <b style="color:var(--text-dim)">Esc</b> close &nbsp;·&nbsp;
+          <b style="color:var(--text-dim)">Alt+B</b> sidebar &nbsp;·&nbsp;
+          <b style="color:var(--text-dim)">Alt+T</b> theme
+        </div>
+      </section>
     </div>
-
-    <div style="font-size:10px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:10px;line-height:1.8">
-      <b style="color:var(--text-dim)">Alt+P</b> command palette &nbsp;·&nbsp;
-      <b style="color:var(--text-dim)">Alt+N</b> new session &nbsp;·&nbsp;
-      <b style="color:var(--text-dim)">Ctrl+Enter</b> send &nbsp;·&nbsp;
-      <b style="color:var(--text-dim)">Esc</b> close &nbsp;·&nbsp;
-      <b style="color:var(--text-dim)">Alt+B</b> sidebar &nbsp;·&nbsp;
-      <b style="color:var(--text-dim)">Alt+T</b> theme
-    </div>
-    <button class="btn btn-ghost" id="settings-close" style="margin-top:2px;font-size:11px">Close</button>
+    <footer class="settings-footer">
+      <button id="settings-save" class="btn btn-primary">Save</button>
+      <span id="settings-status" class="settings-status" aria-live="polite"></span>
+    </footer>
   </div>
 </div>
 

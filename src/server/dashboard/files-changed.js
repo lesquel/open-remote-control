@@ -65,7 +65,7 @@ function renderPanel(container, files) {
         <span class="files-changed-chevron">▼</span>
       </div>
       <div class="files-changed-list">
-        <div class="files-changed-empty">No file changes in this session yet</div>
+        <div class="empty-state muted"><p>No file changes in this session.</p></div>
       </div>
     `
   } else {
@@ -128,6 +128,8 @@ function debounce(fn, ms) {
  */
 export function createFilesChangedPanel({ container }) {
   let destroyed = false
+  // Track the last sessionId so the retry button can re-call refresh.
+  let _currentSessionId = null
 
   async function refresh(sessionId) {
     if (destroyed) return
@@ -136,7 +138,14 @@ export function createFilesChangedPanel({ container }) {
       return
     }
 
+    _currentSessionId = sessionId
     container.style.display = ''
+
+    // Show loading state on first paint (when container is empty or showing old state)
+    const alreadyHasContent = container.querySelector('.files-changed-header')
+    if (!alreadyHasContent) {
+      container.innerHTML = `<div class="empty-state"><div class="spinner-small"></div><p>Checking…</p></div>`
+    }
 
     try {
       const data = await fetchDiff(sessionId)
@@ -149,15 +158,17 @@ export function createFilesChangedPanel({ container }) {
         renderPanel(container, files)
       } catch (err) {
         console.error('[panel-error] files-changed-panel:', err)
-        container.innerHTML = `<div class="panel-error">
-          <span>⚠ Files panel failed to render (check console)</span>
-          <button class="panel-error-retry" id="files-changed-retry">Retry</button>
+        container.innerHTML = `<div class="empty-state error-state">
+          <p>Couldn't load file changes.</p>
+          <button class="btn btn-ghost" data-action="retry-files-changed">Retry</button>
         </div>`
-        document.getElementById('files-changed-retry')?.addEventListener('click', () => refresh(sessionId))
       }
     } catch (_) {
-      // Diff not available — show empty state silently
-      renderPanel(container, [])
+      // Fetch failed — show error state
+      container.innerHTML = `<div class="empty-state error-state">
+        <p>Couldn't load file changes.</p>
+        <button class="btn btn-ghost" data-action="retry-files-changed">Retry</button>
+      </div>`
     }
   }
 
@@ -170,6 +181,11 @@ export function createFilesChangedPanel({ container }) {
     destroyed = true
     container.innerHTML = ''
     container.style.display = 'none'
+  }
+
+  // Expose retry globally for data-action delegation in main.js
+  window.__retryFilesChanged = function() {
+    if (_currentSessionId) refresh(_currentSessionId).catch(() => {})
   }
 
   return { refresh, debouncedRefresh, destroy }

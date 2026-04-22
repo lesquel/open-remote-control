@@ -8,6 +8,7 @@ import {
 } from './references.js'
 import { normalizeMessage } from './messages.js'
 import { fetchMessages, fetchHealth } from './api.js'
+import { openModal } from './modal-helper.js'
 
 // Pilot version is no longer hardcoded here.
 // It is fetched from /health at build-report time so the debug modal always
@@ -117,22 +118,10 @@ function ensureModal() {
   `
   document.body.appendChild(el)
 
-  // v1.11: delegate clicks on the overlay so the close button keeps working
-  // even if the button element is re-rendered or the direct listener was
-  // lost. Previously the modal had no CSS either, so closing was invisible.
+  // Copy button — wired via event delegation on the panel (stays stable across re-renders)
   el.addEventListener('click', (e) => {
     const t = e.target
     if (!t) return
-    // Click on backdrop (the overlay itself, not its children) → close
-    if (t === el) { el.classList.remove('open'); return }
-    // Click inside the close button (or its descendants) → close
-    if (t.closest && t.closest('#debug-close-btn')) {
-      e.preventDefault()
-      e.stopPropagation()
-      el.classList.remove('open')
-      return
-    }
-    // Click inside the copy button → copy
     if (t.closest && t.closest('#debug-copy-btn')) {
       const text = document.getElementById('debug-json-output')?.textContent ?? ''
       navigator.clipboard?.writeText(text).then(() => {
@@ -142,12 +131,8 @@ function ensureModal() {
     }
   })
 
-  // Global Escape key to close when open
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && el.classList.contains('open')) {
-      el.classList.remove('open')
-    }
-  })
+  // Backdrop click, Esc, focus trap, and focus restore are handled by openModal
+  // (called each time the modal opens in openDebugModal).
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -161,6 +146,18 @@ export async function openDebugModal() {
   const output = document.getElementById('debug-json-output')
   modal.classList.add('open')
   output.textContent = 'Loading…'
+
+  const panel = modal.querySelector('.modal-box') ?? modal.firstElementChild
+  const handle = openModal({
+    node: modal,
+    panel,
+    onClose: () => modal.classList.remove('open'),
+  })
+
+  // Wire close button to handle so focus is restored to the trigger
+  const closeBtn = document.getElementById('debug-close-btn')
+  if (closeBtn) closeBtn.onclick = () => handle.close()
+
   try {
     const report = await buildReport()
     output.textContent = JSON.stringify(report, null, 2)

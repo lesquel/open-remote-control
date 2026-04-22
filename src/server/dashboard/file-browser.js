@@ -3,6 +3,7 @@
 // below the sessions list.  Lazy-loads children on folder expand.
 import { fetchFileList, fetchFileContent, fetchGlobFiles, readAbsFile } from './api.js'
 import { getActiveDirectory } from './state.js'
+import { openModal } from './modal-helper.js'
 
 const MAX_CHILDREN = 500
 
@@ -72,13 +73,14 @@ function openFileModal(filePath, content) {
 
   document.body.appendChild(modal)
 
-  const close = () => { document.removeEventListener('keydown', onKey); modal.remove() }
-  modal.addEventListener('click', e => { if (e.target === modal) close() })
-  document.getElementById('file-viewer-close').addEventListener('click', close)
-
-  const onKey = e => { if (e.key === 'Escape') close() }
-  document.addEventListener('keydown', onKey)
-  // cleanup is done in close(); removed dead 'remove' event listener
+  const panel = modal.querySelector('.file-viewer-box')
+  const handle = openModal({
+    node: modal,
+    panel,
+    onClose: () => modal.remove(),
+  })
+  document.getElementById('file-viewer-close').addEventListener('click', () => handle.close())
+  // Esc, backdrop click, and focus trap are handled by openModal
 }
 
 // ── Tree node rendering ───────────────────────────────────────────────────────

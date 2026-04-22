@@ -3,6 +3,7 @@
 // loaded qrcode library. Falls back to copyable URL text if CDN unavailable.
 import { fetchConnectInfo } from './api.js'
 import { toast } from './toast.js'
+import { openModal } from './modal-helper.js'
 
 // ── QR loader (cached promise, loaded once) ────────────────────────────────
 
@@ -71,24 +72,32 @@ let _isOpen = false
 let _activeTab = 'lan'
 let _connectInfo = null
 let _refreshTimer = null
+let _modalHandle = null
 
 // ── Open / Close ──────────────────────────────────────────────────────────
 
 export function openConnectModal() {
   const modal = document.getElementById('connect-phone-modal')
-  if (!modal) return
+  if (!modal || _isOpen) return
   modal.classList.add('open')
   _isOpen = true
   _refresh()
   _startPolling()
+  const panel = modal.querySelector('.modal-panel') ?? modal.querySelector('.cpm-box') ?? modal.firstElementChild
+  _modalHandle = openModal({
+    node: modal,
+    panel,
+    onClose: closeConnectModal,
+  })
 }
 
 export function closeConnectModal() {
   const modal = document.getElementById('connect-phone-modal')
-  if (!modal) return
+  if (!modal || !_isOpen) return
   modal.classList.remove('open')
   _isOpen = false
   _stopPolling()
+  _modalHandle = null
 }
 
 function _startPolling() {
@@ -287,13 +296,12 @@ export function initConnectModal() {
   const modal = document.getElementById('connect-phone-modal')
   if (!modal) return
 
-  // Close on backdrop click
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closeConnectModal()
+  // Backdrop click and Esc are handled by openModal (called inside openConnectModal).
+  // Close button delegates to the active handle so focus is restored properly.
+  modal.querySelector('.cpm-close')?.addEventListener('click', () => {
+    if (_modalHandle) _modalHandle.close()
+    else closeConnectModal()
   })
-
-  // Close button
-  modal.querySelector('.cpm-close')?.addEventListener('click', closeConnectModal)
 
   // Launcher button in header
   const launchBtn = document.getElementById('connect-phone-btn')

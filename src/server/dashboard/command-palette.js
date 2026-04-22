@@ -6,6 +6,7 @@ import { toast } from './toast.js'
 import { getAgents, getProviders, getConnectedProviders } from './references.js'
 import { sendPromptWithOpts, fetchProjects, updateSessionTitle } from './api.js'
 import { openDebugModal } from './debug-modal.js'
+import { openModal } from './modal-helper.js'
 
 // ── Palette listener registry (unified cleanup) ────────────────────────────
 let paletteListeners = []
@@ -85,19 +86,27 @@ function escHtml(s) {
 let isOpen = false
 let selectedIndex = 0
 let currentItems = []  // flat list of rendered items for keyboard nav
+let _paletteHandle = null
 
 // ── Open / Close ───────────────────────────────────────────────────────────
 
 export function openPalette() {
   const el = document.getElementById('command-palette')
-  if (!el) return
+  if (!el || isOpen) return
   el.classList.add('open')
   isOpen = true
   selectedIndex = 0
   const input = document.getElementById('palette-input')
   input.value = ''
   renderPaletteList('')
-  input.focus()
+  // openModal handles: Esc, backdrop click, focus trap (Tab only), focus restore.
+  // Up/Down/Enter navigation lives on the input keydown handler — unaffected.
+  const panel = el.querySelector('.palette-box') ?? el.firstElementChild
+  _paletteHandle = openModal({
+    node: el,
+    panel,
+    onClose: closePalette,
+  })
 }
 
 export function closePalette() {
@@ -105,6 +114,7 @@ export function closePalette() {
   if (!el) return
   el.classList.remove('open')
   isOpen = false
+  _paletteHandle = null
   cleanupPaletteListeners()
 }
 
@@ -168,7 +178,7 @@ function buildItems(query) {
     { label: 'Show Agent Context',   icon: '◉', action: () => { closePalette(); window.__agentPanel?.open?.() } },
     { label: 'Refresh References',   icon: '⟳', action: () => { closePalette(); window.__refreshReferences?.().then(() => toast('References refreshed')) } },
     { label: 'Show Debug Info',      icon: '⚑', action: () => { closePalette(); openDebugModal() } },
-    { label: 'Show Shortcuts',       icon: '?', kbd: '?', action: () => { closePalette(); document.getElementById('keymap-modal')?.classList.add('open') } },
+    { label: 'Help — Keyboard shortcuts', icon: '?', kbd: '?', action: () => { closePalette(); window.__openHelpModal?.() } },
     { label: 'Clear Prompt History', icon: '⌫', action: () => {
       closePalette()
       if (!confirm('Clear all prompt history?')) return
@@ -1045,10 +1055,7 @@ export function initCommandPalette() {
     if (e.key === 'Escape')    { e.preventDefault(); closePalette(); return }
   })
 
-  // Click outside to close
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay) closePalette()
-  })
+  // Backdrop click and Esc are handled by openModal (called inside openPalette).
 
   // Expose agent picker globally so the compose-bar agent button can trigger it
   window.__openAgentPicker = openAgentPicker

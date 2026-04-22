@@ -4759,3 +4759,296 @@ body {
   .pcf-row .pcf-source { justify-self: start; }
 }
 
+/* === Permission banner v2 (Wave 5 UX) === */
+#perm-banner .perm-banner-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 14px;
+}
+#perm-banner .perm-banner-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+  padding-top: 2px;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+#perm-banner .perm-banner-icon[data-risk="shell"] { color: #ef4444; }
+#perm-banner .perm-banner-icon[data-risk="network"] { color: #f59e0b; }
+#perm-banner .perm-banner-icon[data-risk="write"] { color: #f59e0b; }
+#perm-banner .perm-banner-icon[data-risk="read"] { color: #22c55e; }
+#perm-banner .perm-banner-icon[data-risk="unknown"] { color: var(--text-dim); }
+
+#perm-banner .perm-banner-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+#perm-banner .perm-banner-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+#perm-banner .perm-banner-queue {
+  font-weight: 500;
+}
+#perm-banner .perm-banner-title {
+  font-size: 0.95rem;
+  font-weight: 500;
+  word-break: break-word;
+}
+#perm-banner .perm-banner-detail code {
+  font-size: 0.8rem;
+  word-break: break-all;
+  background: var(--surface-alt, rgba(127,127,127,0.08));
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  max-width: 100%;
+}
+#perm-banner .perm-banner-meta {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+#perm-banner .perm-banner-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  #perm-banner .perm-banner-row { flex-wrap: wrap; }
+  #perm-banner .perm-banner-actions { width: 100%; justify-content: flex-end; }
+}
+
+/* === Wave 5 UX styles (onboarding, help modal, empty/error states) === */
+
+/* ── Empty / onboarding states ─────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 24px;
+  color: var(--text-dim);
+  text-align: center;
+  min-height: 180px;
+}
+.empty-state h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+  font-family: var(--mono);
+}
+.empty-state p {
+  margin: 0;
+  max-width: 40ch;
+  line-height: 1.5;
+  font-size: 0.85rem;
+}
+.empty-state.muted {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.empty-state.onboarding-empty {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.empty-state.onboarding-loading {
+  color: var(--text-dim);
+  gap: 10px;
+}
+.empty-state.error-state {
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  background: rgba(255, 95, 86, 0.06);
+}
+.empty-state.error-state h3 { color: var(--danger); }
+
+/* Button row inside empty/onboarding states */
+.onboarding-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+/* ── Spinner (CSS-only, inline) ─────────────────────────────────────────── */
+.spinner-small {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: pilot-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes pilot-spin { to { transform: rotate(360deg); } }
+
+/* ── Help modal ─────────────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0;
+  max-width: 560px;
+  width: calc(100% - 32px);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+/* .modal-header already has a stub at line 4479 (flex-shrink: 0 inside debug modal).
+   Scoped to .help-modal so the two don't conflict. */
+.help-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.help-modal .modal-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-family: var(--mono);
+  color: var(--text);
+}
+.modal-close {
+  background: transparent;
+  border: 0;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--text-dim);
+  padding: 2px 6px;
+  line-height: 1;
+  font-family: var(--mono);
+  border-radius: var(--radius-sm);
+}
+.modal-close:hover { color: var(--text); background: var(--surface2); }
+
+/* ── Help modal body sections ───────────────────────────────────────────── */
+.help-section {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+.help-section:first-of-type { border-top: 0; }
+.help-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+.help-section ul {
+  margin: 0;
+  padding-left: 16px;
+  line-height: 1.6;
+  font-size: 0.85rem;
+}
+
+/* Key bindings definition list */
+.help-keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.help-keys dt {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.help-keys dd {
+  margin: 0;
+  color: var(--text-dim);
+  align-self: center;
+}
+
+/* Keyboard key chip */
+kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-family: var(--mono);
+  font-size: 0.78em;
+  background: var(--surface-alt, rgba(127, 127, 127, 0.1)); /* TODO: promote to var */
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+  color: var(--text);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .modal-panel { max-width: 100%; border-radius: 0; }
+  .empty-state { padding: 24px 16px; }
+}
+
+/* === Settings tabs (Wave 5 UX) === */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.settings-tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transform: translateY(1px);
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab.is-active,
+.settings-tab[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+.settings-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 2px;
+}
+
+.settings-panes { padding: 12px 18px; max-height: calc(100vh - 220px); overflow-y: auto; }
+.settings-pane > * + * { margin-top: 12px; }
+
+.settings-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
+.settings-status { font-size: 0.85rem; color: var(--text-dim); }
+

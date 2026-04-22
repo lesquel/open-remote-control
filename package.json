@@ -1,6 +1,6 @@
 {
   "name": "@lesquel/opencode-pilot",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "description": "Remote control web dashboard for OpenCode — multi-project tabs, live SSE streaming, mobile-friendly, push/Telegram notifications, tunnel for phone access from anywhere.",
   "publishConfig": {
     "access": "public"

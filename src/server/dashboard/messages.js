@@ -714,13 +714,17 @@ export async function loadMessages(sessionId) {
   const box = document.getElementById('messages')
   const alreadyHasMessages = !!box.querySelector('.message')
   if (!alreadyHasMessages) {
-    box.innerHTML = '<div style="padding:30px;color:var(--text-muted);font-size:11px;text-align:center">Loading…</div>'
+    // State C — loading
+    box.innerHTML = `<div class="empty-state onboarding-loading">
+      <div class="spinner-small"></div>
+      <p>Loading messages…</p>
+    </div>`
   }
   try {
     const raw = await fetchMessages(sessionId)
     const msgs = Array.isArray(raw) ? raw : []
     console.debug('[pilot:data] loadMessages session=%s raw=%d', sessionId, msgs.length)
-    withErrorBoundary('messages', () => renderMessages(msgs), () => loadMessages(sessionId))
+    withErrorBoundary('messages', () => renderMessages(msgs, { sessionId }), () => loadMessages(sessionId))
   } catch (_) {
     if (!alreadyHasMessages) {
       box.innerHTML = '<div class="panel-error"><span>⚠ Failed to load messages</span></div>'
@@ -731,14 +735,34 @@ export async function loadMessages(sessionId) {
 /**
  * Render an array of raw SDK messages into #messages.
  * Accepts wrapped ({ info, parts }) or flat shapes — normalizeMessage handles both.
+ *
+ * Empty-state rendering is state-aware:
+ *  - No active session     → State A: onboarding with CTA buttons
+ *  - Session exists, msgs empty → State B: "type your first prompt"
+ *  - (Loading state C is set by loadMessages before this is called)
  */
-export function renderMessages(msgs) {
+export function renderMessages(msgs, { sessionId } = {}) {
   const box = document.getElementById('messages')
   if (!msgs.length) {
-    box.innerHTML = `<div id="no-session-state">
-      <h3>Ready for your first prompt</h3>
-      <p>Type a message below and press Enter to send it to this session.</p>
-    </div>`
+    const { activeSession } = getState()
+    if (!activeSession) {
+      // State A — no session selected
+      box.innerHTML = `<div class="empty-state onboarding-empty" id="no-session-state">
+        <h3>No session selected</h3>
+        <p>Create a new session or pick one from the sidebar to start.</p>
+        <div class="onboarding-actions">
+          <button class="btn btn-primary" data-action="create-session">Create new session</button>
+          <button class="btn btn-ghost" data-action="open-palette">Open command palette (Ctrl/Cmd+K)</button>
+        </div>
+      </div>`
+    } else {
+      // State B — session selected, no messages yet
+      box.innerHTML = `<div class="empty-state onboarding-empty" id="no-session-state">
+        <h3>Session ready</h3>
+        <p>Type your first prompt below and press Enter.</p>
+        <p class="muted">Need ideas? Try: "Explain this project", "Run the tests", "Find TODO comments".</p>
+      </div>`
+    }
     return
   }
   box.innerHTML = msgs.map(m => renderMsg(m)).join('')
