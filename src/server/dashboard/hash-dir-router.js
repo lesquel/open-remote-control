@@ -26,18 +26,15 @@ export function resolveDirFromHash(hash) {
     return { ok: false, reason: 'no dir param in hash' }
   }
 
-  // Decode — URLSearchParams already URL-decodes values, but we need to handle
-  // malformed percent sequences that slip past the URLSearchParams parser.
+  // URLSearchParams.get() silently passes through malformed percent sequences
+  // like %ZZ (does not throw, does not decode them). We run decodeURIComponent
+  // on the raw value so that: (a) any remaining encoded chars are decoded, and
+  // (b) genuinely malformed sequences throw URIError, which we catch below.
+  // This is a single decode pass — no double-decode risk.
   let dir
   try {
-    // URLSearchParams.get() already decodes, so `raw` is the decoded string.
-    // We do an extra decodeURIComponent to catch any double-encoded inputs,
-    // but use the already-decoded `raw` as the primary value.
-    dir = raw
-    // Validate that the raw (still-encoded) string is decodable if passed
-    // directly (catches %ZZ etc that URLSearchParams silently passes through).
-    decodeURIComponent(params.get('dir') ?? '')
-  } catch {
+    dir = decodeURIComponent(raw)
+  } catch (_) {
     return { ok: false, reason: 'decode error — malformed percent sequence' }
   }
 

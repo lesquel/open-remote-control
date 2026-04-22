@@ -4,6 +4,84 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.15.0] — 2026-04-22
+
+Security and robustness audit. A second external review flagged four P0 workflow/safety bugs and several P1 security/robustness issues on top of the Wave 1 fixes already in v1.14.2. This release closes those Waves 2–4. No HTTP or env-var API breakage.
+
+### Fixed — passive instances no longer intercept remote-facing hooks
+
+Previously, a second OpenCode window (passive mode) registered `permission.ask`, `event`, `tool.execute.before`, and `tool.execute.after` hooks just like the primary. Those hooks routed into the passive instance's own EventBus / PermissionQueue — but no HTTP server, no dashboard, no Telegram existed to respond. Permissions would hang the full `permissionTimeoutMs` (5 minutes default) before the TUI fallback kicked in.
+
+Each of the four hooks now checks `role === "passive"` at call time and returns a no-op if so. The TUI handles those events natively. Promotion from passive to primary is still transparent — `role` is re-read at each call, no hook re-registration needed.
+
+### Fixed — permissions with zero remote channels don't hang 5 minutes
+
+`notifications.ts::notifyPermissionPending` now returns `Promise<boolean>` indicating whether at least one interactive remote channel was reachable (Telegram enabled + configured, or Web Push enabled with at least one subscription, or EventBus has SSE clients). `permission.ask.ts` consults the return value and short-circuits if no channel exists, letting OpenCode's TUI resolve the permission immediately instead of waiting for a nonexistent remote to respond.
+
+### Fixed — permissions now carry rich metadata end-to-end
+
+`PermissionQueue::waitForResponse` accepts an optional `PermissionMeta` (title, sessionID, type, pattern, metadata) and stores it on the waiter. `pending()` returns the meta, so `GET /permissions` no longer ships skeletal `{permissionID, createdAt}` rows — dashboards and integrations now see the real description.
+
+### Fixed — dashboard permission contract: `.properties` vs `.data`
+
+Backend emits `pilot.permission.pending` with payload under `properties` (standard across pilot.* events), but the dashboard handler at `sse.js:342` read `ev.data`. Result: `data.id` was undefined, the banner fell back to `GET /permissions` polling, and without the metadata fix above that poll returned nothing useful. `sse.js` now normalizes `ev.properties ?? ev.data` into a stable `{id, permissionID, description, title, ...}` shape before dispatch. `permissions.js` readers accept both `id` and `permissionID` aliases.
+
+### Fixed — EventBus no longer leaks ghost clients
+
+`createSSEResponse`'s `cancel()` callback only cleared the ping interval; the SSEClient stayed in the `clients` Set. `hasClients()` lied, `clientCount()` drifted, and the 5-minute permission wait (pre-fix 2) fired for disconnects that looked present. `event-bus.ts` now holds the client reference at response scope so `cancel()` and ping-failure both delete it, plus a new `closeAll()` helper for graceful shutdown.
+
+### Security — `/fs/read` and `/fs/glob` no longer allow `$HOME`
+
+Previously the allowed-roots list was `[deps.directory, process.env.HOME ?? ""]`. With `PILOT_ENABLE_GLOB_OPENER=true`, any authenticated client (the dashboard itself, or a tunneled third party) could read `~/.ssh/id_rsa`, `~/.opencode-pilot/config.json` (Telegram tokens, VAPID private keys), browser cookies, and anything else under the user's home. Reduced to `[deps.directory, deps.worktree]` filter-null. `process.env.HOME` is no longer a root. Zero matches in handlers.ts after the change.
+
+### Security — `GET /settings` redacts secrets
+
+`telegramToken` and `vapidPrivateKey` no longer ship in plaintext. The GET response shape for each is now `{ configured: boolean, preview: "abcd…wxyz" }`. PATCH `/settings` and `POST /settings/vapid/generate` are unchanged (write paths still accept and emit raw keys). `vapidPublicKey` and `telegramChatId` remain plaintext (not secrets).
+
+### Security — Config file perms 0600, config dir 0700
+
+`settings-store.ts::save()` now sets mode 0o600 on the temp write and re-applies via `chmodSync` after atomic rename (in case the file existed with broader perms). Config directory creation sets 0o700. Both are wrapped in try/catch so Windows filesystems silently fall through without breaking.
+
+### Security — Request body size limit (1 MiB)
+
+New `MAX_REQUEST_BODY_BYTES = 1_048_576` in `constants.ts`. `http/server.ts` now checks `Content-Length` on every POST/PATCH/PUT before dispatching to handlers; requests over the limit return 413 Payload Too Large. SSE and GET remain unaffected.
+
+### Security — Web Push subscribe blocks SSRF vectors
+
+`push.ts::addSubscription()` now validates the endpoint URL before storing it. Non-HTTPS, `localhost`, loopback, RFC 1918 private ranges, link-local, and IPv6 unique-local are all rejected with an auditable reason. Previously an attacker could register `http://192.168.1.1/admin` as a push endpoint and turn the plugin into an SSRF proxy. `POST /push/subscribe` now returns 400 `INVALID_ENDPOINT` on rejection.
+
+### Robustness — TUI and CLI use XDG/Windows paths
+
+Until now `src/tui/` and `src/cli/` hardcoded `~/.opencode-pilot/`, while the server already respected `XDG_CONFIG_HOME`/`XDG_STATE_HOME` and `APPDATA`/`LOCALAPPDATA`. Result: `/remote`, `doctor`, and `uninstall` broke whenever the user exported an XDG override or ran on Windows. New `src/tui/paths.ts` mirrors `src/server/util/paths.ts` exactly (duplicated instead of cross-imported to avoid breaking the tui↔server boundary), and both TUI and CLI now use `stateFile()` / `getPluginStateDir()` everywhere.
+
+### Robustness — `readPilotState` is liveness-aware
+
+`src/tui/index.ts::readPilotState` used to return the first *readable* candidate. A stale `<project>/.opencode/pilot-state.json` pointing at a dead port would silently win over a live global state. It now reads every candidate, probes each via `isServerAlive`, and returns the first whose server actually responds. Falls back to the first readable state when none are alive so doctor still shows something. Signature changed from sync to `Promise<PilotState | null>`.
+
+### Robustness — Liveness probes use `GET /health`
+
+`src/tui/liveness.ts` was sending `HEAD /health`, but the server's route table only matches `GET /health`. Liveness probes reported "dead" on a perfectly healthy server. Changed to `GET`.
+
+### Robustness — Dashboard service worker only caches static assets
+
+`sw.js` previously used a denylist of API prefixes — but the list was incomplete, so `/agents`, `/providers`, `/projects`, `/connect-info`, `/auth/rotate`, `/file/list`, `/file/content`, `/lsp/status`, and `/mcp/status` were being cached. A stale cached `/auth/rotate` response could mask a token rotation from the UI. Inverted the logic: `STATIC_ASSET_PATTERNS` allowlist (HTML shell, `.js`/`.css`/image/font extensions, manifest, sw). Everything else falls through to network. No API path matches the allowlist.
+
+### Robustness — Dashboard 401 funnels through one helper
+
+`api.js` had eight direct `fetch()` call sites (glob, file read, push subscribe/unsubscribe/test/key, settings PATCH) that didn't route through `request()` and so skipped the centralized 401 handler. Each now calls a new `checkUnauthorized()` internal helper that invokes the `handleUnauthorized()` flow exclusively on `r.status === 401`. `validateStoredToken()` in `auth.js` was already correct (only 401 triggers the expired screen; 503/network errors are no-ops).
+
+### Robustness — Hash router no longer double-decodes
+
+`hash-dir-router.js::resolveDirFromHash` previously called `URLSearchParams.get('dir')` (which decodes) and then `decodeURIComponent` on the same value for validation. Simplified to a single decode path: URLSearchParams returns the raw still-encoded value, one `decodeURIComponent(raw)` decodes it, and `try/catch` catches malformed percent sequences. All 8 existing tests still pass.
+
+### Known
+
+- `sse.js` `MESSAGE_PART_UPDATED` for non-active sessions still returns early without invalidating the cached message list for that session. Low priority (`TODO` flagged in-code); next time the user switches to that session they may see stale data until the next action triggers a re-fetch.
+- Body size limit relies on the `Content-Length` header; chunked-transfer payloads without it are not yet limited. Not a concern for browser-originated dashboard traffic (always sends Content-Length) — flagged for a future streaming-reader upgrade.
+- Wave 5 (in-app UX: state-aware onboarding, unified keyboard shortcuts, Settings tabs, focus-trap accessibility, permission banner risk context) is intentionally not in this release. Scope-bounded for review first.
+
+---
+
 ## [1.14.2] — 2026-04-22
 
 Follow-up release driven by a real user session that exposed three independent bugs the v1.14.1 fix alone could not cover. All fixes are defensive — no API changes.

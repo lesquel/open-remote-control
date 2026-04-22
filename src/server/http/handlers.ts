@@ -984,7 +984,10 @@ export async function subscribePush({ req, deps }: RouteContext): Promise<Respon
       CORS_HEADERS,
     )
   }
-  deps.push.addSubscription(body as PushSubscriptionJson)
+  const result = deps.push.addSubscription(body as PushSubscriptionJson)
+  if (result.ok === false) {
+    return jsonError("INVALID_ENDPOINT", result.reason, 400, CORS_HEADERS)
+  }
   return json({ ok: true, count: deps.push.count() }, 200, CORS_HEADERS)
 }
 

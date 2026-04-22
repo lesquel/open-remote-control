@@ -84,7 +84,16 @@ async function request(method, path, body, opts = {}) {
   if (body) fetchOpts.body = JSON.stringify(body)
   const url = buildUrl(path, opts.directory)
   const fetcher = method === 'GET' ? apiFetch : fetch
-  const r = await fetcher(url, fetchOpts)
+  let r
+  try {
+    r = await fetcher(url, fetchOpts)
+  } catch (_) {
+    // Network error / fetch threw (server unreachable, offline)
+    console.debug('[pilot:data] request %s %s → network error', method, url)
+    const err = new Error('Network error')
+    err.status = 0
+    throw err
+  }
   const data = r.ok ? await r.json() : null
   if (!r.ok) {
     console.debug('[pilot:data] request %s %s → %d', method, url, r.status)
@@ -97,6 +106,9 @@ async function request(method, path, body, opts = {}) {
     if (r.status === 401) {
       handleUnauthorized()
     }
+    // 503: server temporarily unavailable — NOT a token problem. Don't clear
+    // the token; the server will come back and the stored token is still valid.
+    // Other 4xx/5xx: throw with status so callers can decide.
     const err = new Error(`${r.status}`)
     err.status = r.status
     throw err
@@ -108,6 +120,20 @@ async function request(method, path, body, opts = {}) {
     console.debug('[pilot:data] request %s %s → {%s}', method, url, Object.keys(data).join(','))
   }
   return data
+}
+
+/**
+ * Shared 401/503/network handler for direct fetch() call sites that cannot
+ * use request() because they need custom response processing (e.g. 403 GLOB_DISABLED,
+ * push 503, patchPluginSettings error body parsing). Checks the response or
+ * error and calls handleUnauthorized() on 401 only.
+ *
+ * @param {Response} r  A fetch Response object
+ */
+function checkUnauthorized(r) {
+  if (r.status === 401) {
+    handleUnauthorized()
+  }
 }
 
 export async function fetchSessions() {
@@ -246,6 +272,7 @@ export async function fetchGlobFiles(pattern, opts = {}) {
   if (opts.limit) params.set('limit', String(opts.limit))
   const url = baseUrl() + '/fs/glob?' + params.toString()
   const r = await fetch(url, { headers: authHeaders() })
+  checkUnauthorized(r)
   if (r.status === 403) {
     const err = new Error('GLOB_DISABLED')
     err.code = 'GLOB_DISABLED'
@@ -264,6 +291,7 @@ export async function fetchGlobFiles(pattern, opts = {}) {
 export async function readAbsFile(path) {
   const url = baseUrl() + '/fs/read?path=' + encodeURIComponent(path)
   const r = await fetch(url, { headers: authHeaders() })
+  checkUnauthorized(r)
   if (r.status === 403) {
     const err = new Error('GLOB_DISABLED')
     err.code = 'GLOB_DISABLED'
@@ -280,6 +308,7 @@ export async function readAbsFile(path) {
 export async function pushPublicKey() {
   const url = baseUrl() + '/push/public-key'
   const r = await fetch(url, { headers: authHeaders() })
+  checkUnauthorized(r)
   if (r.status === 503) return null
   if (!r.ok) throw new Error(`${r.status}`)
   const data = await r.json()
@@ -293,6 +322,7 @@ export async function pushSubscribe(sub) {
     headers: authHeaders(),
     body: JSON.stringify(sub),
   })
+  checkUnauthorized(r)
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json()
 }
@@ -304,6 +334,7 @@ export async function pushUnsubscribe(endpoint) {
     headers: authHeaders(),
     body: JSON.stringify({ endpoint }),
   })
+  checkUnauthorized(r)
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json()
 }
@@ -315,6 +346,7 @@ export async function pushTest(endpoint) {
     headers: authHeaders(),
     body: JSON.stringify(endpoint ? { endpoint } : {}),
   })
+  checkUnauthorized(r)
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json()
 }
@@ -350,6 +382,7 @@ export async function patchPluginSettings(patch) {
     headers: authHeaders(),
     body: JSON.stringify(patch),
   })
+  checkUnauthorized(r)
   if (!r.ok) {
     let payload = null
     try { payload = await r.json() } catch (_) {}
