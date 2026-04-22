@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.16.13] — 2026-04-22
+
+### Changed — default bind address is now `0.0.0.0` (LAN-reachable out of the box)
+
+`DEFAULT_HOST` changed from `127.0.0.1` to `0.0.0.0`. The dashboard is now immediately accessible from any device on the same network (phone, second laptop) without the user having to discover the host setting first.
+
+**What this means for security**: every HTTP endpoint still requires a Bearer token, same as before. The network surface widens, but the authentication surface does NOT. An attacker on the same network still needs the randomly generated token — printed in the `/remote` banner and embedded in the QR code — to do anything. For users who want the stricter localhost-only bind back, set `PILOT_HOST=127.0.0.1` in `.env` or in the Settings modal's Connection tab. The value is respected over the default.
+
+**Why the change**: the most common first-run complaint was "I can't reach the dashboard from my phone" or "the QR code doesn't work." The fix was always buried in the Connection tab. Making `0.0.0.0` the default matches what every user expected anyway, and is consistent with other developer-tool dashboards that bind to all interfaces by default.
+
+**Upgrade behaviour**: existing installs that already have `host: "127.0.0.1"` saved in `~/.opencode-pilot/config.json` (or set via shell env) will keep that value — precedence order (`shell env > config.json > .env > defaults`) protects you. Only fresh installs pick up the new default.
+
+### Fixed — "restart required" now shows ONLY the fields you actually changed
+
+`onSave()` previously showed `updateRestartNote(updated)` using the full global list of restart-capable fields (`port, host, tunnel, vapidPublicKey, vapidPrivateKey, vapidSubject, enableGlobOpener`). Always the same 7 items, even if the user only changed `port`. Users interpreted that as "nothing happened" because the list never changed between saves.
+
+Now `onSave()` snapshots `_lastLoadedSnapshot.settings` before the patch, diffs against the post-save settings, and surfaces **only** the fields that both (a) changed and (b) require a restart. A prominent amber banner appears in the Settings footer:
+
+> ⚠ Saved. Reiniciá OpenCode para aplicar: **port**
+
+Plus a longer toast with the same list. If nothing restart-capable changed, the save falls back to the quiet "Settings saved" toast.
+
+### Fixed — null-safe on save controls
+
+`onSave` used to touch `statusEl.textContent` and `saveBtn.disabled` without null checks. If either element disappeared after a markup change, the save would throw mid-flight and leave the button disabled forever. Both are now guarded with `?.`.
+
+### How to change the port correctly
+
+1. Click the gear icon (⚙).
+2. Connection tab → Port.
+3. Type the new port, click Save.
+4. You'll see the amber banner: **⚠ Saved. Reiniciá OpenCode para aplicar: port**.
+5. Restart OpenCode: `pkill -9 opencode && opencode` (or close + reopen the terminal session).
+6. The new port is now live. Visit `http://<your-lan-ip>:<new-port>` from another device.
+
+### Config precedence unchanged
+
+`shell env > ~/.opencode-pilot/config.json > .env > defaults`. Changing `DEFAULT_HOST` only affects users who have no override in any layer. All existing overrides continue to win.
+
+---
+
 ## [1.16.12] — 2026-04-22
 
 Fixed — THE actual reason the Settings modal wouldn't open. User's in-browser diagnostic (v1.16.11 confirmed running, CSS rule for `[hidden]` present, `modal.hidden` already `false`) showed `getComputedStyle(modal).display === 'none'` anyway, and `getBoundingClientRect()` returning `0x0`. Something else was forcing `display: none`.

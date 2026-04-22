@@ -423,9 +423,15 @@ async function onSave() {
   const statusEl = document.getElementById('settings-status')
   const pcfStatusEl = document.getElementById('plugin-config-status')
   if (pcfStatusEl) pcfStatusEl.style.display = 'none'
-  statusEl.textContent = ''
+  if (statusEl) statusEl.textContent = ''
   const saveBtn = document.getElementById('settings-save')
-  saveBtn.disabled = true
+  if (saveBtn) saveBtn.disabled = true
+
+  // Snapshot BEFORE the patch so we can diff after save and surface only the
+  // fields that actually changed AND require a plugin restart. Without this
+  // we were showing the full list of restart-capable fields every time,
+  // which is noisy and hides which ones the user actually touched.
+  const previousSettings = _lastLoadedSnapshot?.settings ? { ..._lastLoadedSnapshot.settings } : {}
 
   try {
     const patch = readInputsAsPatch()
@@ -433,8 +439,34 @@ async function onSave() {
     _lastLoadedSnapshot = updated
     applySnapshotToInputs(updated)
     updateRestartNote(updated)
-    statusEl.textContent = 'Saved to ' + updated.configFilePath
-    try { toast('Settings saved') } catch (_) {}
+
+    // Compute actual changes. Compare against the previous snapshot, not the
+    // patch payload (the patch is the user's intent; the updated snapshot is
+    // what the server accepted — they differ on shell-env-pinned fields).
+    const restartCapable = new Set(updated.restartRequired ?? [])
+    const actuallyChangedRestart = []
+    for (const key of Object.keys(updated.settings ?? {})) {
+      if (!restartCapable.has(key)) continue
+      const prev = previousSettings[key]
+      const next = updated.settings[key]
+      // Normalise undefined/null to '' for comparison — UI clears a field by
+      // omitting it, which the backend stores as absent. Both read the same.
+      if ((prev ?? '') !== (next ?? '')) {
+        actuallyChangedRestart.push(key)
+      }
+    }
+
+    if (actuallyChangedRestart.length > 0) {
+      // Prominent, can't-miss-it banner. Repeats the exact fields so the user
+      // knows the restart is needed specifically for these.
+      if (statusEl) {
+        statusEl.innerHTML = `<span class="restart-required-banner">⚠ Saved. Reiniciá OpenCode para aplicar: <strong>${actuallyChangedRestart.join(', ')}</strong></span>`
+      }
+      try { toast(`Settings saved. Restart OpenCode to apply: ${actuallyChangedRestart.join(', ')}`, { duration: 8000 }) } catch (_) {}
+    } else {
+      if (statusEl) statusEl.textContent = 'Saved to ' + updated.configFilePath
+      try { toast('Settings saved') } catch (_) {}
+    }
   } catch (err) {
     if (err?.status === 409 && err?.code === 'SHELL_ENV_PINNED') {
       // Roll back inputs to the server's actual state, then explain what's locked.
@@ -458,7 +490,7 @@ async function onSave() {
       statusEl.textContent = 'Save failed: ' + (err?.message || err)
     }
   } finally {
-    saveBtn.disabled = false
+    if (saveBtn) saveBtn.disabled = false
   }
 }
 

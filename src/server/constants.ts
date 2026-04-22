@@ -1,9 +1,17 @@
 // ─── Shared constants ────────────────────────────────────────────────────────
 // Single source of truth for magic numbers and version strings.
 
-export const PILOT_VERSION = "1.16.12"
+export const PILOT_VERSION = "1.16.13"
 export const DEFAULT_PORT = 4097
-export const DEFAULT_HOST = "127.0.0.1"
+// Default host: `0.0.0.0` so the dashboard is immediately reachable from LAN
+// (phone, second laptop) without the user needing to discover the host
+// setting. Every HTTP endpoint still requires a Bearer token, so this widens
+// the network surface but NOT the auth surface — an attacker on the same
+// network still needs the generated token (printed in the `/remote` banner
+// and embedded in the QR code) to do anything. Users who want the stricter
+// localhost-only bind can set `PILOT_HOST=127.0.0.1` in the .env or in the
+// Settings modal's Connection tab.
+export const DEFAULT_HOST = "0.0.0.0"
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 300_000
 export const SSE_KEEPALIVE_INTERVAL_MS = 25_000
 export const BUN_SERVE_IDLE_TIMEOUT_SEC = 255

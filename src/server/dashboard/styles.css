@@ -4906,6 +4906,25 @@ body {
  * without this, <div class="modal-backdrop" hidden> stays visible because the
  * class wins over the user-agent `[hidden]` default. */
 .modal-backdrop[hidden] { display: none !important; }
+
+/* Prominent "restart required" banner shown in Settings footer after a save
+ * that touched fields like port/host/tunnel. More visible than the plain
+ * status text so the user doesn't save + walk away thinking nothing needs
+ * to happen. */
+.restart-required-banner {
+  display: inline-block;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.5);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+.restart-required-banner strong {
+  color: #f59e0b;
+  font-weight: 600;
+}
 .modal-panel {
   background: var(--surface);
   border: 1px solid var(--border);
