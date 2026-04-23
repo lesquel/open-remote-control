@@ -1,0 +1,3 @@
+[submodule "apps/landing"]
+	path = apps/landing
+	url = https://github.com/lesquel/remote-control-landing.git
