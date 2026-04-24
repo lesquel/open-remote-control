@@ -22,7 +22,8 @@ export interface PermissionQueue {
     permissionID: string,
     meta?: PermissionMeta,
   ): Promise<{ action: "allow" | "deny" } | null>
-  resolve(permissionID: string, action: "allow" | "deny"): void
+  /** Returns true when a waiter was found and resolved; false when the ID was unknown. */
+  resolve(permissionID: string, action: "allow" | "deny"): boolean
   pending(): PendingPermission[]
 }
 
@@ -53,13 +54,15 @@ export function createPermissionQueue(timeoutMs: number): PermissionQueue {
     })
   }
 
-  function resolve(permissionID: string, action: "allow" | "deny"): void {
+  function resolve(permissionID: string, action: "allow" | "deny"): boolean {
     const waiter = waiters.get(permissionID)
     if (waiter) {
       clearTimeout(waiter.timeoutId)
       waiters.delete(permissionID)
       waiter.resolve({ action })
+      return true
     }
+    return false
   }
 
   function pending(): PendingPermission[] {

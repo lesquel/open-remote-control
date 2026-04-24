@@ -35,6 +35,9 @@ export interface RouteDeps {
   audit: AuditLog
   eventBus: EventBus
   permissionQueue: PermissionQueue
+  /** Separate permission queue for Codex hook bridge requests.
+   *  Uses config.codexPermissionTimeoutMs instead of the main timeout. */
+  codexPermissionQueue: PermissionQueue
   telegram: TelegramBot
   push: PushService
   logger: Logger
@@ -64,6 +67,8 @@ export interface Route {
 }
 
 // handlers are imported after they are defined in handlers.ts
+import { dispatchCodexHook } from "./codex-handlers"
+
 import {
   serveDashboard,
   serveDashboardStatic,
@@ -229,6 +234,13 @@ export const routes: Route[] = [
   { method: "PATCH", pattern: /^\/settings$/, auth: "required", handler: patchSettings },
   { method: "POST", pattern: /^\/settings\/reset$/, auth: "required", handler: resetSettings },
   { method: "POST", pattern: /^\/settings\/vapid\/generate$/, auth: "required", handler: generateVapidKeys },
+  // Codex CLI hook bridge — auth is validated inside dispatchCodexHook (hookToken OR main token)
+  {
+    method: "POST",
+    pattern: /^\/codex\/hooks\/(?<event>[A-Za-z]+)$/,
+    auth: "none",
+    handler: dispatchCodexHook,
+  },
 ]
 
 /** Match the first route whose method and pattern match. */

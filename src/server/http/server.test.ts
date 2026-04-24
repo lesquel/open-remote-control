@@ -145,11 +145,13 @@ function buildDeps(port: number): RouteDeps {
     enableGlobOpener: false,
     fetchTimeoutMs: 10_000,
     projectStateMode: "auto",
+    codexPermissionTimeoutMs: 300_000,
   }
 
   const eventBus = createEventBus()
   const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
-  const telegram = createTelegramBot(null, permissionQueue)
+  const codexPermissionQueue = createPermissionQueue(config.codexPermissionTimeoutMs)
+  const telegram = createTelegramBot(null, permissionQueue, codexPermissionQueue)
   const audit = createNoopAudit()
   const logger = createNoopLogger()
   const push = createPushService({ config, audit, logger })
@@ -174,6 +176,7 @@ function buildDeps(port: number): RouteDeps {
     audit,
     eventBus,
     permissionQueue,
+    codexPermissionQueue,
     telegram,
     push,
     logger,

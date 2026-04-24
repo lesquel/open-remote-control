@@ -87,6 +87,9 @@ export function createToolHooks(notifications: NotificationService) {
         sessionID: input.sessionID,
         callID: input.callID,
         title: output.title,
+        // OpenCode tool hooks don't have an explicit success flag — reaching
+        // handleToolAfter means the tool ran to completion (ok: true).
+        ok: true,
       },
     })
   }

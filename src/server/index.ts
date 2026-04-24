@@ -81,7 +81,8 @@ export default {
     // shows pilot.connected then nothing" bug that survived v1.14 → v1.16.8.
     const eventBus = getSharedEventBus()
     const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
-    const telegram = createTelegramBot(config.telegram, permissionQueue, logger)
+    const codexPermissionQueue = createPermissionQueue(config.codexPermissionTimeoutMs)
+    const telegram = createTelegramBot(config.telegram, permissionQueue, codexPermissionQueue, logger)
     const push = createPushService({ config, audit, logger })
 
     const notifications = createNotificationService(eventBus, telegram, audit, push)
@@ -104,6 +105,7 @@ export default {
       audit,
       eventBus,
       permissionQueue,
+      codexPermissionQueue,
       telegram,
       push,
       logger,

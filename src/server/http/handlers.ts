@@ -545,7 +545,9 @@ export async function abortSession({ url, params, deps }: RouteContext): Promise
 }
 
 export async function listPermissions({ deps }: RouteContext): Promise<Response> {
-  return json(deps.permissionQueue.pending(), 200, CORS_HEADERS)
+  // Merge pending items from both the main dashboard queue and the Codex hook queue.
+  const all = [...deps.permissionQueue.pending(), ...deps.codexPermissionQueue.pending()]
+  return json(all, 200, CORS_HEADERS)
 }
 
 interface PermissionBody {
@@ -572,7 +574,16 @@ export async function respondPermission({
     action: body.action,
   })
 
-  deps.permissionQueue.resolve(params.id, body.action)
+  // Try main queue first, then codex queue.
+  // resolve() returns true when a live waiter was found, false when the ID is stale/unknown.
+  const resolved =
+    deps.permissionQueue.resolve(params.id, body.action) ||
+    deps.codexPermissionQueue.resolve(params.id, body.action)
+
+  if (!resolved) {
+    return jsonError("PERMISSION_NOT_FOUND", "Permission ID not found or already resolved", 404, CORS_HEADERS)
+  }
+
   return json({ ok: true }, 200, CORS_HEADERS)
 }
 
@@ -1208,7 +1219,7 @@ function redactSecret(value: string | undefined): { configured: boolean; preview
 }
 
 function buildSettingsResponse(deps: RouteContext["deps"]): {
-  settings: Required<PilotSettings>
+  settings: ReturnType<typeof projectConfigToSettings>
   sources: ReturnType<typeof resolveSources>
   restartRequired: ReadonlyArray<keyof PilotSettings>
   configFilePath: string
@@ -1233,21 +1244,28 @@ function buildSettingsResponse(deps: RouteContext["deps"]): {
   }
 }
 
+/**
+ * Sanitize a raw settings response, redacting sensitive fields.
+ * Used by both GET /settings and PATCH /settings (and any future handler
+ * that returns a settings snapshot) so that telegramToken and vapidPrivateKey
+ * are never exposed as raw strings. hookToken is already excluded from the
+ * settings projection (projectConfigToSettings returns hookTokenConfigured boolean only).
+ */
+function sanitizeSettingsResponse(result: ReturnType<typeof buildSettingsResponse>) {
+  const { telegramToken, vapidPrivateKey, ...otherSettings } = result.settings
+  return {
+    ...result,
+    settings: {
+      ...otherSettings,
+      telegramToken: redactSecret(telegramToken),
+      vapidPrivateKey: redactSecret(vapidPrivateKey),
+    },
+  }
+}
+
 export async function getSettings({ deps }: RouteContext): Promise<Response> {
   const result = buildSettingsResponse(deps)
-  const { telegramToken, vapidPrivateKey, ...otherSettings } = result.settings
-  return json(
-    {
-      ...result,
-      settings: {
-        ...otherSettings,
-        telegramToken: redactSecret(telegramToken),
-        vapidPrivateKey: redactSecret(vapidPrivateKey),
-      },
-    },
-    200,
-    CORS_HEADERS,
-  )
+  return json(sanitizeSettingsResponse(result), 200, CORS_HEADERS)
 }
 
 export async function patchSettings({ req, deps }: RouteContext): Promise<Response> {
@@ -1289,7 +1307,7 @@ export async function patchSettings({ req, deps }: RouteContext): Promise<Respon
     keys: Object.keys(validation.data),
   })
 
-  return json(buildSettingsResponse(deps), 200, CORS_HEADERS)
+  return json(sanitizeSettingsResponse(buildSettingsResponse(deps)), 200, CORS_HEADERS)
 }
 
 export async function resetSettings({ deps }: RouteContext): Promise<Response> {

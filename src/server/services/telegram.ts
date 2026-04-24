@@ -34,6 +34,7 @@ interface InlineKeyboardButton {
 export function createTelegramBot(
   config: TelegramConfig | null,
   permissionQueue: PermissionQueue,
+  codexPermissionQueue: PermissionQueue,
   logger?: Logger,
 ): TelegramBot {
   if (!config || !config.token || !config.chatId) {
@@ -198,7 +199,29 @@ export function createTelegramBot(
     const permissionId = data.slice(colonIndex + 1)
 
     if ((action === "allow" || action === "deny") && permissionId) {
-      permissionQueue.resolve(permissionId, action as "allow" | "deny")
+      const resolved =
+        permissionQueue.resolve(permissionId, action as "allow" | "deny") ||
+        codexPermissionQueue.resolve(permissionId, action as "allow" | "deny")
+
+      if (!resolved) {
+        // Stale callback — permission already resolved or expired
+        await api("answerCallbackQuery", {
+          callback_query_id: cq.id,
+          text: "⚠️ Permission expired or already resolved",
+        })
+
+        const message = cq.message as Record<string, unknown>
+        if (message) {
+          const chat = message.chat as Record<string, unknown>
+          await api("editMessageText", {
+            chat_id: chat.id,
+            message_id: message.message_id,
+            text: `${message.text}\n\n<b>⚠️ EXPIRED</b>`,
+            parse_mode: "HTML",
+          })
+        }
+        return
+      }
 
       await api("answerCallbackQuery", {
         callback_query_id: cq.id,

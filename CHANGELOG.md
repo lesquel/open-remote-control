@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Added — Codex CLI Hook Bridge (issue #4)
+
+New HTTP bridge that lets [Codex CLI](https://github.com/openai/codex) report its lifecycle events to opencode-pilot in real time. Codex operators can monitor sessions, receive prompt events, and approve/deny tool-use permissions from the existing opencode-pilot dashboard.
+
+**New endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/codex/hooks/SessionStart` | Codex session started — emits `pilot.session.started` |
+| POST | `/codex/hooks/UserPromptSubmit` | Prompt received — emits `pilot.prompt.received` |
+| POST | `/codex/hooks/PreToolUse` | Tool about to run — emits `pilot.tool.started` |
+| POST | `/codex/hooks/PostToolUse` | Tool finished — emits `pilot.tool.completed` |
+| POST | `/codex/hooks/PermissionRequest` | Blocking — waits for dashboard approval; emits `pilot.permission.pending` / `pilot.permission.resolved` |
+| POST | `/codex/hooks/Stop` | Codex session ended — emits `pilot.session.stopped` |
+
+**New env vars:**
+
+- `PILOT_HOOK_TOKEN` — optional dedicated bearer token for `/codex/hooks/*`; when set, both this token AND the main pilot token are accepted on hook paths.
+- `PILOT_CODEX_PERMISSION_TIMEOUT_MS` — timeout (ms) for Codex permission requests; defaults to `PILOT_PERMISSION_TIMEOUT` if set, else 300 000 ms. Invalid value = `ConfigError` at startup.
+
+**New settings (persisted to `~/.opencode-pilot/config.json`):**
+
+- `hookToken` — stored value for `PILOT_HOOK_TOKEN`; `GET /settings` exposes `hookTokenConfigured: boolean` only (raw value never returned). Shell-env-pinned via `PILOT_HOOK_TOKEN`.
+
+See `docs/CODEX-INTEGRATION.md` for the full guide, payload examples, and `config.toml` snippet.
+
 ## [1.17.0] — 2026-04-24
 
 ### feat(state): add `PILOT_PROJECT_STATE` config (`off | auto | always`; default `auto`) — fixes #2

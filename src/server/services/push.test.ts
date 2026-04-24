@@ -23,6 +23,7 @@ function makeDeps(vapid: Config["vapid"] = null) {
     enableGlobOpener: false,
     fetchTimeoutMs: 10_000,
     projectStateMode: "auto",
+    codexPermissionTimeoutMs: 300_000,
   }
   return { config, audit, logger }
 }

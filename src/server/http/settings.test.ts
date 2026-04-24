@@ -13,6 +13,7 @@ import { join } from "node:path"
 import type { Config } from "../config"
 import { loadConfig } from "../config"
 import { createSettingsStore } from "../services/settings-store"
+import { createPermissionQueue } from "../services/permission-queue"
 import type { Logger } from "../util/logger"
 import type { RouteContext, RouteDeps } from "./routes"
 import { getSettings, patchSettings, resetSettings } from "./handlers"
@@ -45,6 +46,7 @@ function makeDeps(opts: {
     audit: { log: () => {} } as RouteDeps["audit"],
     eventBus: {} as RouteDeps["eventBus"],
     permissionQueue: {} as RouteDeps["permissionQueue"],
+    codexPermissionQueue: createPermissionQueue(300_000),
     telegram: {} as RouteDeps["telegram"],
     push: {} as RouteDeps["push"],
     logger: silentLogger,
@@ -264,6 +266,137 @@ describe("PATCH /settings — projectStateMode shell-env pin", () => {
   })
 })
 
+// ─── Phase 10: hookToken settings wiring ─────────────────────────────────────
+
+describe("hookToken settings — Phase 10", () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pilot-hooktoken-h-"))
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test("(a) hookToken persisted and loaded back", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    // Patch it in
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ hookToken: "my-hook-secret" }),
+    })
+    const patchRes = await patchSettings(makeCtx(deps, req))
+    expect(patchRes.status).toBe(200)
+    const stored = deps.settingsStore.load()
+    expect(stored.hookToken).toBe("my-hook-secret")
+  })
+
+  test("(b) GET /settings returns hookTokenConfigured:true when set, never raw token", async () => {
+    const configPath = join(dir, "config.json")
+    writeFileSync(configPath, JSON.stringify({ hookToken: "secret-value" }), "utf-8")
+    const deps = makeDeps({ configPath })
+    const res = await getSettings(makeCtx(deps))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { settings: Record<string, unknown> }
+    // Should show hookTokenConfigured boolean, not the raw value
+    expect(body.settings.hookTokenConfigured).toBe(true)
+    expect(body.settings.hookToken).toBeUndefined()
+    // Raw token value must NOT appear anywhere in the response
+    const raw = JSON.stringify(body)
+    expect(raw).not.toContain("secret-value")
+  })
+
+  test("(b2) GET /settings returns hookTokenConfigured:false when not set", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const res = await getSettings(makeCtx(deps))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { settings: Record<string, unknown> }
+    expect(body.settings.hookTokenConfigured).toBe(false)
+  })
+
+  test("(c) PATCH /settings with { hookToken } persists", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ hookToken: "newtoken" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+    expect(deps.settingsStore.load().hookToken).toBe("newtoken")
+  })
+
+  test("(d) PATCH /settings with hookToken when shell-env-pinned → 409 SHELL_ENV_PINNED", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({
+      configPath,
+      shellEnv: { PILOT_HOOK_TOKEN: "shell-token" },
+    })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ hookToken: "new-val" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(409)
+    const body = await res.json() as { error: { code: string } }
+    expect(body.error.code).toBe("SHELL_ENV_PINNED")
+  })
+})
+
+// ─── CRITICAL-01: patchSettings must not leak raw hookToken ──────────────────
+
+describe("CRITICAL-01 patchSettings — hookToken must not leak", () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pilot-hooktoken-crit-"))
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test("PATCH /settings with hookToken — response body must NOT contain raw token", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ hookToken: "super-secret-token-abc123" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+    const raw = JSON.stringify(await res.json())
+    expect(raw).not.toContain("super-secret-token-abc123")
+  })
+
+  test("PATCH /settings with hookToken — response must contain hookTokenConfigured:true", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ hookToken: "my-secret-val" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { settings: Record<string, unknown> }
+    expect(body.settings.hookTokenConfigured).toBe(true)
+    expect(body.settings.hookToken).toBeUndefined()
+  })
+
+  test("PATCH /settings without hookToken — hookTokenConfigured:false in response", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ port: 4200 }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+    const body = await res.json() as { settings: Record<string, unknown> }
+    expect(body.settings.hookTokenConfigured).toBe(false)
+    expect(body.settings.hookToken).toBeUndefined()
+  })
+})
+
 describe("POST /settings/reset handler", () => {
   let dir: string
   beforeEach(() => {
@@ -282,5 +415,17 @@ describe("POST /settings/reset handler", () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(deps.settingsStore.load()).toEqual({})
+  })
+
+  test("reset response body does NOT contain raw hookToken", async () => {
+    const hookTokenValue = "super-secret-hook-tok-abc"
+    const path = join(dir, "config.json")
+    writeFileSync(path, JSON.stringify({ hookToken: hookTokenValue }), "utf-8")
+    const deps = makeDeps({ configPath: path })
+    const res = await resetSettings(makeCtx(deps))
+    expect(res.status).toBe(200)
+    const raw = JSON.stringify(await res.json())
+    expect(raw).not.toContain(hookTokenValue)
+    expect(raw).not.toContain("hookToken")
   })
 })

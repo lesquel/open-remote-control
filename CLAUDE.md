@@ -79,6 +79,8 @@ Priority (highest wins): shell env > `~/.opencode-pilot/config.json` > `.env` > 
 - `PILOT_DEV` (default: false) — when true, dashboard HTML is re-read on each request
 - `PILOT_FETCH_TIMEOUT_MS` (default: 10000) — timeout for external HTTP calls (Telegram API)
 - `PILOT_PROJECT_STATE` (default: auto) — controls per-project file writes: `auto` = write only when `.opencode/` exists, `always` = legacy always-create, `off` = skip per-project writes entirely
+- `PILOT_HOOK_TOKEN` (default: unset) — optional dedicated bearer token accepted on `POST /codex/hooks/*`; when set, both this token AND the main token are accepted on that path
+- `PILOT_CODEX_PERMISSION_TIMEOUT_MS` (default: 250000, max: 250000) — how long to wait for a permission decision on Codex hook PermissionRequest before auto-denying. Values > 250000ms throw ConfigError at startup (Bun's idleTimeout cap is 255s; longer values cause a connection drop instead of a structured deny)
 
 Editable from the dashboard Settings UI (writes to `~/.opencode-pilot/config.json`): everything except `PILOT_DEV`. See `services/settings-store.ts`.
 
@@ -125,6 +127,7 @@ Editable from the dashboard Settings UI (writes to `~/.opencode-pilot/config.jso
 | PATCH | /settings | required |
 | POST | /settings/reset | required |
 | POST | /settings/vapid/generate | required |
+| POST | /codex/hooks/:event | none (handler validates hookToken OR main token) |
 
 **Multi-project routing**: per-project endpoints (`/sessions*`, `/agents`, `/providers`, `/mcp/status`, `/project/current`, `/lsp/status`, `/tools`) accept an optional `?directory=<path>` query param that OpenCode uses to auto-boot an instance context for that worktree. Path traversal (`..`) and overlong paths (>512 chars) return 400.
 

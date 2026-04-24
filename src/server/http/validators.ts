@@ -354,5 +354,19 @@ export function validateSettingsPatch(
     out.projectStateMode = b.projectStateMode
   }
 
+  if (b.hookToken !== undefined) {
+    if (b.hookToken === null) {
+      // null means "clear the token" — we'll store undefined/remove
+      // Pass-through so the handler can clear it; sanitize in store will drop empty strings.
+      out.hookToken = "" as string
+    } else if (typeof b.hookToken !== "string") {
+      return { ok: false, error: "hookToken must be a string or null" }
+    } else if (b.hookToken.length === 0) {
+      return { ok: false, error: "hookToken must not be empty (use null to clear)" }
+    } else {
+      out.hookToken = b.hookToken
+    }
+  }
+
   return { ok: true, data: out }
 }

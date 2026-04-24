@@ -1,10 +1,37 @@
 // Tests for validateSettingsPatch in src/server/http/validators.ts.
-// Only covers the projectStateMode additions for the project-state-opt-in change.
+// Covers projectStateMode (project-state-opt-in) and hookToken (codex-hooks-bridge).
 
 import { describe, expect, test } from "bun:test"
 import { validateSettingsPatch } from "./validators"
 
 // ── Batch 6: projectStateMode validation ─────────────────────────────────────
+
+// ── Phase 11: hookToken validation ───────────────────────────────────────────
+
+describe("validateSettingsPatch — hookToken", () => {
+  test("(a) { hookToken: 'abc' } is valid", () => {
+    const result = validateSettingsPatch({ hookToken: "abc" })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.hookToken).toBe("abc")
+  })
+
+  test("(b) { hookToken: null } is valid (clear)", () => {
+    const result = validateSettingsPatch({ hookToken: null })
+    expect(result.ok).toBe(true)
+  })
+
+  test("(c) { hookToken: 123 } → validation error", () => {
+    const result = validateSettingsPatch({ hookToken: 123 })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("hookToken")
+  })
+
+  test("(d) { hookToken: '' } → validation error (empty string rejected)", () => {
+    const result = validateSettingsPatch({ hookToken: "" })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("hookToken")
+  })
+})
 
 describe("validateSettingsPatch — projectStateMode", () => {
   test("accepts 'always'", () => {

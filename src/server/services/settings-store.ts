@@ -47,6 +47,8 @@ export interface PilotSettings {
   enableGlobOpener?: boolean
   fetchTimeoutMs?: number
   projectStateMode?: "off" | "auto" | "always"
+  /** Optional token accepted on POST /codex/hooks/* endpoints (in addition to main token). */
+  hookToken?: string
 }
 
 /** Whitelist of keys we actually write to disk. Unknown keys are dropped. */
@@ -63,6 +65,7 @@ const PERSISTED_KEYS: ReadonlyArray<keyof PilotSettings> = [
   "enableGlobOpener",
   "fetchTimeoutMs",
   "projectStateMode",
+  "hookToken",
 ]
 
 // ─── Store ───────────────────────────────────────────────────────────────────
@@ -113,6 +116,11 @@ function sanitize(raw: unknown): PilotSettings {
         break
       case "projectStateMode":
         if (v === "off" || v === "auto" || v === "always") out[key] = v
+        break
+      case "hookToken":
+        // Allow non-empty string (set) or treat missing/null as unset.
+        // Empty string is treated as "clear" — stored as undefined.
+        if (typeof v === "string" && v.length > 0) out[key] = v
         break
       default:
         if (typeof v === "string") out[key] = v
