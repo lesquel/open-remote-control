@@ -144,6 +144,26 @@ PILOT_VAPID_PUBLIC_KEY=BNxKL...
 PILOT_VAPID_PRIVATE_KEY=abc123...
 ```
 
+### Project-state write mode (v1.17+)
+
+| Variable | Default | What it does |
+|----------|---------|--------------|
+| `PILOT_PROJECT_STATE` | `auto` | Controls when per-project state/banner files are written to `<project>/.opencode/`. See values below. |
+
+Valid values for `PILOT_PROJECT_STATE`:
+
+| Value | Behavior |
+|-------|----------|
+| `auto` | Write per-project files only when `.opencode/` **already exists** in the workspace. Never creates the directory. This is the default — existing workspaces with `.opencode/` see no behavior change; new workspaces are left untouched. |
+| `always` | Always write per-project files, creating `.opencode/` if it does not exist. This is the **legacy behavior** from before v1.17. Use if you rely on `<project>/.opencode/pilot-state.json` being created automatically. |
+| `off` | Skip per-project writes entirely. Only the global `~/.opencode-pilot/` files are written. Use this if you never want the plugin to create anything in your workspace. |
+
+Global writes (`~/.opencode-pilot/pilot-state.json` and `~/.opencode-pilot/pilot-banner.txt`) occur in **every** mode — the TUI's `/remote` command always reads from the global path.
+
+**Migration note**: if you have existing workspaces with a `.opencode/` folder, `auto` (the new default) writes to them exactly as before. Workspaces that never had `.opencode/` are now left alone unless you set `PILOT_PROJECT_STATE=always`.
+
+This setting is editable from the dashboard Settings UI (no restart required). It can also be pinned via shell env — the UI shows a `shell` badge and disables the input when `PILOT_PROJECT_STATE` is set in your environment.
+
 ### File browser (optional)
 
 | Variable | Default | What it does |

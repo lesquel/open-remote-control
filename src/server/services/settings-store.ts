@@ -46,6 +46,7 @@ export interface PilotSettings {
   vapidSubject?: string
   enableGlobOpener?: boolean
   fetchTimeoutMs?: number
+  projectStateMode?: "off" | "auto" | "always"
 }
 
 /** Whitelist of keys we actually write to disk. Unknown keys are dropped. */
@@ -61,6 +62,7 @@ const PERSISTED_KEYS: ReadonlyArray<keyof PilotSettings> = [
   "vapidSubject",
   "enableGlobOpener",
   "fetchTimeoutMs",
+  "projectStateMode",
 ]
 
 // ─── Store ───────────────────────────────────────────────────────────────────
@@ -108,6 +110,9 @@ function sanitize(raw: unknown): PilotSettings {
         break
       case "tunnel":
         if (v === "off" || v === "cloudflared" || v === "ngrok") out[key] = v
+        break
+      case "projectStateMode":
+        if (v === "off" || v === "auto" || v === "always") out[key] = v
         break
       default:
         if (typeof v === "string") out[key] = v

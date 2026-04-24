@@ -113,6 +113,7 @@ function buildDeps(port: number): RouteDeps {
     vapid: null,
     enableGlobOpener: false,
     fetchTimeoutMs: 10_000,
+    projectStateMode: "auto",
   }
 
   const eventBus = createEventBus()

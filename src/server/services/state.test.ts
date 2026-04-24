@@ -12,11 +12,134 @@ import { mkdtempSync, rmSync, existsSync, writeFileSync } from "fs"
 import { tmpdir, homedir } from "os"
 import { join } from "path"
 import { writeState, readState, readGlobalState, clearState, globalStatePath } from "./state"
-import type { PilotState } from "./state"
+import type { PilotState, ProjectStateMode } from "./state"
+
+// ── Batch 1: ProjectStateMode compile-time type check ────────────────────────
+
+describe("ProjectStateMode — type contract", () => {
+  test("accepts off, auto, and always (compile-time satisfies check)", () => {
+    const off = "off" satisfies ProjectStateMode
+    const auto = "auto" satisfies ProjectStateMode
+    const always = "always" satisfies ProjectStateMode
+    expect(off).toBe("off")
+    expect(auto).toBe("auto")
+    expect(always).toBe("always")
+  })
+})
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "pilot-state-test-"))
 }
+
+// ── Batch 2: shouldWriteProjectState helper ───────────────────────────────────
+
+import { shouldWriteProjectState } from "./state"
+import { mkdirSync } from "fs"
+
+describe("shouldWriteProjectState", () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = tempDir()
+  })
+
+  afterEach(() => {
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  })
+
+  test("off always returns false regardless of directory", () => {
+    expect(shouldWriteProjectState(dir, "off")).toBe(false)
+    expect(shouldWriteProjectState("/nonexistent/path", "off")).toBe(false)
+  })
+
+  test("always returns true regardless of directory existence", () => {
+    expect(shouldWriteProjectState(dir, "always")).toBe(true)
+    // dir doesn't have .opencode/ but always still returns true
+    expect(existsSync(join(dir, ".opencode"))).toBe(false)
+    expect(shouldWriteProjectState(dir, "always")).toBe(true)
+  })
+
+  test("auto returns false when .opencode/ does not exist (and does NOT create it)", () => {
+    expect(shouldWriteProjectState(dir, "auto")).toBe(false)
+    // Must not create the directory
+    expect(existsSync(join(dir, ".opencode"))).toBe(false)
+  })
+
+  test("auto returns true when .opencode/ already exists", () => {
+    mkdirSync(join(dir, ".opencode"), { recursive: true })
+    expect(shouldWriteProjectState(dir, "auto")).toBe(true)
+  })
+
+  test("auto with empty-string directory returns false without throwing", () => {
+    expect(shouldWriteProjectState("", "auto")).toBe(false)
+  })
+})
+
+// ── Batch 3: writeState mode parameter ───────────────────────────────────────
+
+const sampleStateBatch3: PilotState = {
+  token: "t",
+  port: 4097,
+  host: "127.0.0.1",
+  startedAt: 1,
+  pid: process.pid,
+}
+
+describe("writeState — mode param", () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = tempDir()
+  })
+
+  afterEach(() => {
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  })
+
+  test("mode=off writes global only; no .opencode/ created, no project file", () => {
+    const result = writeState(dir, sampleStateBatch3, "off")
+    // Global must succeed
+    expect(result.global.ok).toBe(true)
+    // Project outcome must indicate skip (null or ok:false with skipped path)
+    const opencodeDir = join(dir, ".opencode")
+    expect(existsSync(opencodeDir)).toBe(false)
+    // If project is returned, it must signal that nothing was written
+    if (result.project !== null) {
+      expect(existsSync(result.project.path)).toBe(false)
+    }
+  })
+
+  test("mode=auto + no .opencode/ dir: no project write, no dir created", () => {
+    const result = writeState(dir, sampleStateBatch3, "auto")
+    expect(result.global.ok).toBe(true)
+    const opencodeDir = join(dir, ".opencode")
+    expect(existsSync(opencodeDir)).toBe(false)
+  })
+
+  test("mode=auto + pre-existing .opencode/: writes project file", () => {
+    mkdirSync(join(dir, ".opencode"), { recursive: true })
+    const result = writeState(dir, sampleStateBatch3, "auto")
+    expect(result.global.ok).toBe(true)
+    expect(result.project).not.toBeNull()
+    expect(result.project!.ok).toBe(true)
+    expect(existsSync(join(dir, ".opencode", "pilot-state.json"))).toBe(true)
+  })
+
+  test("mode=always + no .opencode/: creates dir and writes project file", () => {
+    const result = writeState(dir, sampleStateBatch3, "always")
+    expect(result.global.ok).toBe(true)
+    expect(result.project).not.toBeNull()
+    expect(result.project!.ok).toBe(true)
+    expect(existsSync(join(dir, ".opencode", "pilot-state.json"))).toBe(true)
+  })
+
+  test("clearState does not throw after writeState with mode=off (regression guard)", () => {
+    writeState(dir, sampleStateBatch3, "off")
+    // clearState tries to unlink both paths. With mode=off, no project file exists.
+    // It should not throw — ENOENT is silently swallowed inside clearState.
+    expect(() => clearState(dir)).not.toThrow()
+  })
+})
 
 describe("writeState / readState — pid field", () => {
   let dir: string
@@ -94,10 +217,12 @@ describe("writeState WriteStateResult — failure isolation (1.13.13)", () => {
     pid: process.pid,
   }
 
-  test("returns WriteStateResult with both outcomes when directory is valid", () => {
+  test("returns WriteStateResult with both outcomes when directory is valid (mode=always)", () => {
+    // Use mode=always to test the write mechanism regardless of .opencode/ presence.
+    // Legacy behavior (always write project file) is now opt-in via mode=always.
     const dir = mkdtempSync(join(tmpdir(), "pilot-ws-"))
     try {
-      const result = writeState(dir, sampleState)
+      const result = writeState(dir, sampleState, "always")
       expect(result.project).not.toBeNull()
       expect(result.project!.ok).toBe(true)
       expect(result.project!.path).toBe(join(dir, ".opencode", "pilot-state.json"))
@@ -110,12 +235,12 @@ describe("writeState WriteStateResult — failure isolation (1.13.13)", () => {
     }
   })
 
-  test("null directory: project outcome is marked invalid, global still writes", () => {
+  test("null directory: project outcome is marked invalid, global still writes (mode=always)", () => {
     // Simulates a future OpenCode SDK change where ctx.directory comes through
     // as null/undefined. Before 1.13.13 this threw out of writeState via
     // join(null, ...) and aborted the global write too — leaving the TUI with
-    // no state file and no diagnostic.
-    const result = writeState(null as unknown as string, sampleState)
+    // no state file and no diagnostic. Use mode=always to exercise the write path.
+    const result = writeState(null as unknown as string, sampleState, "always")
     expect(result.project).not.toBeNull()
     expect(result.project!.ok).toBe(false)
     expect(result.project!.path).toBe("<invalid-directory>")
@@ -125,15 +250,15 @@ describe("writeState WriteStateResult — failure isolation (1.13.13)", () => {
     expect(existsSync(globalStatePath())).toBe(true)
   })
 
-  test("project path blocked by a regular file: failure is reported, global succeeds", () => {
+  test("project path blocked by a regular file: failure is reported, global succeeds (mode=always)", () => {
     // Create a directory, then plant a FILE at the `.opencode` location.
     // mkdirSync(recursive:true) refuses to turn a file into a directory, so
     // writeOne returns {ok:false, error:...} — exactly the failure case that
-    // used to be invisible before 1.13.13.
+    // used to be invisible before 1.13.13. Use mode=always to force the write.
     const dir = mkdtempSync(join(tmpdir(), "pilot-ws-blocked-"))
     try {
       writeFileSync(join(dir, ".opencode"), "not-a-directory")
-      const result = writeState(dir, sampleState)
+      const result = writeState(dir, sampleState, "always")
       expect(result.project).not.toBeNull()
       expect(result.project!.ok).toBe(false)
       expect(typeof result.project!.error).toBe("string")

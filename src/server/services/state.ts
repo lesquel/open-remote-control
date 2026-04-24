@@ -2,6 +2,13 @@ import { dirname, join } from "path"
 import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync } from "fs"
 import { stateFile } from "../util/paths"
 
+/** Controls when per-project files are written to `<directory>/.opencode/`.
+ *  - `off`:    Never write per-project files. Global writes are unaffected.
+ *  - `auto`:   Write per-project files only when `.opencode/` already exists.
+ *  - `always`: Always write per-project files, creating `.opencode/` if needed.
+ */
+export type ProjectStateMode = "off" | "auto" | "always"
+
 export interface PilotState {
   token: string
   port: number
@@ -28,6 +35,21 @@ function projectStatePath(directory: string): string {
 // it without guessing the workspace path.
 export function globalStatePath(): string {
   return stateFile("pilot-state.json")
+}
+
+/**
+ * Decide whether per-project files should be written to `<directory>/.opencode/`.
+ * - `off`:    Always returns false (skip project writes entirely).
+ * - `always`: Always returns true (create `.opencode/` if absent).
+ * - `auto`:   Returns true only when `<directory>/.opencode/` already exists.
+ *             Never creates the directory as a side effect.
+ */
+export function shouldWriteProjectState(directory: string, mode: ProjectStateMode): boolean {
+  if (mode === "off") return false
+  if (mode === "always") return true
+  // auto: only write if the directory is a valid non-empty string and .opencode/ exists
+  if (typeof directory !== "string" || directory.length === 0) return false
+  return existsSync(join(directory, ".opencode"))
 }
 
 function safeMkdir(path: string) {
@@ -86,23 +108,34 @@ function safeRead(path: string): PilotState | null {
  * (undefined, empty, or something `join` refuses) no longer aborts the global
  * write, which is the one the TUI reads as of 1.13.x. Returns a
  * {@link WriteStateResult} so callers can log/act on partial failures.
+ *
+ * @param mode Controls per-project writes. Defaults to `"auto"` so existing
+ *   call sites (tests, token rotation) continue to work without changes.
+ *   Pass `config.projectStateMode` from index.ts to respect user intent.
  */
-export function writeState(directory: string, state: PilotState): WriteStateResult {
+export function writeState(
+  directory: string,
+  state: PilotState,
+  mode: ProjectStateMode = "auto",
+): WriteStateResult {
   const json = JSON.stringify(state, null, 2)
 
   let project: WriteOutcome | null = null
-  try {
-    // projectStatePath can throw if directory is falsy or not a string in a
-    // future OpenCode SDK change. We isolate the failure so the global write
-    // below still runs — the TUI reads the global file, so that's the one
-    // that matters.
-    const ppath = projectStatePath(directory)
-    project = writeOne(ppath, json)
-  } catch (err) {
-    project = {
-      path: "<invalid-directory>",
-      ok: false,
-      error: (err as Error)?.message ?? String(err),
+
+  if (shouldWriteProjectState(directory, mode)) {
+    try {
+      // projectStatePath can throw if directory is falsy or not a string in a
+      // future OpenCode SDK change. We isolate the failure so the global write
+      // below still runs — the TUI reads the global file, so that's the one
+      // that matters.
+      const ppath = projectStatePath(directory)
+      project = writeOne(ppath, json)
+    } catch (err) {
+      project = {
+        path: "<invalid-directory>",
+        ok: false,
+        error: (err as Error)?.message ?? String(err),
+      }
     }
   }
 

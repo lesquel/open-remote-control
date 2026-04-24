@@ -2,6 +2,8 @@ import { mkdirSync, writeFileSync } from "fs"
 import { dirname, join } from "path"
 import { generateQR } from "./qr"
 import { stateFile } from "../util/paths"
+import { shouldWriteProjectState } from "./state"
+import type { ProjectStateMode } from "./state"
 
 export function globalBannerPath(): string {
   return stateFile("pilot-banner.txt")
@@ -25,6 +27,12 @@ export interface BannerOptions {
   directory: string
   /** Optional: override the hosted PWA URL (defaults to GitHub Pages deployment). */
   pwaUrl?: string | null
+  /** Controls per-project banner writes. Defaults to `"auto"`.
+   *  - `off`:    Skip per-project write; global always written.
+   *  - `auto`:   Write per-project only when `.opencode/` already exists.
+   *  - `always`: Always write per-project (creates `.opencode/` if needed).
+   */
+  projectStateMode?: ProjectStateMode
 }
 
 /**
@@ -41,7 +49,7 @@ function encodePwaConnect(serverUrl: string, token: string): string {
  * banner to `.opencode/pilot-banner.txt` for the TUI to read.
  */
 export async function writeBanner(opts: BannerOptions): Promise<string> {
-  const { localUrl, publicUrl, token, directory, pwaUrl } = opts
+  const { localUrl, publicUrl, token, directory, pwaUrl, projectStateMode = "auto" } = opts
 
   // Direct dashboard link (tunnel URL or local)
   const dashboardUrl = `${publicUrl ?? localUrl}/?token=${token}`
@@ -92,7 +100,18 @@ export async function writeBanner(opts: BannerOptions): Promise<string> {
   // Dual-write: project path for projects that have an .opencode/ folder
   // (nice for git-tracked workflows), plus a global path the TUI can always
   // read regardless of cwd.
-  safeWrite(join(directory, ".opencode", "pilot-banner.txt"), banner)
+  //
+  // Per-project write is gated by shouldWriteProjectState to avoid creating
+  // .opencode/ in arbitrary workspaces that haven't opted in. Wrapped in
+  // try/catch (consistent with safeWrite) to guard against any edge-case
+  // where directory is empty or otherwise not suitable for join().
+  if (shouldWriteProjectState(directory, projectStateMode)) {
+    try {
+      safeWrite(join(directory, ".opencode", "pilot-banner.txt"), banner)
+    } catch {
+      // Silent fail — same contract as safeWrite.
+    }
+  }
   safeWrite(globalBannerPath(), banner)
 
   return banner

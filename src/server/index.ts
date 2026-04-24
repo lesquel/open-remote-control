@@ -150,13 +150,17 @@ export default {
 
     async function activatePrimary(isPromotion: boolean): Promise<void> {
       role = "primary"
-      const writeResult = writeState(ctx.directory, {
-        token: currentToken,
-        port: config.port,
-        host: config.host,
-        startedAt: Date.now(),
-        pid: process.pid,
-      })
+      const writeResult = writeState(
+        ctx.directory,
+        {
+          token: currentToken,
+          port: config.port,
+          host: config.host,
+          startedAt: Date.now(),
+          pid: process.pid,
+        },
+        config.projectStateMode,
+      )
 
       // Observability for issue #1 (open-remote-control): before 1.13.13,
       // writeState swallowed every error silently. If both the project-scoped
@@ -225,6 +229,7 @@ export default {
         publicUrl: tunnel.publicUrl,
         token: currentToken,
         directory: ctx.directory,
+        projectStateMode: config.projectStateMode,
       })
 
       await ctx.client.app
