@@ -78,6 +78,7 @@ Priority (highest wins): shell env > `~/.opencode-pilot/config.json` > `.env` > 
 - `PILOT_ENABLE_GLOB_OPENER` (default: false) — enable `/fs/glob` + `/fs/read`
 - `PILOT_DEV` (default: false) — when true, dashboard HTML is re-read on each request
 - `PILOT_FETCH_TIMEOUT_MS` (default: 10000) — timeout for external HTTP calls (Telegram API)
+- `PILOT_PROJECT_STATE` (default: auto) — controls per-project file writes: `auto` = write only when `.opencode/` exists, `always` = legacy always-create, `off` = skip per-project writes entirely
 
 Editable from the dashboard Settings UI (writes to `~/.opencode-pilot/config.json`): everything except `PILOT_DEV`. See `services/settings-store.ts`.
 

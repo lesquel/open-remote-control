@@ -38,3 +38,7 @@ export const HTTP_STATUS = {
  *  Content-Length header, or whose streamed body exceeds this, are rejected
  *  with 413 Payload Too Large. */
 export const MAX_REQUEST_BODY_BYTES = 1_048_576 // 1 MiB
+
+/** Default project-state write mode: write per-project files only when
+ *  `.opencode/` already exists (opt-in via `always`, disable via `off`). */
+export const DEFAULT_PROJECT_STATE_MODE = "auto" as const

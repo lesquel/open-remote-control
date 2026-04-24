@@ -211,6 +211,59 @@ describe("PATCH /settings handler", () => {
   })
 })
 
+// ── Batch 7: projectStateMode shell-env pin + PATCH / GET integration ────────
+
+describe("PATCH /settings — projectStateMode shell-env pin", () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pilot-settings-h-"))
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test("PATCH /settings with shellEnv: { PILOT_PROJECT_STATE: 'always' } → 409 SHELL_ENV_PINNED", async () => {
+    const deps = makeDeps({
+      configPath: join(dir, "config.json"),
+      shellEnv: { PILOT_PROJECT_STATE: "always" },
+    })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ projectStateMode: "always" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.error.code).toBe("SHELL_ENV_PINNED")
+  })
+
+  test("PATCH /settings { projectStateMode: 'always' } with no shell pin → 200 and stored value updated", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ projectStateMode: "always" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+    expect(deps.settingsStore.load().projectStateMode).toBe("always")
+  })
+
+  test("GET /settings response includes projectStateMode key with effective value", async () => {
+    const configPath = join(dir, "config.json")
+    // Write projectStateMode to the settings store so that buildSettingsResponse
+    // picks it up via mergeStoredSettings (stored settings override base env).
+    // The handler always recomputes — deps.config is the boot-time snapshot only.
+    writeFileSync(configPath, JSON.stringify({ projectStateMode: "off" }), "utf-8")
+    const deps = makeDeps({ configPath })
+    const res = await getSettings(makeCtx(deps))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.settings).toHaveProperty("projectStateMode")
+    expect(body.settings.projectStateMode).toBe("off")
+  })
+})
+
 describe("POST /settings/reset handler", () => {
   let dir: string
   beforeEach(() => {

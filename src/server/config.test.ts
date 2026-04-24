@@ -5,6 +5,7 @@ import {
   mergeStoredSettings,
   projectConfigToSettings,
   resolveSources,
+  RESTART_REQUIRED_FIELDS,
 } from "./config"
 import { DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT } from "./constants"
 
@@ -162,6 +163,48 @@ describe("resolveSources", () => {
   test("settings-store outranks env-file", () => {
     const sources = resolveSources({}, ["PILOT_PORT"], { port: 8080 })
     expect(sources.port).toBe("settings-store")
+  })
+})
+
+// ── Batch 5: parseProjectStateMode + PILOT_PROJECT_STATE in loadConfig ────────
+
+describe("parseProjectStateMode", () => {
+  test("accepts 'off', 'auto', 'always'", () => {
+    expect(loadConfig({ PILOT_PROJECT_STATE: "off" }).projectStateMode).toBe("off")
+    expect(loadConfig({ PILOT_PROJECT_STATE: "auto" }).projectStateMode).toBe("auto")
+    expect(loadConfig({ PILOT_PROJECT_STATE: "always" }).projectStateMode).toBe("always")
+  })
+
+  test("returns 'auto' when PILOT_PROJECT_STATE is undefined", () => {
+    expect(loadConfig({}).projectStateMode).toBe("auto")
+  })
+
+  test("throws ConfigError on invalid value (error names PILOT_PROJECT_STATE and lists valid values)", () => {
+    let caught: Error | undefined
+    try {
+      loadConfig({ PILOT_PROJECT_STATE: "invalid" })
+    } catch (e) {
+      caught = e as Error
+    }
+    expect(caught).toBeInstanceOf(ConfigError)
+    expect(caught!.message).toContain("PILOT_PROJECT_STATE")
+    expect(caught!.message).toContain("off")
+    expect(caught!.message).toContain("auto")
+    expect(caught!.message).toContain("always")
+  })
+})
+
+describe("loadConfig — PILOT_PROJECT_STATE integration", () => {
+  test("loadConfig({ PILOT_PROJECT_STATE: 'off' }).projectStateMode === 'off'", () => {
+    expect(loadConfig({ PILOT_PROJECT_STATE: "off" }).projectStateMode).toBe("off")
+  })
+
+  test("loadConfig({}).projectStateMode === 'auto' (default)", () => {
+    expect(loadConfig({}).projectStateMode).toBe("auto")
+  })
+
+  test("RESTART_REQUIRED_FIELDS does NOT include projectStateMode (Decision 2)", () => {
+    expect(RESTART_REQUIRED_FIELDS).not.toContain("projectStateMode")
   })
 })
 

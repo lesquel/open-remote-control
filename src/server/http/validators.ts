@@ -344,5 +344,15 @@ export function validateSettingsPatch(
     out.fetchTimeoutMs = b.fetchTimeoutMs as number
   }
 
+  if (b.projectStateMode !== undefined) {
+    if (b.projectStateMode !== "off" && b.projectStateMode !== "auto" && b.projectStateMode !== "always") {
+      return {
+        ok: false,
+        error: "projectStateMode must be 'off', 'auto', or 'always'",
+      }
+    }
+    out.projectStateMode = b.projectStateMode
+  }
+
   return { ok: true, data: out }
 }

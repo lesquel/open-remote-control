@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### feat(state): add `PILOT_PROJECT_STATE` config (`off | auto | always`; default `auto`) — fixes #2
+
+New environment variable `PILOT_PROJECT_STATE` controls when per-project files
+(`<workspace>/.opencode/pilot-state.json` and `<workspace>/.opencode/pilot-banner.txt`)
+are written. **Non-breaking default change** — existing workspaces with a `.opencode/`
+directory see no behavior change; new workspaces that never had `.opencode/` are now
+left untouched.
+
+Valid values:
+
+| Value | Behavior |
+|-------|----------|
+| `auto` (new default) | Write per-project files only when `.opencode/` **already exists**. Never creates the directory. |
+| `always` | Always write, creating `.opencode/` if absent. This is the legacy behavior from ≤ v1.16. |
+| `off` | Skip per-project writes entirely. Global `~/.opencode-pilot/` writes are unaffected. |
+
+**Rollback**: set `PILOT_PROJECT_STATE=always` to restore the previous always-create behavior instantly, without a code change.
+
+**Settings UI**: editable from the dashboard (no restart required). Returns 409 `SHELL_ENV_PINNED` if `PILOT_PROJECT_STATE` is set in the shell environment.
+
+This also fixes the unguarded `join(directory, ".opencode", ...)` call in `writeBanner` that could write to unexpected paths when `directory` was empty or invalid.
+
 ## [1.16.13] — 2026-04-22
 
 ### Changed — default bind address is now `0.0.0.0` (LAN-reachable out of the box)

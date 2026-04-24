@@ -14,10 +14,12 @@
 // in process.env, so config resolution passes the original shell snapshot
 // separately (`shellEnv`) to distinguish the two.
 
-import { DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, VAPID_DEFAULT_SUBJECT } from "./constants"
+import { DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, DEFAULT_PROJECT_STATE_MODE, VAPID_DEFAULT_SUBJECT } from "./constants"
 import type { PilotSettings } from "./services/settings-store"
+import type { ProjectStateMode } from "./services/state"
 
 export type TunnelProvider = "off" | "cloudflared" | "ngrok"
+export type { ProjectStateMode }
 
 export interface TelegramConfig {
   token: string
@@ -44,6 +46,9 @@ export interface Config {
   enableGlobOpener: boolean
   /** Timeout (ms) for outbound HTTP calls (Telegram, push). */
   fetchTimeoutMs: number
+  /** Controls when per-project files are written to `<directory>/.opencode/`.
+   *  Defaults to `"auto"` (write only when `.opencode/` already exists). */
+  projectStateMode: ProjectStateMode
 }
 
 export type ConfigSource = "default" | "env-file" | "settings-store" | "shell-env"
@@ -76,6 +81,14 @@ function parseTunnelProvider(raw: string | undefined): TunnelProvider {
   )
 }
 
+function parseProjectStateMode(raw: string | undefined): ProjectStateMode {
+  if (!raw) return DEFAULT_PROJECT_STATE_MODE
+  if (raw === "off" || raw === "auto" || raw === "always") return raw
+  throw new ConfigError(
+    `Invalid PILOT_PROJECT_STATE value "${raw}". Must be one of: off, auto, always`,
+  )
+}
+
 // ─── Mapping: env var name ↔ PilotSettings key ───────────────────────────────
 // Used to both (a) detect whether a value came from the shell-env and (b)
 // translate stored settings into the env-var shape that loadConfig understands.
@@ -92,6 +105,7 @@ const ENV_KEY_MAP: Record<keyof PilotSettings, string> = {
   vapidSubject: "PILOT_VAPID_SUBJECT",
   enableGlobOpener: "PILOT_ENABLE_GLOB_OPENER",
   fetchTimeoutMs: "PILOT_FETCH_TIMEOUT_MS",
+  projectStateMode: "PILOT_PROJECT_STATE",
 }
 
 export function envKeyFor(field: keyof PilotSettings): string {
@@ -158,6 +172,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const enableGlobOpener = env.PILOT_ENABLE_GLOB_OPENER === "true"
   const fetchTimeoutMs = parseIntOrDefault(env.PILOT_FETCH_TIMEOUT_MS, 10_000)
+  const projectStateMode = parseProjectStateMode(env.PILOT_PROJECT_STATE)
 
   return {
     port,
@@ -169,6 +184,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     vapid,
     enableGlobOpener,
     fetchTimeoutMs,
+    projectStateMode,
   }
 }
 
@@ -244,6 +260,7 @@ export function projectConfigToSettings(config: Config): Required<PilotSettings>
     vapidSubject: config.vapid?.subject ?? "",
     enableGlobOpener: config.enableGlobOpener,
     fetchTimeoutMs: config.fetchTimeoutMs,
+    projectStateMode: config.projectStateMode,
   }
 }
 
