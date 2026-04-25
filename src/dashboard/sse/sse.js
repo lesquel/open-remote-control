@@ -1,0 +1,568 @@
+// sse.js — SSE connection with exponential backoff reconnect
+import { getState, setState, appendPartDelta, clearStreamingMessage, subscribe } from '../state/state.js'
+import { loadSessions, renderSessions, updateHeaderSession, updateInfoBar, refreshSessionMeta } from '../components/sessions.js'
+import {
+  loadMessages,
+  applyStreamingDelta,
+  removeStreamingCursor,
+  showTypingIndicator,
+  reconcileOptimisticUserMessage,
+  ensureTextPartSurface,
+  replacePartInDom,
+} from '../components/messages.js'
+import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from '../components/multi-view.js'
+import { handlePermissionRequested, handlePermissionResolved } from '../components/permissions.js'
+import { onSubagentSpawned } from '../components/subagents.js'
+import { isFileEditingToolEvent } from '../components/files-changed.js'
+import { debouncedRefreshFilesChanged } from '../components/files-changed-bridge.js'
+import { buildApiUrl } from '../api/api.js'
+import { EVENTS, LIMITS } from '../constants.js'
+import { playNotifySound } from '../ui/notif-sound.js'
+
+let eventSource = null
+let reconnectTimer = null
+// Tracks (eventName, handler) pairs so they can be removed symmetrically on close
+let _activeListeners = []
+// Backoff state: starts at 1s, doubles to max 30s, resets on successful open
+let backoffMs = LIMITS.SSE_BACKOFF_MIN_MS
+const BACKOFF_MIN = LIMITS.SSE_BACKOFF_MIN_MS
+const BACKOFF_MAX = LIMITS.SSE_BACKOFF_MAX_MS
+
+// Tooltip metadata for the SSE dot
+let _lastConnectTime = null
+let _reconnectAttempts = 0
+
+// OpenCode's `message.part.delta` payload intentionally carries only
+// { messageID, partID, field, delta } in current SDK builds. Older versions of
+// this dashboard assumed a `sessionID` was present, so every delta looked like
+// a background-session event and never reached the live DOM. Keep a tiny
+// client-side index from the richer `message.updated` / `message.part.updated`
+// snapshots so deltas can be routed to the active session without requiring a
+// page refresh.
+const _messageSession = new Map() // messageID -> sessionID
+const _partSession = new Map()    // partID -> sessionID
+
+function rememberMessageSession(messageID, sessionID) {
+  if (messageID && sessionID) _messageSession.set(messageID, sessionID)
+}
+
+function rememberPartSession(part) {
+  if (!part) return
+  const sessionID = part.sessionID ?? part.sessionId ?? _messageSession.get(part.messageID)
+  if (part.messageID && sessionID) rememberMessageSession(part.messageID, sessionID)
+  if (part.id && sessionID) _partSession.set(part.id, sessionID)
+}
+
+function inferDeltaSession({ explicitSessionID, messageID, partID, activeSession, multiviewActive }) {
+  if (explicitSessionID) return explicitSessionID
+  if (partID && _partSession.has(partID)) return _partSession.get(partID)
+  if (messageID && _messageSession.has(messageID)) return _messageSession.get(messageID)
+  // Last-resort fallback: if the user is watching a single active session,
+  // route otherwise-unscoped deltas there. This matches OpenCode's own reducer:
+  // deltas are meaningful only after a message/part exists, and the dashboard
+  // can still recover with the final message.updated full reload if this guess
+  // is wrong. Without this fallback, first-token deltas can be dropped until a
+  // manual refresh because the SDK does not include sessionID on delta events.
+  if (activeSession && !multiviewActive) return activeSession
+  return null
+}
+
+const SSE_EVENTS = [
+  EVENTS.SESSION_UPDATED,
+  EVENTS.SESSION_CREATED,
+  EVENTS.SESSION_DELETED,
+  EVENTS.MESSAGE_CREATED,
+  EVENTS.MESSAGE_UPDATED,
+  EVENTS.MESSAGE_PART_UPDATED,
+  EVENTS.MESSAGE_PART_DELTA,
+  EVENTS.PERMISSION_REQUESTED,
+  EVENTS.PERMISSION_RESOLVED,
+  EVENTS.STATUS_CHANGED,
+  EVENTS.TODO_UPDATED,
+]
+
+/**
+ * Update the connection indicator in the header.
+ * status: 'connected' | 'reconnecting' | 'disconnected'
+ */
+function setConnectionStatus(status) {
+  const dot = document.getElementById('conn-dot')
+  const label = document.getElementById('conn-label')
+  if (!dot) return
+
+  dot.className = 'conn-dot ' + status
+
+  if (label) {
+    if (status === 'connected') {
+      label.textContent = ''
+      label.className = 'conn-label'
+    } else if (status === 'reconnecting') {
+      label.textContent = 'reconnecting…'
+      label.className = 'conn-label reconnecting'
+    } else {
+      label.textContent = 'offline'
+      label.className = 'conn-label'
+    }
+  }
+
+  // Update tooltip with last connect time + reconnect attempt count
+  const timeStr = _lastConnectTime
+    ? `Last connected: ${new Date(_lastConnectTime).toLocaleTimeString()}`
+    : 'Never connected'
+  const attemptsStr = _reconnectAttempts > 0
+    ? ` · Reconnect attempts: ${_reconnectAttempts}`
+    : ''
+  dot.title = `SSE: ${status} · ${timeStr}${attemptsStr}`
+}
+
+function _closeEventSource() {
+  if (!eventSource) return
+  // Remove all named listeners before closing to prevent stale handlers firing
+  for (const [name, handler] of _activeListeners) {
+    eventSource.removeEventListener(name, handler)
+  }
+  _activeListeners = []
+  eventSource.onmessage = null
+  eventSource.onerror = null
+  eventSource.onopen = null
+  eventSource.close()
+  eventSource = null
+}
+
+export function closeEventSource() {
+  _closeEventSource()
+}
+
+// Opt-in boot-time SSE tracing. Set localStorage['pilot:debug:sse']='1' to
+// revive the [sse-boot] markers that helped diagnose the pre-v1.16.9 bug.
+function _sseBootDebug() {
+  try { return localStorage.getItem('pilot:debug:sse') === '1' } catch { return false }
+}
+
+export function connect() {
+  const { token } = getState()
+  if (!token) {
+    if (_sseBootDebug()) console.warn('[sse-boot] connect() called without a token — SSE will NOT start. State may not be hydrated yet.')
+    return
+  }
+
+  // Idempotent: if a healthy EventSource already exists, reuse it instead of
+  // closing + reopening. This lets callers invoke connect() defensively (e.g.
+  // from the watchdog below, or multiple times during bootstrap) without
+  // ever dropping a working stream.
+  if (eventSource && eventSource.readyState === 1 /* OPEN */) {
+    return
+  }
+
+  if (eventSource) {
+    _closeEventSource()
+  }
+
+  // Build /events URL via api.js so activeDirectory is appended when set
+  // and serverUrl (tunnel) is respected. Then append the token.
+  const base = buildApiUrl('/events')
+  const sep = base.includes('?') ? '&' : '?'
+  const url = `${base}${sep}token=${encodeURIComponent(token)}`
+  if (_sseBootDebug()) console.info('[sse-boot] opening EventSource →', url.replace(/token=[^&]+/, 'token=***'))
+  eventSource = new EventSource(url)
+
+  eventSource.onopen = () => {
+    const wasReconnect = _reconnectAttempts > 0
+    if (_sseBootDebug()) console.info('[sse-boot] onopen fired — SSE connection is live')
+    backoffMs = BACKOFF_MIN          // reset backoff on successful connection
+    _lastConnectTime = Date.now()
+    _reconnectAttempts = 0
+    setConnectionStatus('connected')
+    setState({ sse: { connected: true } })
+    loadSessions(true)
+    if (wasReconnect) {
+      const { activeSession, multiviewActive, mvPanels } = getState()
+      // SSE has no replay buffer. Any message/tool events emitted while the
+      // browser was reconnecting are gone, so pull the canonical snapshot once
+      // the stream is healthy again. This is the difference between "the
+      // connection hiccuped" and "I have to refresh the whole page to catch up".
+      if (activeSession && !multiviewActive) {
+        loadMessages(activeSession).catch(() => {})
+      }
+      for (const sessionId of mvPanels ?? []) {
+        loadMVMessages(sessionId).catch(() => {})
+      }
+    }
+  }
+
+  function onError(ev) {
+    if (_sseBootDebug()) console.warn('[sse-boot] onerror fired — SSE stream errored/disconnected.', {
+      readyState: eventSource?.readyState,
+      reconnectAttempts: _reconnectAttempts,
+      backoffMs,
+    })
+    setConnectionStatus('reconnecting')
+    setState({ sse: { connected: false } })
+    _closeEventSource()
+    scheduleReconnect()
+  }
+  eventSource.onerror = onError
+
+  // Opt-in debug log: `localStorage.setItem('pilot:debug:sse', '1')` then
+  // reload to trace every event to the console. Unchecked when the flag is
+  // absent, so zero cost in production.
+  const _sseDebug = () => {
+    try { return localStorage.getItem('pilot:debug:sse') === '1' } catch { return false }
+  }
+
+  function onMessage(e) {
+    try {
+      const parsed = JSON.parse(e.data)
+      if (_sseDebug()) console.debug('[sse] onmessage', parsed.type ?? '(untyped)', parsed)
+      handleEvent(parsed)
+    } catch (err) {
+      if (_sseDebug()) console.error('[sse] onmessage parse/handle error', err, e.data)
+    }
+  }
+  eventSource.onmessage = onMessage
+
+  // Named event types
+  SSE_EVENTS.forEach(name => {
+    function onNamedEvent(e) {
+      try {
+        const data = JSON.parse(e.data)
+        if (_sseDebug()) console.debug('[sse] event', name, data)
+        handleEvent({ type: name, data })
+      } catch (err) {
+        if (_sseDebug()) console.error('[sse] named event error', name, err, e.data)
+      }
+    }
+    eventSource.addEventListener(name, onNamedEvent)
+    _activeListeners.push([name, onNamedEvent])
+  })
+}
+
+// When activeDirectory changes, close the current stream and reconnect so the
+// new URL (?directory=…) takes effect. The backend event bus is global, but
+// reconnecting keeps the SSE URL in sync and gives a clean state.
+//
+// CRITICAL: `_lastSSEDirectory` starts as a sentinel (`undefined`) on purpose,
+// NOT `null`. During boot, `loadSessions()` and `restoreTabsFromStorage()`
+// both mutate state and fire `notifyAll()` BEFORE `connect()` is called. If
+// this subscriber ran with `_lastSSEDirectory = null` and then saw the
+// transition `null → <some path>`, it would think the directory changed and
+// (if `connect()` had already been called) close/reconnect mid-handshake. By
+// seeding from the current state on the FIRST notification (and only calling
+// close+connect when a LIVE EventSource exists AND the directory actually
+// changed from the last observed value), we avoid the boot-time race that
+// was dropping every event emitted before the second connect's onopen.
+let _lastSSEDirectory = undefined
+subscribe('sse-dir', (state) => {
+  const dir = state.activeDirectory ?? null
+  if (_lastSSEDirectory === undefined) {
+    // First notification: seed without side effects — the fresh connect()
+    // in main.js's bootstrap will build the URL with this directory.
+    _lastSSEDirectory = dir
+    return
+  }
+  if (dir === _lastSSEDirectory) return
+  _lastSSEDirectory = dir
+  // Only reconnect if we already have a live connection
+  if (eventSource) {
+    _closeEventSource()
+    connect()
+    // Refetch state for the new directory after reconnect
+    try { loadSessions(true) } catch (_) {}
+  }
+})
+
+function scheduleReconnect() {
+  if (reconnectTimer) return
+  _reconnectAttempts++
+  setConnectionStatus('reconnecting')  // update tooltip with new attempt count
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    connect()
+    // Double the backoff for next failure, capped at BACKOFF_MAX
+    backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX)
+  }, backoffMs)
+}
+
+async function handleEvent(ev) {
+  const t = ev.type ?? ''
+  const d = ev.data ?? ev
+  // Track last event for debug modal (B6/B7)
+  window.__debugSseLastEvent = { type: t, ts: new Date().toISOString() }
+  const { activeSession, multiviewActive, mvPanels, sessions } = getState()
+
+  if (t.startsWith('session')) {
+    loadSessions()
+  }
+
+  // ── Streaming deltas: incremental tokens for text / reasoning fields ─────
+  // The SDK emits `message.part.delta` per token with { messageID, partID,
+  // field, delta } (sessionID is not guaranteed). This drives the typewriter effect. A separate
+  // `message.part.updated` event emits snapshots for NON-text parts (tools
+  // moving pending → running → completed) — handled below.
+  if (t === EVENTS.MESSAGE_PART_DELTA) {
+    const explicitSessionId =
+      d?.sessionID ?? d?.sessionId ?? ev.properties?.sessionID ?? ev.properties?.sessionId
+    const messageId = d?.messageID ?? ev.properties?.messageID
+    const partId    = d?.partID    ?? ev.properties?.partID
+    const field     = d?.field     ?? ev.properties?.field
+    const delta     = d?.delta     ?? ev.properties?.delta
+    const sessionId = inferDeltaSession({
+      explicitSessionID: explicitSessionId,
+      messageID: messageId,
+      partID: partId,
+      activeSession,
+      multiviewActive,
+    })
+
+    if (typeof delta !== 'string' || delta.length === 0) return
+    if (!sessionId) return
+    if (sessionId !== activeSession || multiviewActive) {
+      // Still accumulate for background sessions so a later switch has
+      // the full text, but don't touch the DOM.
+      appendPartDelta(sessionId, messageId, partId, delta)
+      return
+    }
+    // Only apply to text fields; reasoning could also be streamed but we
+    // currently render reasoning via snapshots only.
+    if (field === 'text') {
+      appendPartDelta(sessionId, messageId, partId, delta)
+      // Guarantee a DOM surface — the first delta normally lands before
+      // message.created (assistant) has rendered its bubble.
+      ensureTextPartSurface(partId, messageId)
+      applyStreamingDelta(partId, delta)
+    }
+    return
+  }
+
+  // ── Snapshot: full part state (tool pending → running → completed) ──────
+  // Emitted for every state transition on non-text parts. We use this to
+  // hot-swap the specific tool node in the DOM so the status icon, args,
+  // and output update live — WITHOUT wiping the transcript (which would
+  // drop any in-flight text deltas from the delta stream).
+  if (t === EVENTS.MESSAGE_PART_UPDATED) {
+    const part = d?.part ?? ev.properties?.part
+    rememberPartSession(part)
+    const sessionId = part?.sessionID ?? part?.sessionId
+    if (!part || sessionId !== activeSession || multiviewActive) {
+      // TODO: invalidate bg session cache on MESSAGE_PART_UPDATED so the next
+      // selectSession() forces a fresh fetch instead of showing stale data.
+      return
+    }
+    replacePartInDom(part)
+    return
+  }
+
+  if (t === EVENTS.MESSAGE_CREATED || t === EVENTS.MESSAGE_UPDATED) {
+    // The SDK ONLY emits message.updated — message.created is never sent.
+    // A single message fires many `message.updated` events during a turn
+    // (user msg created, assistant msg init with empty content, assistant
+    // final with tokens + cost, and user msg re-emitted with summary). We
+    // must NOT re-fetch + full re-render on every one of those, because
+    // `loadMessages → renderMessages` does `box.innerHTML = …` which blows
+    // away in-flight text deltas (the typewriter). Instead:
+    //   • user message → reconcile the optimistic bubble (or load once if
+    //     no optimistic node exists).
+    //   • assistant message → only full-reload when the message is final
+    //     (`info.time.completed` set, or `info.finish` present). During
+    //     streaming, rely on ensureTextPartSurface + applyStreamingDelta
+    //     plus replacePartInDom for non-text parts.
+    const info = ev.properties?.info ?? d?.info ?? d ?? {}
+    const msgRole = info.role ?? d?.role ?? null
+    const messageId = info.id ?? d?.id ?? d?.messageId ?? null
+    const evtSessionId =
+      ev.properties?.sessionID ?? ev.properties?.sessionId ?? d?.sessionID ?? d?.sessionId ?? null
+    rememberMessageSession(messageId, info.sessionID ?? info.sessionId ?? evtSessionId)
+    const isAssistant = msgRole === 'assistant'
+    const isUser = msgRole === 'user'
+    const isFinal =
+      info?.time?.completed != null ||
+      (isAssistant && typeof info?.finish === 'string' && info.finish.length > 0)
+
+    if (t === EVENTS.MESSAGE_UPDATED && isFinal) {
+      if (evtSessionId && messageId) {
+        clearStreamingMessage(evtSessionId, messageId)
+        if (evtSessionId === activeSession) {
+          removeStreamingCursor(messageId)
+        }
+      }
+    }
+
+    // ── v1.9: sound + browser notification on assistant turn completion ──────
+    // Only fire once the turn is actually done, not on intermediate updates.
+    if (t === EVENTS.MESSAGE_UPDATED && isAssistant && isFinal && document.hidden) {
+      const { settings } = getState()
+      if (settings.sound) playNotifySound()
+      if (settings.notif && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try {
+          const { sessions } = getState()
+          const sessionTitle = evtSessionId ? (sessions[evtSessionId]?.title ?? null) : null
+          const body = sessionTitle ? `Response ready in "${sessionTitle}"` : 'Agent response ready'
+          const n = new Notification('OpenCode Pilot', {
+            body,
+            icon: './icons/icon.svg',
+            tag: 'pilot-msg-' + (evtSessionId ?? Date.now()),
+          })
+          n.onclick = () => {
+            window.focus()
+            if (evtSessionId) {
+              import('../components/sessions.js').then(m => m.selectSession(evtSessionId)).catch(() => {})
+            }
+            n.close()
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (activeSession && !multiviewActive) {
+      if (isUser) {
+        // User message update: reconcile the optimistic bubble with the
+        // real id, or load once if there's no pending optimistic node
+        // (e.g. message came from another device / TUI / API).
+        const hasPending = !!document.querySelector('.message.user[data-pending="1"]')
+        if (hasPending) {
+          if (messageId) reconcileOptimisticUserMessage(messageId)
+        } else if (!document.querySelector(`.message.user[data-message-id="${messageId}"]`)) {
+          loadMessages(activeSession)
+        }
+        // If the user message node is already in the DOM, do nothing —
+        // intermediate user updates (e.g. summary attached) don't need a
+        // re-render and would wipe streaming deltas.
+      } else if (isAssistant) {
+        if (isFinal) {
+          // End of turn: do the full re-render so markdown, tool states,
+          // and agent badges render from the canonical server snapshot.
+          loadMessages(activeSession)
+        } else if (!document.querySelector(`.message.assistant[data-message-id="${messageId}"]`)) {
+          // Assistant message just initialised but we have no bubble yet.
+          // Show a typing indicator; the first delta will replace it via
+          // ensureTextPartSurface.
+          showTypingIndicator()
+        }
+        // Intermediate assistant updates with an existing bubble: ignore.
+        // Deltas + replacePartInDom drive the streaming DOM.
+      }
+    }
+    if (evtSessionId && mvPanels.has(evtSessionId)) {
+      loadMVMessages(evtSessionId)
+    }
+    // Refresh label strip and usage indicator on message events
+    if (evtSessionId === activeSession || !evtSessionId) {
+      window.__refreshLabelStrip?.()
+      window.__refreshUsageIndicator?.()
+      window.__agentPanel?.refresh?.()
+    }
+    // Refresh session meta for this session so sessions list shows fresh model/cost
+    // Only on final updates — intermediate ones carry partial/stale token counts.
+    if (t === EVENTS.MESSAGE_UPDATED && evtSessionId && isFinal) {
+      refreshSessionMeta(evtSessionId)
+    }
+  }
+
+  if (t === EVENTS.PERMISSION_REQUESTED) {
+    // Pilot events carry payload under .properties (see notifications.ts).
+    // Normalize to a stable shape for handlers that don't know about .properties.
+    const props = ev.properties ?? d ?? {}
+    const normalized = {
+      id: props.permissionID ?? props.id,
+      permissionID: props.permissionID ?? props.id,
+      description: props.title ?? props.description,
+      title: props.title,
+      sessionID: props.sessionID,
+      type: props.permissionType ?? props.type,
+      pattern: props.pattern,
+      metadata: props.metadata,
+    }
+    handlePermissionRequested(normalized)
+    // Dispatch for push-notifications module
+    window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: normalized }))
+  }
+
+  if (t === EVENTS.PERMISSION_RESOLVED) {
+    // pilot.permission.resolved also carries payload under .properties.
+    const resolvedProps = ev.properties ?? d ?? {}
+    const resolvedNormalized = {
+      id: resolvedProps.permissionID ?? resolvedProps.id,
+      permissionID: resolvedProps.permissionID ?? resolvedProps.id,
+    }
+    handlePermissionResolved(resolvedNormalized)
+  }
+
+  if (t === EVENTS.TODO_UPDATED) {
+    window.dispatchEvent(new CustomEvent('pilot:todo:updated', { detail: d }))
+  }
+
+  if (t === EVENTS.PILOT_SUBAGENT_SPAWNED) {
+    // Pilot events carry payload under .properties (not .data)
+    onSubagentSpawned(ev.properties ?? d)
+  }
+
+  // Debounced diff refresh when a file-editing tool completes
+  if (t === EVENTS.PILOT_TOOL_COMPLETED || t === EVENTS.TOOL_COMPLETED) {
+    const payload = ev.properties ?? d
+    if (isFileEditingToolEvent(payload)) {
+      if (activeSession) debouncedRefreshFilesChanged(activeSession)
+      // Also refresh multi-view panels belonging to the session that emitted the event
+      const toolSessionId = payload?.sessionID ?? payload?.sessionId ?? null
+      if (toolSessionId && mvPanels?.has?.(toolSessionId)) {
+        loadMVMessages(toolSessionId)
+      }
+    }
+  }
+
+  if (t === EVENTS.STATUS_CHANGED && d.sessionId && d.status) {
+    const statuses = { ...getState().statuses, [d.sessionId]: d.status }
+    setState({ statuses })
+    renderSessions()
+    if (d.sessionId === activeSession) {
+      const s = sessions[d.sessionId]
+      const title = s?.title || d.sessionId.slice(0, 8)
+      updateHeaderSession(title, d.status)
+      updateInfoBar(d.sessionId, title, d.status, s)
+    }
+    updateMVPanelStatus(d.sessionId, d.status)
+  }
+
+  if (t === EVENTS.VCS_BRANCH_UPDATED) {
+    window.__rightPanelSetBranch?.(ev.properties?.branch ?? ev.branch ?? d?.branch ?? null)
+  }
+
+  if (t === EVENTS.LSP_UPDATED) {
+    // Refresh references (which re-fetches /lsp/status) then re-render the right panel
+    window.__refreshReferences?.().then(() => {
+      window.__refreshRightPanel?.()
+    }).catch(() => {})
+  }
+}
+
+// ─── SSE watchdog ────────────────────────────────────────────────────────────
+// Defensive auto-recovery. Every 5 seconds verify there's a live EventSource.
+// If `eventSource` is null (connect() was never called, or it was called but
+// errored before handshake) OR the stream is CLOSED (readyState 2), re-invoke
+// connect() so the dashboard always recovers without a page reload — even if
+// the bootstrap threw before reaching the main sseConnect() call, or an
+// unrelated bug paused the reconnect loop.
+//
+// This is idempotent with connect()'s own `readyState === OPEN` guard, so
+// calling it while the stream is healthy is a free no-op.
+let _watchdogTimer = null
+export function startSseWatchdog() {
+  if (_watchdogTimer) return
+  _watchdogTimer = setInterval(() => {
+    const { token } = getState()
+    if (!token) return
+    const rs = eventSource?.readyState
+    if (!eventSource || rs === 2 /* CLOSED */) {
+      if (_sseBootDebug()) console.info('[sse-boot] watchdog: no live stream, calling connect()', { readyState: rs })
+      try { connect() } catch (err) {
+        if (_sseBootDebug()) console.warn('[sse-boot] watchdog reconnect failed', err)
+      }
+    }
+  }, 5_000)
+}
+
+// Auto-start the watchdog at module load. No token yet = no-op until a token
+// appears; then the watchdog picks it up on its next tick. This makes SSE
+// recovery automatic regardless of bootstrap call order.
+if (typeof window !== 'undefined') {
+  startSseWatchdog()
+}

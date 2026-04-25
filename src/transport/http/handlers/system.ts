@@ -11,22 +11,17 @@ import { PILOT_VERSION, LOCALHOST_ADDRESSES } from "../../../server/constants"
 import { MSG } from "../../../core/strings"
 
 // ─── Dashboard path ─────────────────────────────────────────────────────────
-// The dashboard lives at src/server/dashboard/ (will move to src/dashboard/ in Commit 5).
-// Transient __dirname arithmetic (Commit 4 → Commit 5):
-//   This file is at src/transport/http/handlers/system.ts.
-//   3 levels up reaches src/, then we navigate into server/dashboard.
-//   After Commit 5 moves the dashboard to src/dashboard/, this path becomes
-//   join(__dirname, "../../../dashboard").
+// The dashboard lives at src/dashboard/ (moved from src/server/dashboard/ in Commit 5).
+// __dirname arithmetic: this file is at src/transport/http/handlers/system.ts.
+// 3 levels up (../../../) reaches src/, then into dashboard/.
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /** The directory that contains the split dashboard. */
-const DASHBOARD_DIR = join(__dirname, "../../../server/dashboard")
+const DASHBOARD_DIR = join(__dirname, "../../../dashboard")
 
-/** Path to the dashboard entry point. Falls back to the legacy single file. */
-const DASHBOARD_INDEX_PATH = existsSync(join(DASHBOARD_DIR, "index.html"))
-  ? join(DASHBOARD_DIR, "index.html")
-  : join(join(__dirname, "../../../server"), "dashboard.html")
+/** Path to the dashboard entry point. */
+const DASHBOARD_INDEX_PATH = join(DASHBOARD_DIR, "index.html")
 
 let cachedHtml: string | null = null
 
