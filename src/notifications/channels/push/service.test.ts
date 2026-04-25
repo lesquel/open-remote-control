@@ -51,6 +51,21 @@ describe("push service", () => {
     expect(svc.isEnabled()).toBe(true)
   })
 
+  test("channel.enabled() mirrors isEnabled", () => {
+    const svcOff = createPushService(makeDeps(null))
+    expect(svcOff.channel.enabled()).toBe(false)
+
+    const svcOn = createPushService(
+      makeDeps({ publicKey: "pub", privateKey: "priv", subject: "mailto:a@b" }),
+    )
+    expect(svcOn.channel.enabled()).toBe(true)
+  })
+
+  test("channel.name is 'push'", () => {
+    const svc = createPushService(makeDeps())
+    expect(svc.channel.name).toBe("push")
+  })
+
   test("addSubscription stores the subscription", () => {
     const svc = createPushService(makeDeps())
     svc.addSubscription(SUB_A)
@@ -106,5 +121,27 @@ describe("push service", () => {
     )
     const ok = await svc.sendTo("unknown", { title: "t", body: "b" })
     expect(ok).toBe(false)
+  })
+
+  test("channel.send returns ok:false when VAPID is disabled", async () => {
+    const svc = createPushService(makeDeps(null))
+    const result = await svc.channel.send({
+      kind: "permission.pending",
+      payload: { title: "test", body: "test" },
+    })
+    expect(result.ok).toBe(false)
+    expect((result as { ok: false; error: string }).error).toMatch(/not configured/)
+  })
+
+  test("channel.send returns ok:false when no subscribers", async () => {
+    const svc = createPushService(
+      makeDeps({ publicKey: "pub", privateKey: "priv", subject: "mailto:a@b" }),
+    )
+    const result = await svc.channel.send({
+      kind: "permission.pending",
+      payload: { title: "test", body: "test" },
+    })
+    expect(result.ok).toBe(false)
+    expect((result as { ok: false; error: string }).error).toMatch(/no push subscribers/)
   })
 })

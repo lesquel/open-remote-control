@@ -1,8 +1,8 @@
 import { validateToken, getIP } from "./auth"
 import { CORS_HEADERS, corsPreflightResponse } from "./cors"
 import { jsonError } from "./json"
-import { matchRoute } from "./routes"
-import type { RouteDeps } from "./routes"
+import { matchRoute, routes } from "./routes"
+import type { RouteDeps, Route } from "./routes"
 import { MAX_REQUEST_BODY_BYTES } from "../constants"
 
 export interface RemoteServer {
@@ -15,6 +15,12 @@ export interface RemoteServer {
    */
   start(): { ok: true } | { ok: false; reason: "port-in-use"; error: Error }
   stop(): void
+  /**
+   * Register a new route at runtime. Used by integrations (e.g. Codex) that
+   * self-register via AgentIntegration.setup({ registerRoute }).
+   * Routes registered this way are appended to the live route table.
+   */
+  registerRoute(route: Route): void
 }
 
 function isEaddrInUse(err: unknown): boolean {
@@ -93,6 +99,13 @@ export async function readBoundedText(req: Request, maxBytes = MAX_REQUEST_BODY_
 export function createRemoteServer(deps: RouteDeps): RemoteServer {
   let server: ReturnType<typeof Bun.serve> | null = null
 
+  // Dynamic routes registered after server construction (e.g. by codexIntegration)
+  const dynamicRoutes: Route[] = []
+
+  function registerRoute(route: Route): void {
+    dynamicRoutes.push(route)
+  }
+
   function start(): { ok: true } | { ok: false; reason: "port-in-use"; error: Error } {
     try {
       server = Bun.serve({
@@ -109,7 +122,18 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
           return corsPreflightResponse()
         }
 
-        const matched = matchRoute(req.method, path)
+        // Check static routes first, then dynamically-registered routes
+        let matched = matchRoute(req.method, path)
+        if (!matched) {
+          for (const route of dynamicRoutes) {
+            if (route.method !== req.method) continue
+            const routeMatch = path.match(route.pattern)
+            if (routeMatch) {
+              matched = { route, params: routeMatch.groups ?? {} }
+              break
+            }
+          }
+        }
 
         if (!matched) {
           deps.audit.log("request.notfound", { method: req.method, path, ip: getIP(req) })
@@ -167,5 +191,5 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
     server?.stop()
   }
 
-  return { start, stop }
+  return { start, stop, registerRoute }
 }

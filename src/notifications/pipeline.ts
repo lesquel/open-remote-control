@@ -1,9 +1,16 @@
 import type { PluginInput } from "@opencode-ai/plugin"
 import type { BusEvent, PilotEvent } from "../core/events/types"
 import type { EventBus } from "../core/events/bus"
-import type { TelegramBot } from "./channels/telegram/index"
+import type { TelegramChannel } from "./channels/telegram/index"
 import type { PushService } from "./channels/push/service"
 import type { AuditLog } from "../core/audit/log"
+import type { NotificationChannel } from "./ports"
+
+// Re-export PushService so transport/ can reference the push dep type
+// without importing directly from notifications/channels/push/service.
+// This keeps the dependency rule: transport/ → notifications/ (pipeline only).
+export type { PushService } from "./channels/push/service"
+export type { PushSubscriptionJson } from "./channels/push/service"
 
 export interface NotificationService {
   /** Emit any bus event to all connected SSE clients. */
@@ -11,9 +18,8 @@ export interface NotificationService {
   /** Emit a typed PilotEvent and record it in the audit log. */
   emitPilot(event: PilotEvent): void
   /**
-   * Full pipeline: SSE + Telegram + Web Push for permission pending.
-   * Returns `true` if at least one interactive channel was reachable
-   * (Telegram enabled, Web Push enabled with subscribers, or SSE clients connected).
+   * Full pipeline: SSE + channels for permission pending.
+   * Returns `true` if at least one interactive channel was reachable.
    * Returns `false` when no channel can reach a human — caller should skip waitForResponse.
    */
   notifyPermissionPending(
@@ -24,12 +30,12 @@ export interface NotificationService {
     pattern?: string | string[],
     metadata?: Record<string, unknown>,
   ): Promise<boolean>
-  /** Telegram notification when a session goes idle after work. */
+  /** Notification when a session goes idle after work. */
   notifySessionIdle(
     client: PluginInput["client"],
     sessionID: string,
   ): Promise<void>
-  /** Telegram notification for session errors. */
+  /** Notification for session errors. */
   notifySessionError(
     client: PluginInput["client"],
     sessionID: string,
@@ -37,9 +43,31 @@ export interface NotificationService {
   ): Promise<void>
 }
 
+export interface NotificationServiceDeps {
+  eventBus: EventBus
+  /**
+   * The telegram channel — kept separate for direct method access
+   * (sendPermissionRequest, sendStartup, sendSessionIdle, sendSessionError).
+   * These methods go beyond the NotificationChannel port and are needed
+   * by the composition root and the HTTP handlers (via RouteDeps.telegram).
+   */
+  telegram: TelegramChannel
+  audit: AuditLog
+  /**
+   * The push service — kept separate so the pipeline can call
+   * push.broadcast() with a PushPayload and check push.count().
+   */
+  push: PushService
+  /**
+   * Additional notification channels beyond telegram and push.
+   * Pipeline iterates these for each event (future: Slack, Discord, etc.).
+   */
+  channels?: NotificationChannel[]
+}
+
 export function createNotificationService(
   eventBus: EventBus,
-  telegram: TelegramBot,
+  telegram: TelegramChannel,
   audit: AuditLog,
   push: PushService,
 ): NotificationService {
@@ -60,7 +88,7 @@ export function createNotificationService(
     pattern?: string | string[],
     metadata: Record<string, unknown> = {},
   ): Promise<boolean> {
-    const telegramReachable = telegram.enabled
+    const telegramReachable = telegram.enabled()
     const pushReachable = push.isEnabled() && push.count() > 0
     const sseReachable = eventBus.hasClients()
 

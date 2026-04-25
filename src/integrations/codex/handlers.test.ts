@@ -383,24 +383,40 @@ describe("REQ-AUD-01 audit entries", () => {
 })
 
 // ─── Phase 8: Route registration smoke test ──────────────────────────────────
+// Codex routes no longer live in the central static routes table (removed in
+// Commit 3). Codex self-registers via codexIntegration.setup({ registerRoute }).
+// The tests below verify: (a) the central table no longer has codex routes, and
+// (b) the codexIntegration produces a route with the correct pattern/method.
 
 import { matchRoute } from "../../server/http/routes"
 import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
+import { codexIntegration } from "./index"
+import type { RouteSpec } from "../ports"
 
 describe("Route registration smoke test", () => {
-  test("POST /codex/hooks/SessionStart is matched in routes table", () => {
+  test("POST /codex/hooks/SessionStart is NOT in the central static routes table", () => {
+    // Codex now self-registers — the central matchRoute should NOT find it
     const match = matchRoute("POST", "/codex/hooks/SessionStart")
-    expect(match).not.toBeNull()
-    expect(match?.params.event).toBe("SessionStart")
+    expect(match).toBeNull()
   })
 
-  test("POST /codex/hooks/Unknown is matched (handler returns 404)", () => {
-    // The route exists but the handler returns 404 UNKNOWN_HOOK_EVENT for unknown events
-    const match = matchRoute("POST", "/codex/hooks/Unknown")
-    expect(match).not.toBeNull()
+  test("codexIntegration.setup calls registerRoute with the correct pattern", () => {
+    const registered: RouteSpec[] = []
+    const mockDeps = {
+      permissions: { waitForResponse: async () => null, resolve: () => false, pending: () => [] },
+      events: { emit: () => {}, createSSEResponse: () => new Response(), hasClients: () => false, clientCount: () => 0, closeAll: () => {} },
+      audit: { log: () => {} },
+      registerRoute: (route: RouteSpec) => { registered.push(route) },
+    }
+    codexIntegration.setup(mockDeps)
+    expect(registered).toHaveLength(1)
+    expect(registered[0]!.method).toBe("POST")
+    expect("/codex/hooks/SessionStart").toMatch(registered[0]!.pattern)
+    expect("/codex/hooks/Unknown").toMatch(registered[0]!.pattern)
   })
 
   test("GET /codex/hooks/SessionStart does NOT match (wrong method)", () => {
+    // Even the dynamic route only matches POST — GET still returns null
     const match = matchRoute("GET", "/codex/hooks/SessionStart")
     expect(match).toBeNull()
   })

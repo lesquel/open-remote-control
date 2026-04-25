@@ -2,7 +2,7 @@
 // handleCallbackQuery is internal; we test via the polling loop with mocked fetch.
 import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test"
 import { createPermissionQueue } from "../../../core/permissions/queue"
-import { createTelegramBot } from "./index"
+import { createTelegramChannel } from "./index"
 
 // Minimal callback_query update that simulates Telegram sending "allow: permId"
 function makeCallbackUpdate(action: "allow" | "deny", permId: string, updateId = 1) {
@@ -21,7 +21,7 @@ function makeCallbackUpdate(action: "allow" | "deny", permId: string, updateId =
   }
 }
 
-describe("createTelegramBot — codexPermissionQueue resolution", () => {
+describe("createTelegramChannel — codexPermissionQueue resolution", () => {
   let originalFetch: typeof globalThis.fetch
 
   beforeEach(() => {
@@ -64,7 +64,7 @@ describe("createTelegramBot — codexPermissionQueue resolution", () => {
       })
     }) as unknown as typeof globalThis.fetch
 
-    const bot = createTelegramBot(
+    const bot = createTelegramChannel(
       { token: "fake-token", chatId: "12345" },
       mainQueue,
       codexQueue,
@@ -111,7 +111,7 @@ describe("createTelegramBot — codexPermissionQueue resolution", () => {
       })
     }) as unknown as typeof globalThis.fetch
 
-    const bot = createTelegramBot(
+    const bot = createTelegramChannel(
       { token: "fake-token", chatId: "12345" },
       mainQueue,
       codexQueue,

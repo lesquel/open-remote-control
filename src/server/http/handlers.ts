@@ -28,7 +28,7 @@ import {
   projectConfigToSettings,
   resolveSources,
 } from "../config"
-import type { PushSubscriptionJson } from "../../notifications/channels/push/service"
+import type { PushSubscriptionJson } from "../../notifications/pipeline"
 import type { PilotSettings } from "../../core/settings/store"
 import type {
   Agent,
@@ -712,13 +712,13 @@ export async function getHealth({ deps }: RouteContext): Promise<Response> {
   const telegramStatus: "up" | "down" | "disabled" =
     deps.config.telegram === null
       ? "disabled"
-      : deps.telegram.enabled
+      : deps.telegram.enabled()
         ? "up"
         : "down"
 
   // Telegram connectivity — non-blocking check; fall back to null if invasive
   let telegramOk: boolean | null = null
-  if (deps.telegram.enabled) {
+  if (deps.telegram.enabled()) {
     try {
       const result = await deps.telegram.testConnection()
       telegramOk = result.ok
@@ -781,7 +781,7 @@ export async function rotateAuthToken({ deps }: RouteContext): Promise<Response>
   })
 
   // Telegram notification — include connect URL if we have a base URL.
-  if (deps.telegram.enabled) {
+  if (deps.telegram.enabled()) {
     const baseUrl = deps.tunnelUrl ?? `http://${deps.config.host}:${deps.config.port}`
     const connectUrl = `${baseUrl}/?token=${newToken}`
     deps.telegram

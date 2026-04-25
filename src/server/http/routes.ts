@@ -3,8 +3,8 @@ import type { Config } from "../config"
 import type { AuditLog } from "../../core/audit/log"
 import type { EventBus } from "../../core/events/bus"
 import type { PermissionQueue } from "../../core/permissions/queue"
-import type { TelegramBot } from "../../notifications/channels/telegram/index"
-import type { PushService } from "../../notifications/channels/push/service"
+import type { TelegramChannel } from "../../notifications/channels/telegram/index"
+import type { PushService } from "../../notifications/pipeline"
 import type { SettingsStore } from "../../core/settings/store"
 import type { Logger } from "../../infra/logger/index"
 
@@ -38,7 +38,7 @@ export interface RouteDeps {
   /** Separate permission queue for Codex hook bridge requests.
    *  Uses config.codexPermissionTimeoutMs instead of the main timeout. */
   codexPermissionQueue: PermissionQueue
-  telegram: TelegramBot
+  telegram: TelegramChannel
   push: PushService
   logger: Logger
   /** Persistent settings store (~/.opencode-pilot/config.json). */
@@ -67,8 +67,8 @@ export interface Route {
 }
 
 // handlers are imported after they are defined in handlers.ts
-import { dispatchCodexHook } from "../../integrations/codex/handlers"
-
+// Note: Codex routes are no longer in this central table. Codex now
+// self-registers via codexIntegration.setup({ registerRoute }) in server/index.ts.
 import {
   serveDashboard,
   serveDashboardStatic,
@@ -234,13 +234,8 @@ export const routes: Route[] = [
   { method: "PATCH", pattern: /^\/settings$/, auth: "required", handler: patchSettings },
   { method: "POST", pattern: /^\/settings\/reset$/, auth: "required", handler: resetSettings },
   { method: "POST", pattern: /^\/settings\/vapid\/generate$/, auth: "required", handler: generateVapidKeys },
-  // Codex CLI hook bridge — auth is validated inside dispatchCodexHook (hookToken OR main token)
-  {
-    method: "POST",
-    pattern: /^\/codex\/hooks\/(?<event>[A-Za-z]+)$/,
-    auth: "none",
-    handler: dispatchCodexHook,
-  },
+  // Codex CLI hook bridge routes are self-registered by codexIntegration.setup()
+  // in server/index.ts via registerRoute. They no longer live in this central table.
 ]
 
 /** Match the first route whose method and pattern match. */

@@ -3,6 +3,7 @@ import type { PermissionQueue } from "../../../core/permissions/queue"
 import type { Logger } from "../../../infra/logger/index"
 import { createCircuitBreaker } from "../../../infra/circuit-breaker/index"
 import { TELEGRAM_ERROR_MAX_CHARS } from "../../../server/constants"
+import type { NotificationChannel, NotificationResult } from "../../ports"
 
 /** Default fetch timeout for all Telegram API calls. */
 const DEFAULT_FETCH_TIMEOUT_MS = 10_000
@@ -14,8 +15,18 @@ function getTelegramFetchTimeoutMs(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_FETCH_TIMEOUT_MS
 }
 
-export interface TelegramBot {
-  enabled: boolean
+/**
+ * Extended Telegram channel — satisfies NotificationChannel and also exposes
+ * the bot-specific methods needed by the composition root and HTTP handlers.
+ *
+ * Supersedes the old TelegramBot interface (removed in Commit 3).
+ * The `enabled` property is now a function to match NotificationChannel.
+ */
+export interface TelegramChannel extends NotificationChannel {
+  readonly name: 'telegram'
+  /** Returns true when the bot is configured with a token and chat ID. */
+  enabled(): boolean
+  send(event: import('../../ports').NotificationEvent): Promise<NotificationResult>
   sendMessage(text: string): Promise<void>
   sendPermissionRequest(permissionId: string, title: string, sessionId: string): Promise<void>
   sendStartup(dashboardUrl: string): Promise<void>
@@ -26,26 +37,33 @@ export interface TelegramBot {
   stop(): void
 }
 
+/**
+ * @deprecated Use TelegramChannel instead. Kept for test compatibility.
+ */
+export type TelegramBot = TelegramChannel
+
 interface InlineKeyboardButton {
   text: string
   callback_data: string
 }
 
-export function createTelegramBot(
+export function createTelegramChannel(
   config: TelegramConfig | null,
   permissionQueue: PermissionQueue,
   codexPermissionQueue: PermissionQueue,
   logger?: Logger,
-): TelegramBot {
+): TelegramChannel {
   if (!config || !config.token || !config.chatId) {
     return {
-      enabled: false,
+      name: 'telegram',
+      enabled: () => false,
+      send: async () => ({ ok: false, error: 'not configured', retriable: false }),
       sendMessage: async () => {},
       sendPermissionRequest: async () => {},
       sendStartup: async () => {},
       sendSessionIdle: async () => {},
       sendSessionError: async () => {},
-      testConnection: async () => ({ ok: false, error: "not configured" }),
+      testConnection: async () => ({ ok: false, error: 'not configured' }),
       stop: () => {},
     }
   }
@@ -288,8 +306,43 @@ export function createTelegramBot(
   // Start polling (fire and forget)
   pollLoop()
 
+  async function send(event: import('../../ports').NotificationEvent): Promise<NotificationResult> {
+    try {
+      switch (event.kind) {
+        case 'permission.pending': {
+          const permissionID = String(event.payload.permissionID ?? '')
+          const title = String(event.payload.title ?? '')
+          const sessionID = String(event.payload.sessionID ?? '')
+          await sendPermissionRequest(permissionID, title, sessionID)
+          break
+        }
+        case 'session.error': {
+          const sessionID = String(event.payload.sessionID ?? '')
+          const title = String(event.payload.title ?? '')
+          const error = String(event.payload.error ?? 'Unknown error')
+          await sendSessionError(sessionID, title, error)
+          break
+        }
+        case 'tool.completed':
+        case 'permission.resolved':
+        default:
+          // These event kinds are handled via SSE; Telegram has no action for them
+          break
+      }
+      return { ok: true }
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+        retriable: true,
+      }
+    }
+  }
+
   return {
-    enabled: true,
+    name: 'telegram',
+    enabled: () => true,
+    send,
     sendMessage: (text: string) => sendMessage(text),
     sendPermissionRequest,
     sendStartup,
@@ -301,3 +354,9 @@ export function createTelegramBot(
     },
   }
 }
+
+/**
+ * @deprecated Use createTelegramChannel instead.
+ * Kept for backward compatibility during the Commit 3 transition.
+ */
+export const createTelegramBot = createTelegramChannel
