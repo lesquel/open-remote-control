@@ -5,13 +5,13 @@
 // PermissionRequest blocks until resolved/timeout, returns Codex JSON + 200.
 
 import { randomUUID } from "node:crypto"
-import type { RouteContext } from "./routes"
-import { validateToken } from "./auth"
-import { getIP } from "./auth"
-import { json, jsonError } from "./json"
-import { CORS_HEADERS } from "./cors"
-import { readBoundedText } from "./server"
-import { MAX_REQUEST_BODY_BYTES } from "../constants"
+import type { RouteContext } from "../../server/http/routes"
+import { validateToken } from "../../server/http/auth"
+import { getIP } from "../../server/http/auth"
+import { json, jsonError } from "../../server/http/json"
+import { CORS_HEADERS } from "../../server/http/cors"
+import { readBoundedText } from "../../server/http/server"
+import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
 import {
   validateSessionStart,
   validateUserPromptSubmit,
@@ -19,11 +19,11 @@ import {
   validatePostToolUse,
   validatePermissionRequest,
   validateStop,
-} from "./codex-validators"
+} from "./validators"
 import type {
   CodexHookEvent,
   CodexPermissionResponse,
-} from "../types"
+} from "../../server/types"
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 

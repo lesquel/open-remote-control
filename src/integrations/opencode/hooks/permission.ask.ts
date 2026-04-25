@@ -1,6 +1,6 @@
 import type { Permission } from "@opencode-ai/sdk"
-import type { NotificationService } from "../services/notifications"
-import type { PermissionQueue } from "../services/permission-queue"
+import type { NotificationService } from "../../../server/services/notifications"
+import type { PermissionQueue } from "../../../server/services/permission-queue"
 
 export interface PermissionOutput {
   status?: "allow" | "deny" | "ask"

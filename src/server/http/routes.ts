@@ -67,7 +67,7 @@ export interface Route {
 }
 
 // handlers are imported after they are defined in handlers.ts
-import { dispatchCodexHook } from "./codex-handlers"
+import { dispatchCodexHook } from "../../integrations/codex/handlers"
 
 import {
   serveDashboard,

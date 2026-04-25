@@ -1,10 +1,10 @@
 // RED: codex-handlers — all 11 REQ-IDs, 26 scenarios
 import { describe, expect, test } from "bun:test"
-import { createPermissionQueue } from "../services/permission-queue"
-import type { RouteDeps, RouteContext } from "./routes"
-import type { Logger } from "../util/logger"
-import { dispatchCodexHook, validateCodexToken, CODEX_DISPATCH } from "./codex-handlers"
-import type { CodexHookEvent } from "../types"
+import { createPermissionQueue } from "../../server/services/permission-queue"
+import type { RouteDeps, RouteContext } from "../../server/http/routes"
+import type { Logger } from "../../server/util/logger"
+import { dispatchCodexHook, validateCodexToken, CODEX_DISPATCH } from "./handlers"
+import type { CodexHookEvent } from "../../server/types"
 
 const silentLogger: Logger = {
   debug: () => {},
@@ -384,8 +384,8 @@ describe("REQ-AUD-01 audit entries", () => {
 
 // ─── Phase 8: Route registration smoke test ──────────────────────────────────
 
-import { matchRoute } from "./routes"
-import { MAX_REQUEST_BODY_BYTES } from "../constants"
+import { matchRoute } from "../../server/http/routes"
+import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
 
 describe("Route registration smoke test", () => {
   test("POST /codex/hooks/SessionStart is matched in routes table", () => {

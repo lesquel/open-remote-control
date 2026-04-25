@@ -14,7 +14,7 @@ import { existsSync } from "fs"
 import { writeBanner } from "./services/banner"
 import { createNotificationService } from "./services/notifications"
 import { createRemoteServer } from "./http/server"
-import { createEventHook, createPermissionAskHook, createToolHooks } from "./hooks"
+import { createEventHook, createPermissionAskHook, createToolHooks } from "../integrations/opencode/hooks"
 import { createLogger } from "./util/logger"
 import { PILOT_VERSION, TOAST_DURATION_MS, TOAST_PROMOTION_DURATION_MS, PROMOTION_POLL_INTERVAL_MS } from "./constants"
 

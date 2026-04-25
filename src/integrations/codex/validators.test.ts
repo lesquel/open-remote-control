@@ -7,7 +7,7 @@ import {
   validatePostToolUse,
   validatePermissionRequest,
   validateStop,
-} from "./codex-validators"
+} from "./validators"
 
 // ─── SessionStart ─────────────────────────────────────────────────────────────
 

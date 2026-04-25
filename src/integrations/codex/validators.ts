@@ -11,7 +11,7 @@ import type {
   CodexPostToolUsePayload,
   CodexPermissionRequestPayload,
   CodexStopPayload,
-} from "../types"
+} from "../../server/types"
 
 type ValidateResult<T> = { ok: true; data: T } | { ok: false; error: string }
 
