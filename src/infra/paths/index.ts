@@ -6,6 +6,7 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { platform } from "node:process"
+import { existsSync } from "fs"
 
 export const PLUGIN_DIR_NAME = ".opencode-pilot"
 
@@ -35,4 +36,31 @@ export function configFile(name: string): string {
 
 export function stateFile(name: string): string {
   return join(getPluginStateDir(), name)
+}
+
+// ─── Project-state gating ──────────────────────────────────────────────────────
+// Moved here from core/state/store.ts so infra/ modules (banner/writer.ts) can
+// use these helpers without importing from core/ (which would violate the
+// "infra is the absolute bottom" dependency rule).
+
+/** Controls when per-project files are written to `<directory>/.opencode/`.
+ *  - `off`:    Never write per-project files. Global writes are unaffected.
+ *  - `auto`:   Write per-project files only when `.opencode/` already exists.
+ *  - `always`: Always write per-project files, creating `.opencode/` if needed.
+ */
+export type ProjectStateMode = "off" | "auto" | "always"
+
+/**
+ * Decide whether per-project files should be written to `<directory>/.opencode/`.
+ * - `off`:    Always returns false (skip project writes entirely).
+ * - `always`: Always returns true (create `.opencode/` if absent).
+ * - `auto`:   Returns true only when `<directory>/.opencode/` already exists.
+ *             Never creates the directory as a side effect.
+ */
+export function shouldWriteProjectState(directory: string, mode: ProjectStateMode): boolean {
+  if (mode === "off") return false
+  if (mode === "always") return true
+  // auto: only write if the directory is a valid non-empty string and .opencode/ exists
+  if (typeof directory !== "string" || directory.length === 0) return false
+  return existsSync(join(directory, ".opencode"))
 }

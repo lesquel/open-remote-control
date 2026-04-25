@@ -8,18 +8,16 @@
 import type { PermissionQueue } from '../core/permissions/queue'
 import type { EventBus } from '../core/events/bus'
 import type { AuditLog } from '../core/audit/log'
+import type { Route } from '../infra/http/types'
 
 export interface AgentIntegration {
   readonly name: string
   readonly setup: (deps: IntegrationDeps) => IntegrationHandle
 }
 
-export type RouteSpec = {
-  method: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH'
-  pattern: RegExp
-  auth: 'required' | 'optional' | 'none'
-  handler: (ctx: import('../transport/http/routes').RouteContext) => Promise<Response>
-}
+// RouteSpec is an alias for the infra Route type. Using `unknown` as TDeps means
+// any handler is assignable regardless of its specific deps shape.
+export type RouteSpec = Route<unknown>
 
 export type HookFn = (...args: unknown[]) => Promise<unknown>
 

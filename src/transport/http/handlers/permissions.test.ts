@@ -143,7 +143,7 @@ describe("respondPermission — tries both queues", () => {
 
 // ─── Phase 5: Auth Precedence ────────────────────────────────────────────────
 
-import { validateCodexToken } from "../../../integrations/codex/handlers"
+import { validateHookToken as validateCodexToken } from "../../../infra/http/auth"
 
 function makeAuthRequest(token?: string): Request {
   const headers: Record<string, string> = {}

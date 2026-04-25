@@ -207,7 +207,7 @@ async function serveDashboardFile(
 
 /**
  * Serve static files from the dashboard/ directory.
- * Path: /dashboard/<file>  →  src/server/dashboard/<file>
+ * Path: /dashboard/<file>  →  src/dashboard/<file>
  * This handler is registered for GET /dashboard/*.
  */
 export async function serveDashboardStatic({
@@ -220,7 +220,7 @@ export async function serveDashboardStatic({
 
 /**
  * Serve dashboard static files from the root path.
- * Path: /<file>  →  src/server/dashboard/<file>
+ * Path: /<file>  →  src/dashboard/<file>
  * This allows relative imports from index.html to resolve correctly
  * (e.g. ./styles.css, ./main.js, ./sw.js, ./manifest.json, ./icons/*).
  */

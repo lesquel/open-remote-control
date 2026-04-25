@@ -18,12 +18,14 @@ import type { Logger } from '../../../infra/logger/index'
 import { createCircuitBreaker } from '../../../infra/circuit-breaker/index'
 import type { NotificationChannel, NotificationResult } from '../../ports'
 import { createSubscriptionStore } from './subscriptions'
-import { loadWebPush } from './vapid'
+import { loadWebPush, generateVapidKeys as generateVapidKeysUtil } from './vapid'
+import type { VapidGenerateResult } from './vapid'
 import type { PushSubscriptionJson, PushPayload } from './types'
 
 // Re-export types so callers that previously imported from service.ts still work
 export type { PushSubscriptionJson, PushPayload }
 export type { PushSubscriptionKeys } from './types'
+export type { VapidGenerateResult } from './vapid'
 
 export interface PushService {
   /** The NotificationChannel slice — passed to the notification pipeline. */
@@ -39,6 +41,12 @@ export interface PushService {
   broadcast(payload: PushPayload): Promise<void>
   sendTo(endpoint: string, payload: PushPayload): Promise<boolean>
   count(): number
+  /**
+   * Generate a fresh VAPID key pair. Does NOT persist the keys.
+   * Delegates to vapid.ts — handler calls this via injection instead of
+   * reimplementing web-push loading inline (avoids duplication).
+   */
+  generateVapid(): Promise<VapidGenerateResult>
 }
 
 function isValidSubscription(v: unknown): v is PushSubscriptionJson {
@@ -236,5 +244,9 @@ export function createPushService(deps: PushDeps): PushService {
     },
   }
 
-  return { channel, isEnabled, addSubscription, removeSubscription, broadcast, sendTo, count }
+  async function generateVapid(): Promise<VapidGenerateResult> {
+    return generateVapidKeysUtil(logger)
+  }
+
+  return { channel, isEnabled, addSubscription, removeSubscription, broadcast, sendTo, count, generateVapid }
 }

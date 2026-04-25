@@ -5,6 +5,11 @@ import type { TelegramChannel } from "./channels/telegram/index"
 import type { PushService } from "./channels/push/service"
 import type { AuditLog } from "../core/audit/log"
 import type { NotificationChannel } from "./ports"
+import type { NotificationService } from "../core/types/notification-service"
+
+// Re-export the NotificationService type from core/ so both notifications/ and
+// integrations/ can reference it without a cross-sibling import.
+export type { NotificationService } from "../core/types/notification-service"
 
 // Re-export PushService so transport/ can reference the push dep type
 // without importing directly from notifications/channels/push/service.
@@ -12,36 +17,16 @@ import type { NotificationChannel } from "./ports"
 export type { PushService } from "./channels/push/service"
 export type { PushSubscriptionJson } from "./channels/push/service"
 
-export interface NotificationService {
-  /** Emit any bus event to all connected SSE clients. */
-  emit(event: BusEvent): void
-  /** Emit a typed PilotEvent and record it in the audit log. */
-  emitPilot(event: PilotEvent): void
-  /**
-   * Full pipeline: SSE + channels for permission pending.
-   * Returns `true` if at least one interactive channel was reachable.
-   * Returns `false` when no channel can reach a human — caller should skip waitForResponse.
-   */
-  notifyPermissionPending(
-    permissionID: string,
-    title: string,
-    sessionID: string,
-    permissionType: string,
-    pattern?: string | string[],
-    metadata?: Record<string, unknown>,
-  ): Promise<boolean>
-  /** Notification when a session goes idle after work. */
-  notifySessionIdle(
-    client: PluginInput["client"],
-    sessionID: string,
-  ): Promise<void>
-  /** Notification for session errors. */
-  notifySessionError(
-    client: PluginInput["client"],
-    sessionID: string,
-    error: string,
-  ): Promise<void>
-}
+// Re-export TelegramChannel so transport/ can reference the telegram dep type
+// without importing directly from notifications/channels/telegram/index.
+// Mirrors the PushService re-export pattern.
+export type { TelegramChannel } from "./channels/telegram/index"
+
+// Re-export createTelegramChannel and createPushService so test files and
+// other consumers can import from the pipeline barrel instead of reaching
+// into the channel sub-directories directly.
+export { createTelegramChannel, createTelegramBot } from "./channels/telegram/index"
+export { createPushService } from "./channels/push/service"
 
 export interface NotificationServiceDeps {
   eventBus: EventBus
@@ -65,12 +50,9 @@ export interface NotificationServiceDeps {
   channels?: NotificationChannel[]
 }
 
-export function createNotificationService(
-  eventBus: EventBus,
-  telegram: TelegramChannel,
-  audit: AuditLog,
-  push: PushService,
-): NotificationService {
+export function createNotificationService(deps: NotificationServiceDeps): NotificationService {
+  const { eventBus, telegram, audit, push, channels = [] } = deps
+
   function emit(event: BusEvent): void {
     eventBus.emit(event)
   }
@@ -111,6 +93,20 @@ export function createNotificationService(
         .catch((err) => audit.log("push.send_failed", { error: String(err) }))
     }
 
+    // Fan-out to additional channels (e.g. future Slack, Discord, webhook channels).
+    // Each channel decides independently whether it is enabled; disabled channels
+    // are skipped. Failures are isolated — one failing channel does not prevent others.
+    const channelEvent: import("./ports").NotificationEvent = {
+      kind: "permission.pending",
+      payload: { permissionID, title, sessionID, permissionType, pattern, metadata },
+    }
+    for (const ch of channels) {
+      if (!ch.enabled()) continue
+      ch.send(channelEvent).catch((err) =>
+        audit.log("channel.send_failed", { channel: ch.name, error: String(err) }),
+      )
+    }
+
     if (sseReachable) {
       audit.log("permission.requested", { permissionType, title, sessionID })
 
@@ -135,13 +131,24 @@ export function createNotificationService(
     client: PluginInput["client"],
     sessionID: string,
   ): Promise<void> {
+    let title = "Untitled"
     try {
       const session = await client.session.get({ path: { id: sessionID } })
-      const title =
-        ((session.data as Record<string, unknown>)?.title as string) ?? "Untitled"
+      title = ((session.data as Record<string, unknown>)?.title as string) ?? "Untitled"
       await telegram.sendSessionIdle(sessionID, title)
     } catch (err) {
       audit.log("telegram.send_failed", { error: String(err), kind: "session_idle" })
+    }
+    // Fan-out to additional channels
+    const channelEvent: import("./ports").NotificationEvent = {
+      kind: "tool.completed",
+      payload: { sessionID, title, kind: "session_idle" },
+    }
+    for (const ch of channels) {
+      if (!ch.enabled()) continue
+      ch.send(channelEvent).catch((err) =>
+        audit.log("channel.send_failed", { channel: ch.name, error: String(err) }),
+      )
     }
   }
 
@@ -150,15 +157,31 @@ export function createNotificationService(
     sessionID: string,
     error: string,
   ): Promise<void> {
+    let title = "Untitled"
     try {
       const session = await client.session.get({ path: { id: sessionID } })
-      const title =
-        ((session.data as Record<string, unknown>)?.title as string) ?? "Untitled"
+      title = ((session.data as Record<string, unknown>)?.title as string) ?? "Untitled"
       await telegram.sendSessionError(sessionID, title, error)
     } catch (err) {
       audit.log("telegram.send_failed", { error: String(err), kind: "session_error" })
     }
+    // Fan-out to additional channels
+    const channelEvent: import("./ports").NotificationEvent = {
+      kind: "session.error",
+      payload: { sessionID, title, error },
+    }
+    for (const ch of channels) {
+      if (!ch.enabled()) continue
+      ch.send(channelEvent).catch((err) =>
+        audit.log("channel.send_failed", { channel: ch.name, error: String(err) }),
+      )
+    }
   }
 
-  return { emit, emitPilot, notifyPermissionPending, notifySessionIdle, notifySessionError }
+  async function flush(): Promise<void> {
+    // No in-flight tracking currently — no-op placeholder.
+    // Called during shutdown to drain any queued notifications before process exit.
+  }
+
+  return { emit, emitPilot, notifyPermissionPending, notifySessionIdle, notifySessionError, flush }
 }

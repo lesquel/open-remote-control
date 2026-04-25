@@ -1,17 +1,10 @@
 // RED: codex-handlers — all 11 REQ-IDs, 26 scenarios
 import { describe, expect, test } from "bun:test"
 import { createPermissionQueue } from "../../core/permissions/queue"
-import type { RouteDeps, RouteContext } from "../../transport/http/routes"
-import type { Logger } from "../../infra/logger/index"
+import type { RouteContext } from "../../infra/http/types"
+import type { CodexDeps } from "./handlers"
 import { dispatchCodexHook, validateCodexToken, CODEX_DISPATCH } from "./handlers"
 import type { CodexHookEvent } from "../../core/events/types"
-
-const silentLogger: Logger = {
-  debug: () => {},
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-}
 
 // Track audit calls
 type AuditEntry = { action: string; details: Record<string, unknown> }
@@ -20,30 +13,14 @@ function makeTestDeps(opts?: {
   hookToken?: string
   codexPermissionTimeoutMs?: number
   auditEntries?: AuditEntry[]
-}): RouteDeps {
+}): CodexDeps {
   const auditEntries: AuditEntry[] = opts?.auditEntries ?? []
   return {
-    client: {} as RouteDeps["client"],
-    project: {} as RouteDeps["project"],
-    directory: "/tmp",
-    worktree: "/tmp",
     config: {
-      port: 4097,
-      host: "127.0.0.1",
-      permissionTimeoutMs: 300_000,
-      tunnel: "off",
-      telegram: null,
-      dev: false,
-      vapid: null,
-      enableGlobOpener: false,
-      fetchTimeoutMs: 10_000,
-      projectStateMode: "auto",
       codexPermissionTimeoutMs: opts?.codexPermissionTimeoutMs ?? 30_000,
       hookToken: opts?.hookToken,
     },
     token: "main-token",
-    rotateToken: () => {},
-    tunnelUrl: null,
     audit: {
       log(action: string, details: Record<string, unknown>) {
         auditEntries.push({ action, details })
@@ -51,28 +28,21 @@ function makeTestDeps(opts?: {
     },
     eventBus: {
       emit: () => {},
-      clientCount: () => 0,
-      hasClients: () => false,
-      closeAll: () => {},
       createSSEResponse: () => new Response(""),
-    } as RouteDeps["eventBus"],
-    permissionQueue: createPermissionQueue(30_000),
+      hasClients: () => false,
+      clientCount: () => 0,
+      closeAll: () => {},
+    },
     codexPermissionQueue: createPermissionQueue(opts?.codexPermissionTimeoutMs ?? 30_000),
-    telegram: {} as RouteDeps["telegram"],
-    push: {} as RouteDeps["push"],
-    logger: silentLogger,
-    settingsStore: { load: () => ({}), save: () => ({}), reset: () => {}, filePath: () => "/tmp/c.json" } as RouteDeps["settingsStore"],
-    shellEnv: {},
-    envFileApplied: [],
   }
 }
 
 function makeCtx(
-  deps: RouteDeps,
+  deps: CodexDeps,
   event: string,
   body: unknown,
   token = "main-token",
-): RouteContext {
+): RouteContext<CodexDeps> {
   const req = new Request(`http://test/codex/hooks/${event}`, {
     method: "POST",
     headers: {
@@ -90,7 +60,7 @@ function makeCtx(
   }
 }
 
-function makeCtxRaw(deps: RouteDeps, event: string, rawBody: string, token = "main-token"): RouteContext {
+function makeCtxRaw(deps: CodexDeps, event: string, rawBody: string, token = "main-token"): RouteContext<CodexDeps> {
   const req = new Request(`http://test/codex/hooks/${event}`, {
     method: "POST",
     headers: {
@@ -385,21 +355,17 @@ describe("REQ-AUD-01 audit entries", () => {
 // ─── Phase 8: Route registration smoke test ──────────────────────────────────
 // Codex routes no longer live in the central static routes table (removed in
 // Commit 3). Codex self-registers via codexIntegration.setup({ registerRoute }).
-// The tests below verify: (a) the central table no longer has codex routes, and
-// (b) the codexIntegration produces a route with the correct pattern/method.
+// The test below verifies that codexIntegration produces a route with the correct
+// pattern and method.
+//
+// NOTE: tests verifying that /codex/* is NOT in the central static routes table
+// live in src/transport/http/__tests__/server.test.ts (transport-layer concern).
 
-import { matchRoute } from "../../transport/http/routes"
 import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
 import { codexIntegration } from "./index"
 import type { RouteSpec } from "../ports"
 
 describe("Route registration smoke test", () => {
-  test("POST /codex/hooks/SessionStart is NOT in the central static routes table", () => {
-    // Codex now self-registers — the central matchRoute should NOT find it
-    const match = matchRoute("POST", "/codex/hooks/SessionStart")
-    expect(match).toBeNull()
-  })
-
   test("codexIntegration.setup calls registerRoute with the correct pattern", () => {
     const registered: RouteSpec[] = []
     const mockDeps = {
@@ -413,12 +379,6 @@ describe("Route registration smoke test", () => {
     expect(registered[0]!.method).toBe("POST")
     expect("/codex/hooks/SessionStart").toMatch(registered[0]!.pattern)
     expect("/codex/hooks/Unknown").toMatch(registered[0]!.pattern)
-  })
-
-  test("GET /codex/hooks/SessionStart does NOT match (wrong method)", () => {
-    // Even the dynamic route only matches POST — GET still returns null
-    const match = matchRoute("GET", "/codex/hooks/SessionStart")
-    expect(match).toBeNull()
   })
 })
 

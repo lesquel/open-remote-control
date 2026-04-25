@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { loadConfigSafe, mergeStoredSettings, resolveSources } from "./config"
+import { loadConfigSafe, mergeStoredSettings } from "./config"
 import { loadDotEnv } from "../infra/dotenv/index"
 import { generateToken } from "../infra/auth/token"
 import { createAuditLog } from "../core/audit/log"
@@ -86,7 +86,7 @@ export default {
     const telegram = createTelegramChannel(config.telegram, permissionQueue, codexPermissionQueue, logger)
     const push = createPushService({ config, audit, logger })
 
-    const notifications = createNotificationService(eventBus, telegram, audit, push)
+    const notifications = createNotificationService({ eventBus, telegram, audit, push })
 
     // ─── RouteDeps object — mutable so token rotation works ───────────────
     // rotateToken mutates deps.token in-place; the server reads deps.token on
@@ -129,7 +129,7 @@ export default {
     const server = createRemoteServer(deps)
 
     // Wire Codex integration via the port — self-registers /codex/hooks/:event route
-    codexIntegration.setup({
+    const codexHandle = codexIntegration.setup({
       permissions: permissionQueue,
       codexPermissions: codexPermissionQueue,
       events: eventBus,
@@ -393,9 +393,13 @@ export default {
         promotionTimer = null
       }
       try { telegram.stop() } catch {}
+      // Spec order: integrations → http → tunnel → notifications.flush → clearState
+      try { await opencode.shutdown() } catch {}
+      try { await codexHandle.shutdown() } catch {}
       if (role === "primary") {
-        try { tunnel.stop() } catch {}
         try { server.stop() } catch {}
+        try { tunnel.stop() } catch {}
+        try { await notifications.flush() } catch {}
         try { clearState(ctx.directory) } catch {}
       }
     }

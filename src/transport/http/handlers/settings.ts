@@ -248,40 +248,29 @@ export async function resetSettings({ deps }: RouteContext): Promise<Response> {
 
 /**
  * Generate a fresh VAPID key pair. Does NOT auto-save — the UI shows the keys
- * and lets the user decide. Requires web-push to be installed.
+ * and lets the user decide. Delegates to deps.push.generateVapid() which
+ * wraps the web-push module (no inline web-push loading here).
  */
 export async function generateVapidKeys({ deps }: RouteContext): Promise<Response> {
-  try {
-    const mod = (await import("web-push")) as unknown as
-      | { generateVAPIDKeys?: () => { publicKey: string; privateKey: string } }
-      | { default: { generateVAPIDKeys?: () => { publicKey: string; privateKey: string } } }
-    const wp =
-      "default" in (mod as Record<string, unknown>) &&
-      typeof (mod as { default: unknown }).default === "object"
-        ? (mod as { default: { generateVAPIDKeys?: () => { publicKey: string; privateKey: string } } }).default
-        : (mod as { generateVAPIDKeys?: () => { publicKey: string; privateKey: string } })
-    if (typeof wp.generateVAPIDKeys !== "function") {
-      return jsonError(
-        "WEB_PUSH_UNAVAILABLE",
-        "web-push module does not expose generateVAPIDKeys",
-        500,
-        CORS_HEADERS,
-      )
-    }
-    const { publicKey, privateKey } = wp.generateVAPIDKeys()
-    deps.audit.log("settings.vapid.generated", {})
-    return json(
-      {
-        publicKey,
-        privateKey,
-        subject: VAPID_DEFAULT_SUBJECT,
-      },
-      200,
+  const result = await deps.push.generateVapid()
+  if (!result.ok) {
+    deps.logger.error("generateVapidKeys failed", { error: result.error })
+    const isNotInstalled = result.error.includes("not installed")
+    return jsonError(
+      "WEB_PUSH_UNAVAILABLE",
+      isNotInstalled ? "web-push module not installed" : result.error,
+      isNotInstalled ? 503 : 500,
       CORS_HEADERS,
     )
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    deps.logger.error("generateVapidKeys failed", { error: message })
-    return jsonError("WEB_PUSH_UNAVAILABLE", "web-push module not installed", 503, CORS_HEADERS)
   }
+  deps.audit.log("settings.vapid.generated", {})
+  return json(
+    {
+      publicKey: result.publicKey,
+      privateKey: result.privateKey,
+      subject: VAPID_DEFAULT_SUBJECT,
+    },
+    200,
+    CORS_HEADERS,
+  )
 }

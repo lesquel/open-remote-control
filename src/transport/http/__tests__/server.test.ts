@@ -4,8 +4,8 @@ import type { Config } from "../../../server/config"
 import type { AuditLog } from "../../../core/audit/log"
 import { createEventBus } from "../../../core/events/bus"
 import { createPermissionQueue } from "../../../core/permissions/queue"
-import { createTelegramBot } from "../../../notifications/channels/telegram/index"
-import { createPushService } from "../../../notifications/channels/push/service"
+import { createTelegramChannel } from "../../../notifications/pipeline"
+import { createPushService } from "../../../notifications/pipeline"
 import type { Logger } from "../../../infra/logger/index"
 import type { RouteDeps } from "../routes"
 import { createRemoteServer, type RemoteServer } from "../server"
@@ -151,7 +151,7 @@ function buildDeps(port: number): RouteDeps {
   const eventBus = createEventBus()
   const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
   const codexPermissionQueue = createPermissionQueue(config.codexPermissionTimeoutMs)
-  const telegram = createTelegramBot(null, permissionQueue, codexPermissionQueue)
+  const telegram = createTelegramChannel(null, permissionQueue, codexPermissionQueue)
   const audit = createNoopAudit()
   const logger = createNoopLogger()
   const push = createPushService({ config, audit, logger })
@@ -573,5 +573,22 @@ describe("HTTP server integration", () => {
     expect(res.status).toBe(403)
     const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe("FORBIDDEN")
+  })
+})
+
+// ─── Route isolation: Codex routes must NOT be in the central static table ───
+// Codex now self-registers via codexIntegration.setup({ registerRoute }) —
+// the central matchRoute should NOT find codex paths (regression guard).
+import { matchRoute } from "../routes"
+
+describe("Route isolation — Codex must not be in central routes table", () => {
+  test("POST /codex/hooks/SessionStart is NOT in the central static routes table", () => {
+    const match = matchRoute("POST", "/codex/hooks/SessionStart")
+    expect(match).toBeNull()
+  })
+
+  test("GET /codex/hooks/SessionStart does NOT match (wrong method)", () => {
+    const match = matchRoute("GET", "/codex/hooks/SessionStart")
+    expect(match).toBeNull()
   })
 })

@@ -16,7 +16,7 @@
 //   that embed an imperative SDK registration API.
 
 import type { IntegrationHandle } from '../ports'
-import type { NotificationService } from '../../notifications/pipeline'
+import type { NotificationService } from '../../core/types/notification-service'
 import type { PermissionQueue } from '../../core/permissions/queue'
 import type { AuditLog } from '../../core/audit/log'
 import type { PluginInput } from '@opencode-ai/plugin'

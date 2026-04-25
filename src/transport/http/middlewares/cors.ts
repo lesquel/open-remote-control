@@ -1,9 +1,4 @@
-export const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-}
-
-export function corsPreflightResponse(): Response {
-  return new Response(null, { status: 204, headers: CORS_HEADERS })
-}
+// Re-exports from infra/http/cors so consumers that import from this path
+// continue to work. The implementation lives in infra/ so integrations/ can
+// also import it without violating the sibling cross-import rule.
+export { CORS_HEADERS, corsPreflightResponse } from "../../../infra/http/cors"

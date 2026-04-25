@@ -3,16 +3,15 @@ import type { Config } from "../../server/config"
 import type { AuditLog } from "../../core/audit/log"
 import type { EventBus } from "../../core/events/bus"
 import type { PermissionQueue } from "../../core/permissions/queue"
-import type { TelegramChannel } from "../../notifications/channels/telegram/index"
+import type { TelegramChannel } from "../../notifications/pipeline"
 import type { PushService } from "../../notifications/pipeline"
 import type { SettingsStore } from "../../core/settings/store"
 import type { Logger } from "../../infra/logger/index"
+import type { AuthRequirement, RouteParams } from "../../infra/http/types"
 
-/** Auth requirements for a route. */
-export type AuthRequirement = "required" | "optional" | "none"
-
-/** Resolved URL params from named capture groups. */
-export type RouteParams = Record<string, string>
+// Re-export infra types so consumers that currently import from routes.ts
+// continue to work without changes.
+export type { AuthRequirement, RouteParams } from "../../infra/http/types"
 
 /** Dependencies injected into every handler. */
 export interface RouteDeps {
@@ -52,6 +51,7 @@ export interface RouteDeps {
   envFileApplied: string[]
 }
 
+/** Concrete per-request context for the main HTTP server (specialized with RouteDeps). */
 export interface RouteContext {
   req: Request
   url: URL
@@ -126,7 +126,7 @@ import {
  */
 export const routes: Route[] = [
   { method: "GET", pattern: /^\/$/, auth: "none", handler: serveDashboard },
-  // Static assets for the split dashboard (src/server/dashboard/)
+  // Static assets for the split dashboard (src/dashboard/)
   // /dashboard/* — legacy path kept for backward compat
   { method: "GET", pattern: /^\/dashboard\//, auth: "none", handler: serveDashboardStatic },
   // Root-level static assets: JS, CSS, JSON, SVG, PNG, ICO — served from dashboard dir

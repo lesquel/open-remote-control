@@ -1,5 +1,5 @@
 import type { Permission } from "@opencode-ai/sdk"
-import type { NotificationService } from "../../../notifications/pipeline"
+import type { NotificationService } from "../../../core/types/notification-service"
 import type { PermissionQueue } from "../../../core/permissions/queue"
 
 export interface PermissionOutput {

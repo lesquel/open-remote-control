@@ -103,16 +103,22 @@ describe("dashboard JS files must not hardcode PILOT_VERSION", () => {
   // structurally impossible, but the sanity guard only checked
   // src/server/constants.ts — not dashboard JS files. right-panel.js and
   // debug-modal.js still had `const PILOT_VERSION = '1.12.8'` hardcoded.
-  // This test scans every *.js file under src/server/dashboard/ and fails
-  // if any contains a hardcoded version literal assigned to PILOT_VERSION.
+  //
+  // After Commit 5 moved JS files into sub-folders (components/, modals/,
+  // ui/, etc.), a non-recursive readdirSync only saw 3 of ~41 files. The
+  // test now scans recursively so ALL JS files under src/dashboard/ are
+  // checked — including those in sub-directories.
   test("no dashboard JS file contains a hardcoded PILOT_VERSION string literal", () => {
     const DASHBOARD_DIR = join(ROOT, "src/dashboard")
     // Hardcoded-version pattern: PILOT_VERSION = '...' or PILOT_VERSION = "..."
     const HARDCODED_VERSION_RE = /PILOT_VERSION\s*=\s*['"][0-9]+\.[0-9]+\.[0-9]+['"]/
 
+    // Recursive scan: covers root-level AND sub-folder JS files (components/,
+    // modals/, ui/, etc.) so the regression guard is not silently disarmed
+    // when new JS files are added to sub-directories.
+    const allEntries = readdirSync(DASHBOARD_DIR, { recursive: true }) as string[]
     const offenders: string[] = []
-    const entries = readdirSync(DASHBOARD_DIR)
-    for (const entry of entries) {
+    for (const entry of allEntries) {
       if (!entry.endsWith(".js")) continue
       const content = readFileSync(join(DASHBOARD_DIR, entry), "utf-8")
       if (HARDCODED_VERSION_RE.test(content)) {

@@ -1,13 +1,11 @@
 import { dirname, join } from "path"
 import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync } from "fs"
-import { stateFile } from "../../infra/paths/index"
+import { stateFile, ProjectStateMode, shouldWriteProjectState } from "../../infra/paths/index"
 
-/** Controls when per-project files are written to `<directory>/.opencode/`.
- *  - `off`:    Never write per-project files. Global writes are unaffected.
- *  - `auto`:   Write per-project files only when `.opencode/` already exists.
- *  - `always`: Always write per-project files, creating `.opencode/` if needed.
- */
-export type ProjectStateMode = "off" | "auto" | "always"
+// Re-export from infra/paths so consumers that currently import from here
+// continue to work without changes.
+export type { ProjectStateMode } from "../../infra/paths/index"
+export { shouldWriteProjectState } from "../../infra/paths/index"
 
 export interface PilotState {
   token: string
@@ -37,20 +35,6 @@ export function globalStatePath(): string {
   return stateFile("pilot-state.json")
 }
 
-/**
- * Decide whether per-project files should be written to `<directory>/.opencode/`.
- * - `off`:    Always returns false (skip project writes entirely).
- * - `always`: Always returns true (create `.opencode/` if absent).
- * - `auto`:   Returns true only when `<directory>/.opencode/` already exists.
- *             Never creates the directory as a side effect.
- */
-export function shouldWriteProjectState(directory: string, mode: ProjectStateMode): boolean {
-  if (mode === "off") return false
-  if (mode === "always") return true
-  // auto: only write if the directory is a valid non-empty string and .opencode/ exists
-  if (typeof directory !== "string" || directory.length === 0) return false
-  return existsSync(join(directory, ".opencode"))
-}
 
 function safeMkdir(path: string) {
   try {

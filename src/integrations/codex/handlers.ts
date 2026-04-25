@@ -5,12 +5,11 @@
 // PermissionRequest blocks until resolved/timeout, returns Codex JSON + 200.
 
 import { randomUUID } from "node:crypto"
-import type { RouteContext } from "../../transport/http/routes"
-import { validateToken } from "../../transport/http/middlewares/auth"
-import { getIP } from "../../transport/http/middlewares/auth"
-import { json, jsonError } from "../../transport/http/middlewares/json"
-import { CORS_HEADERS } from "../../transport/http/middlewares/cors"
-import { readBoundedText } from "../../transport/http/server"
+import type { RouteContext } from "../../infra/http/types"
+import { validateHookToken, getIP } from "../../infra/http/auth"
+import { json, jsonError } from "../../infra/http/json"
+import { CORS_HEADERS } from "../../infra/http/cors"
+import { readBoundedText } from "../../infra/http/text"
 import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
 import {
   validateSessionStart,
@@ -24,35 +23,58 @@ import type {
   CodexHookEvent,
   CodexPermissionResponse,
 } from "../../core/events/types"
+import type { PermissionQueue } from "../../core/permissions/queue"
+import type { EventBus } from "../../core/events/bus"
+import type { AuditLog } from "../../core/audit/log"
+
+// ─── Codex handler deps ───────────────────────────────────────────────────────
+// Minimal interface for the deps codex handlers actually use.
+// Defined here so handlers.ts does NOT need to import from transport/.
+// The composition root passes the full RouteDeps object (which satisfies
+// this interface structurally); handlers only reference what they need.
+
+interface CodexConfig {
+  hookToken: string | undefined
+  codexPermissionTimeoutMs: number
+}
+
+export interface CodexDeps {
+  token: string
+  config: CodexConfig
+  audit: AuditLog
+  eventBus: EventBus
+  codexPermissionQueue: PermissionQueue
+}
+
+// ─── Deps accessor ───────────────────────────────────────────────────────────
+// Cast the generic RouteContext deps to CodexDeps. The composition root always
+// passes the full RouteDeps (which structurally satisfies CodexDeps), so this
+// cast is safe at runtime.
+function codexDeps(ctx: RouteContext): CodexDeps {
+  return ctx.deps as unknown as CodexDeps
+}
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 
 /**
  * Validate a request token for Codex hook endpoints.
- * Accepts EITHER the hookToken (if configured and non-empty) OR the main token.
- * When hookToken is unset/empty, falls back to main token only.
+ * Re-exported from infra/http/auth — lives there so transport/ tests can import
+ * the pure auth logic without creating a cross-sibling dependency on integrations/.
+ * Kept here as an alias so existing imports in integrations/ remain unchanged.
  */
-export function validateCodexToken(
-  req: Request,
-  hookToken: string | undefined,
-  mainToken: string,
-): boolean {
-  if (hookToken && hookToken.length > 0) {
-    // Accept either hookToken OR main token
-    return validateToken(req, hookToken) || validateToken(req, mainToken)
-  }
-  // No hookToken configured — require main token
-  return validateToken(req, mainToken)
-}
+export { validateHookToken as validateCodexToken } from "../../infra/http/auth"
 
 // ─── Dispatch table type ──────────────────────────────────────────────────────
 
+// HookHandler uses the unparameterized RouteContext (Record<string,unknown> deps)
+// so it's compatible with RouteSpec.handler. Each handler casts deps to CodexDeps.
 type HookHandler = (ctx: RouteContext, body: unknown) => Promise<Response>
 
 // ─── SessionStart ─────────────────────────────────────────────────────────────
 
 async function handleSessionStart(ctx: RouteContext, body: unknown): Promise<Response> {
-  const { deps, req } = ctx
+  const { req } = ctx
+  const deps = codexDeps(ctx)
   const validation = validateSessionStart(body)
   if (!validation.ok) {
     deps.audit.log("codex.hook", {
@@ -91,7 +113,8 @@ async function handleSessionStart(ctx: RouteContext, body: unknown): Promise<Res
 // ─── UserPromptSubmit ─────────────────────────────────────────────────────────
 
 async function handleUserPromptSubmit(ctx: RouteContext, body: unknown): Promise<Response> {
-  const { deps, req } = ctx
+  const { req } = ctx
+  const deps = codexDeps(ctx)
   const validation = validateUserPromptSubmit(body)
   if (!validation.ok) {
     deps.audit.log("codex.hook", {
@@ -125,7 +148,8 @@ async function handleUserPromptSubmit(ctx: RouteContext, body: unknown): Promise
 // ─── PreToolUse ───────────────────────────────────────────────────────────────
 
 async function handlePreToolUse(ctx: RouteContext, body: unknown): Promise<Response> {
-  const { deps, req } = ctx
+  const { req } = ctx
+  const deps = codexDeps(ctx)
   const validation = validatePreToolUse(body)
   if (!validation.ok) {
     deps.audit.log("codex.hook", {
@@ -165,7 +189,8 @@ async function handlePreToolUse(ctx: RouteContext, body: unknown): Promise<Respo
 // ─── PostToolUse ──────────────────────────────────────────────────────────────
 
 async function handlePostToolUse(ctx: RouteContext, body: unknown): Promise<Response> {
-  const { deps, req } = ctx
+  const { req } = ctx
+  const deps = codexDeps(ctx)
   const validation = validatePostToolUse(body)
   if (!validation.ok) {
     deps.audit.log("codex.hook", {
@@ -229,7 +254,8 @@ async function handlePostToolUse(ctx: RouteContext, body: unknown): Promise<Resp
 // ─── PermissionRequest ────────────────────────────────────────────────────────
 
 async function handlePermissionRequest(ctx: RouteContext, body: unknown): Promise<Response> {
-  const { deps, req } = ctx
+  const { req } = ctx
+  const deps = codexDeps(ctx)
   const validation = validatePermissionRequest(body)
   if (!validation.ok) {
     deps.audit.log("codex.hook", {
@@ -360,7 +386,8 @@ async function handlePermissionRequest(ctx: RouteContext, body: unknown): Promis
 // ─── Stop ─────────────────────────────────────────────────────────────────────
 
 async function handleStop(ctx: RouteContext, body: unknown): Promise<Response> {
-  const { deps, req } = ctx
+  const { req } = ctx
+  const deps = codexDeps(ctx)
   const validation = validateStop(body)
   if (!validation.ok) {
     deps.audit.log("codex.hook", {
@@ -408,12 +435,13 @@ export const CODEX_DISPATCH: Record<CodexHookEvent, HookHandler> = {
  * Auth is validated here (not in routes.ts — auth: "none").
  */
 export async function dispatchCodexHook(ctx: RouteContext): Promise<Response> {
-  const { req, params, deps } = ctx
+  const { req, params } = ctx
+  const deps = codexDeps(ctx)
   const event = params.event ?? ""
   const clientIp = getIP(req)
 
   // Auth check: hookToken (if set) OR main token
-  const isAuthorized = validateCodexToken(req, deps.config.hookToken, deps.token)
+  const isAuthorized = validateHookToken(req, deps.config.hookToken, deps.token)
   if (!isAuthorized) {
     // Truncate event before validation to prevent injection via unvalidated path
     deps.audit.log("codex.hook", {

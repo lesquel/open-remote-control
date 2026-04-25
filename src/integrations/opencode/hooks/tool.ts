@@ -1,4 +1,4 @@
-import type { NotificationService } from "../../../notifications/pipeline"
+import type { NotificationService } from "../../../core/types/notification-service"
 
 interface ToolBeforeInput {
   tool: string

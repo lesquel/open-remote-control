@@ -2,8 +2,7 @@ import { mkdirSync, writeFileSync } from "fs"
 import { dirname, join } from "path"
 import { generateQR } from "../qr/index"
 import { stateFile } from "../paths/index"
-import { shouldWriteProjectState } from "../../core/state/store"
-import type { ProjectStateMode } from "../../core/state/store"
+import { shouldWriteProjectState, type ProjectStateMode } from "../paths/index"
 
 export function globalBannerPath(): string {
   return stateFile("pilot-banner.txt")
