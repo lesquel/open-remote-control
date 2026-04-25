@@ -1,5 +1,5 @@
 import type { PluginInput } from "@opencode-ai/plugin"
-import type { Config } from "../config"
+import type { Config } from "../../server/config"
 import type { AuditLog } from "../../core/audit/log"
 import type { EventBus } from "../../core/events/bus"
 import type { PermissionQueue } from "../../core/permissions/queue"
@@ -66,7 +66,7 @@ export interface Route {
   handler: (ctx: RouteContext) => Promise<Response>
 }
 
-// handlers are imported after they are defined in handlers.ts
+// Handlers are now split by domain. Each import group corresponds to one domain file.
 // Note: Codex routes are no longer in this central table. Codex now
 // self-registers via codexIntegration.setup({ registerRoute }) in server/index.ts.
 import {
@@ -74,6 +74,21 @@ import {
   serveDashboardStatic,
   serveDashboardRootStatic,
   getStatus,
+  getConnectInfo,
+  getHealth,
+  rotateAuthToken,
+  listTools,
+  getProject,
+  listAgents,
+  listProviders,
+  getMcpStatus,
+  getLspStatus,
+  listFileTree,
+  readFileContent,
+  globFiles,
+  readFileAbs,
+} from "./handlers/system"
+import {
   listSessions,
   createSession,
   getSession,
@@ -84,33 +99,26 @@ import {
   getSessionChildren,
   postSessionPrompt,
   abortSession,
+} from "./handlers/sessions"
+import {
   listPermissions,
   respondPermission,
-  streamEvents,
-  listTools,
-  getProject,
-  getConnectInfo,
-  getHealth,
-  rotateAuthToken,
-  listAgents,
-  listProviders,
-  getMcpStatus,
-  listProjects,
-  getCurrentProject,
-  getLspStatus,
-  listFileTree,
-  readFileContent,
+} from "./handlers/permissions"
+import { streamEvents } from "./handlers/events"
+import {
   getPushPublicKey,
   subscribePush,
   unsubscribePush,
   testPush,
-  globFiles,
-  readFileAbs,
   getSettings,
   patchSettings,
   resetSettings,
   generateVapidKeys,
-} from "./handlers"
+} from "./handlers/settings"
+import {
+  listProjects,
+  getCurrentProject,
+} from "./handlers/projects"
 
 /**
  * Central route table. Order matters only when patterns could overlap —

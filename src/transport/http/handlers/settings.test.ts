@@ -10,13 +10,13 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { Config } from "../config"
-import { loadConfig } from "../config"
-import { createSettingsStore } from "../../core/settings/store"
-import { createPermissionQueue } from "../../core/permissions/queue"
-import type { Logger } from "../../infra/logger/index"
-import type { RouteContext, RouteDeps } from "./routes"
-import { getSettings, patchSettings, resetSettings } from "./handlers"
+import type { Config } from "../../../server/config"
+import { loadConfig } from "../../../server/config"
+import { createSettingsStore } from "../../../core/settings/store"
+import { createPermissionQueue } from "../../../core/permissions/queue"
+import type { Logger } from "../../../infra/logger/index"
+import type { RouteContext, RouteDeps } from "../routes"
+import { getSettings, patchSettings, resetSettings } from "./settings"
 
 const silentLogger: Logger = {
   debug: () => {},

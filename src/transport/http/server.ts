@@ -1,9 +1,9 @@
-import { validateToken, getIP } from "./auth"
-import { CORS_HEADERS, corsPreflightResponse } from "./cors"
-import { jsonError } from "./json"
+import { validateToken, getIP } from "./middlewares/auth"
+import { CORS_HEADERS, corsPreflightResponse } from "./middlewares/cors"
+import { jsonError } from "./middlewares/json"
 import { matchRoute, routes } from "./routes"
 import type { RouteDeps, Route } from "./routes"
-import { MAX_REQUEST_BODY_BYTES } from "../constants"
+import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
 
 export interface RemoteServer {
   /**

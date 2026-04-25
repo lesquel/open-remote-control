@@ -1,7 +1,7 @@
 // RED: codex-handlers — all 11 REQ-IDs, 26 scenarios
 import { describe, expect, test } from "bun:test"
 import { createPermissionQueue } from "../../core/permissions/queue"
-import type { RouteDeps, RouteContext } from "../../server/http/routes"
+import type { RouteDeps, RouteContext } from "../../transport/http/routes"
 import type { Logger } from "../../infra/logger/index"
 import { dispatchCodexHook, validateCodexToken, CODEX_DISPATCH } from "./handlers"
 import type { CodexHookEvent } from "../../core/events/types"
@@ -388,7 +388,7 @@ describe("REQ-AUD-01 audit entries", () => {
 // The tests below verify: (a) the central table no longer has codex routes, and
 // (b) the codexIntegration produces a route with the correct pattern/method.
 
-import { matchRoute } from "../../server/http/routes"
+import { matchRoute } from "../../transport/http/routes"
 import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
 import { codexIntegration } from "./index"
 import type { RouteSpec } from "../ports"

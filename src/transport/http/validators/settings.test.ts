@@ -1,8 +1,8 @@
-// Tests for validateSettingsPatch in src/server/http/validators.ts.
+// Tests for validators/settings.ts.
 // Covers projectStateMode (project-state-opt-in) and hookToken (codex-hooks-bridge).
 
 import { describe, expect, test } from "bun:test"
-import { validateSettingsPatch } from "./validators"
+import { validateSettingsPatch } from "./settings"
 
 // ── Batch 6: projectStateMode validation ─────────────────────────────────────
 

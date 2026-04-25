@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import type { PluginInput } from "@opencode-ai/plugin"
-import type { Config } from "../config"
-import type { AuditLog } from "../../core/audit/log"
-import { createEventBus } from "../../core/events/bus"
-import { createPermissionQueue } from "../../core/permissions/queue"
-import { createTelegramBot } from "../../notifications/channels/telegram/index"
-import { createPushService } from "../../notifications/channels/push/service"
-import type { Logger } from "../../infra/logger/index"
-import type { RouteDeps } from "./routes"
-import { createRemoteServer, type RemoteServer } from "./server"
+import type { Config } from "../../../server/config"
+import type { AuditLog } from "../../../core/audit/log"
+import { createEventBus } from "../../../core/events/bus"
+import { createPermissionQueue } from "../../../core/permissions/queue"
+import { createTelegramBot } from "../../../notifications/channels/telegram/index"
+import { createPushService } from "../../../notifications/channels/push/service"
+import type { Logger } from "../../../infra/logger/index"
+import type { RouteDeps } from "../routes"
+import { createRemoteServer, type RemoteServer } from "../server"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 

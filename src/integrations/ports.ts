@@ -18,7 +18,7 @@ export type RouteSpec = {
   method: 'GET' | 'POST' | 'DELETE' | 'PUT' | 'PATCH'
   pattern: RegExp
   auth: 'required' | 'optional' | 'none'
-  handler: (ctx: import('../server/http/routes').RouteContext) => Promise<Response>
+  handler: (ctx: import('../transport/http/routes').RouteContext) => Promise<Response>
 }
 
 export type HookFn = (...args: unknown[]) => Promise<unknown>

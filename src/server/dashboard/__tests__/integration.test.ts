@@ -11,8 +11,8 @@ import { createPermissionQueue } from "../../../core/permissions/queue"
 import { createTelegramBot } from "../../../notifications/channels/telegram/index"
 import { createPushService } from "../../../notifications/channels/push/service"
 import type { Logger } from "../../../infra/logger/index"
-import type { RouteDeps } from "../../http/routes"
-import { createRemoteServer, type RemoteServer } from "../../http/server"
+import type { RouteDeps } from "../../../transport/http/routes"
+import { createRemoteServer, type RemoteServer } from "../../../transport/http/server"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

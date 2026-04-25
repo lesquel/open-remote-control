@@ -1,9 +1,9 @@
-// Tests for codex-hooks-bridge — queue integration + auth precedence
+// Tests for queue integration + auth precedence (codex-hooks-bridge)
 import { describe, expect, test } from "bun:test"
-import type { RouteDeps, RouteContext } from "./routes"
-import { listPermissions, respondPermission } from "./handlers"
-import { createPermissionQueue } from "../../core/permissions/queue"
-import type { Logger } from "../../infra/logger/index"
+import type { RouteDeps, RouteContext } from "../routes"
+import { listPermissions, respondPermission } from "./permissions"
+import { createPermissionQueue } from "../../../core/permissions/queue"
+import type { Logger } from "../../../infra/logger/index"
 
 const silentLogger: Logger = {
   debug: () => {},
@@ -96,7 +96,7 @@ describe("respondPermission — tries both queues", () => {
     const deps = makePermissionDeps()
 
     const mainResults: Array<{ action: "allow" | "deny" } | null> = []
-    deps.permissionQueue.waitForResponse("main-id-1", {}).then(r => { mainResults.push(r) })
+    deps.permissionQueue.waitForResponse("main-id-1", {}).then((r: { action: "allow" | "deny" } | null) => { mainResults.push(r) })
 
     const req = new Request("http://test/permissions/main-id-1", {
       method: "POST",
@@ -115,7 +115,7 @@ describe("respondPermission — tries both queues", () => {
     const deps = makePermissionDeps({ codexPermissionQueue: codexQueue })
 
     const codexResults: Array<{ action: "allow" | "deny" } | null> = []
-    codexQueue.waitForResponse("codex-id-1", {}).then(r => { codexResults.push(r) })
+    codexQueue.waitForResponse("codex-id-1", {}).then((r: { action: "allow" | "deny" } | null) => { codexResults.push(r) })
 
     const req = new Request("http://test/permissions/codex-id-1", {
       method: "POST",
@@ -143,7 +143,7 @@ describe("respondPermission — tries both queues", () => {
 
 // ─── Phase 5: Auth Precedence ────────────────────────────────────────────────
 
-import { validateCodexToken } from "../../integrations/codex/handlers"
+import { validateCodexToken } from "../../../integrations/codex/handlers"
 
 function makeAuthRequest(token?: string): Request {
   const headers: Record<string, string> = {}
