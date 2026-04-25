@@ -15,8 +15,8 @@
 // separately (`shellEnv`) to distinguish the two.
 
 import { DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, DEFAULT_PROJECT_STATE_MODE, MAX_CODEX_PERMISSION_TIMEOUT_MS, VAPID_DEFAULT_SUBJECT } from "./constants"
-import type { PilotSettings } from "./services/settings-store"
-import type { ProjectStateMode } from "./services/state"
+import type { PilotSettings } from "../core/settings/store"
+import type { ProjectStateMode } from "../core/state/store"
 
 export type TunnelProvider = "off" | "cloudflared" | "ngrok"
 export type { ProjectStateMode }

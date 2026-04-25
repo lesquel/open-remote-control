@@ -1,10 +1,10 @@
 // RED: codex-handlers — all 11 REQ-IDs, 26 scenarios
 import { describe, expect, test } from "bun:test"
-import { createPermissionQueue } from "../../server/services/permission-queue"
+import { createPermissionQueue } from "../../core/permissions/queue"
 import type { RouteDeps, RouteContext } from "../../server/http/routes"
-import type { Logger } from "../../server/util/logger"
+import type { Logger } from "../../infra/logger/index"
 import { dispatchCodexHook, validateCodexToken, CODEX_DISPATCH } from "./handlers"
-import type { CodexHookEvent } from "../../server/types"
+import type { CodexHookEvent } from "../../core/events/types"
 
 const silentLogger: Logger = {
   debug: () => {},

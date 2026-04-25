@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { Config } from "../config"
-import type { AuditLog } from "./audit"
-import type { Logger } from "../util/logger"
-import { createPushService } from "./push"
+import type { Config } from "../../../server/config"
+import type { AuditLog } from "../../../core/audit/log"
+import type { Logger } from "../../../infra/logger/index"
+import { createPushService } from "./service"
 
 function makeDeps(vapid: Config["vapid"] = null) {
   const audit: AuditLog = { log: () => {} }

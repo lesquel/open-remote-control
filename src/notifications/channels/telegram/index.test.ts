@@ -1,8 +1,8 @@
 // Tests for Telegram bot — focused on queue resolution behaviour.
 // handleCallbackQuery is internal; we test via the polling loop with mocked fetch.
 import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test"
-import { createPermissionQueue } from "./permission-queue"
-import { createTelegramBot } from "./telegram"
+import { createPermissionQueue } from "../../../core/permissions/queue"
+import { createTelegramBot } from "./index"
 
 // Minimal callback_query update that simulates Telegram sending "allow: permId"
 function makeCallbackUpdate(action: "allow" | "deny", permId: string, updateId = 1) {

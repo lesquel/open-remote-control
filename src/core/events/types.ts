@@ -175,16 +175,3 @@ export interface SdkEvent {
 
 /** Everything that can flow over the bus */
 export type BusEvent = PilotEvent | SdkEvent
-
-// ─── Error base ────────────────────────────────────────────────────────────
-
-export class PilotError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly httpStatus: number = 500,
-  ) {
-    super(message)
-    this.name = "PilotError"
-  }
-}

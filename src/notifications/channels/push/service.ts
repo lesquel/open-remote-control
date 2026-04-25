@@ -2,10 +2,10 @@
 // Wraps web-push's sendNotification for broadcasting to all subscribed clients.
 // Dead subscriptions (HTTP 404/410) are removed automatically.
 
-import type { Config } from "../config"
-import type { AuditLog } from "./audit"
-import type { Logger } from "../util/logger"
-import { createCircuitBreaker } from "../util/circuit-breaker"
+import type { Config } from "../../../server/config"
+import type { AuditLog } from "../../../core/audit/log"
+import type { Logger } from "../../../infra/logger/index"
+import { createCircuitBreaker } from "../../../infra/circuit-breaker/index"
 
 export interface PushSubscriptionKeys {
   p256dh: string

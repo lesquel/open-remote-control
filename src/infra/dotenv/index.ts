@@ -45,7 +45,7 @@ function parseEnv(text: string): Record<string, string> {
 }
 
 function pluginDir(): string {
-  // src/server/util/dotenv.ts → plugin root is 3 levels up
+  // src/infra/dotenv/index.ts → plugin root is 3 levels up
   const here = dirname(fileURLToPath(import.meta.url))
   return resolve(here, "..", "..", "..")
 }

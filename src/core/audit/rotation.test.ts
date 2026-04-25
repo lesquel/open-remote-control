@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, existsSync, readFileSync, statSync } from "
 import { tmpdir } from "os"
 import { join } from "path"
 import { rmSync } from "fs"
-import { rotateIfNeeded } from "./audit-rotation"
+import { rotateIfNeeded } from "./rotation"
 
 let dir: string
 

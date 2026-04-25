@@ -1,7 +1,7 @@
 import type { PluginInput } from "@opencode-ai/plugin"
 import { appendFileSync } from "fs"
 import { join } from "path"
-import { rotateIfNeeded } from "./audit-rotation"
+import { rotateIfNeeded } from "./rotation"
 
 export interface AuditLog {
   log(action: string, details: Record<string, unknown>): void

@@ -1,11 +1,11 @@
-// Tests for src/server/services/banner.ts — projectStateMode gating.
+// Tests for src/infra/banner/writer.ts — projectStateMode gating.
 // Each test uses real tmp dirs (mkdtempSync) and verifies fs state directly.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { writeBanner, globalBannerPath } from "./banner"
+import { writeBanner, globalBannerPath } from "./writer"
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "pilot-banner-test-"))

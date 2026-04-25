@@ -1,5 +1,5 @@
 import type { PluginInput } from "@opencode-ai/plugin"
-import type { NotificationService } from "../../../server/services/notifications"
+import type { NotificationService } from "../../../notifications/pipeline"
 
 /**
  * Handle all SDK events forwarded by OpenCode.

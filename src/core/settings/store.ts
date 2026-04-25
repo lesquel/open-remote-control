@@ -18,8 +18,8 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
-import type { Logger } from "../util/logger"
-import { configFile } from "../util/paths"
+import type { Logger } from "../../infra/logger/index"
+import { configFile } from "../../infra/paths/index"
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 

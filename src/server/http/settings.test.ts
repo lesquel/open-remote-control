@@ -12,9 +12,9 @@ import { join } from "node:path"
 
 import type { Config } from "../config"
 import { loadConfig } from "../config"
-import { createSettingsStore } from "../services/settings-store"
-import { createPermissionQueue } from "../services/permission-queue"
-import type { Logger } from "../util/logger"
+import { createSettingsStore } from "../../core/settings/store"
+import { createPermissionQueue } from "../../core/permissions/queue"
+import type { Logger } from "../../infra/logger/index"
 import type { RouteContext, RouteDeps } from "./routes"
 import { getSettings, patchSettings, resetSettings } from "./handlers"
 

@@ -1,4 +1,4 @@
-import type { BusEvent } from "../types"
+import type { BusEvent } from "./types"
 
 export interface EventBus {
   emit(event: BusEvent): void

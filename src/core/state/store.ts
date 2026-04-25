@@ -1,6 +1,6 @@
 import { dirname, join } from "path"
 import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync } from "fs"
-import { stateFile } from "../util/paths"
+import { stateFile } from "../../infra/paths/index"
 
 /** Controls when per-project files are written to `<directory>/.opencode/`.
  *  - `off`:    Never write per-project files. Global writes are unaffected.

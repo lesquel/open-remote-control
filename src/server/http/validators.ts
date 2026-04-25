@@ -236,7 +236,7 @@ export function validateFsGlob(
 // each field has its own failure mode. All fields are optional (patch
 // semantics); absent fields are left untouched on the server.
 
-import type { PilotSettings } from "../services/settings-store"
+import type { PilotSettings } from "../../core/settings/store"
 import { LOCALHOST_ADDRESSES } from "../constants"
 
 const VALID_HOSTS = new Set<string>(LOCALHOST_ADDRESSES)

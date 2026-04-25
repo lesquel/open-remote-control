@@ -2,8 +2,8 @@
 import { describe, expect, test } from "bun:test"
 import type { RouteDeps, RouteContext } from "./routes"
 import { listPermissions, respondPermission } from "./handlers"
-import { createPermissionQueue } from "../services/permission-queue"
-import type { Logger } from "../util/logger"
+import { createPermissionQueue } from "../../core/permissions/queue"
+import type { Logger } from "../../infra/logger/index"
 
 const silentLogger: Logger = {
   debug: () => {},

@@ -1,4 +1,4 @@
-// Tests for src/server/services/state.ts
+// Tests for src/core/state/store.ts
 //
 // Regression guards:
 //  - 1.13.11: writeState must persist pid so the TUI's isServerAlive check can
@@ -11,8 +11,8 @@ import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import { mkdtempSync, rmSync, existsSync, writeFileSync } from "fs"
 import { tmpdir, homedir } from "os"
 import { join } from "path"
-import { writeState, readState, readGlobalState, clearState, globalStatePath } from "./state"
-import type { PilotState, ProjectStateMode } from "./state"
+import { writeState, readState, readGlobalState, clearState, globalStatePath } from "./store"
+import type { PilotState, ProjectStateMode } from "./store"
 
 // ── Batch 1: ProjectStateMode compile-time type check ────────────────────────
 
@@ -33,7 +33,7 @@ function tempDir(): string {
 
 // ── Batch 2: shouldWriteProjectState helper ───────────────────────────────────
 
-import { shouldWriteProjectState } from "./state"
+import { shouldWriteProjectState } from "./store"
 import { mkdirSync } from "fs"
 
 describe("shouldWriteProjectState", () => {

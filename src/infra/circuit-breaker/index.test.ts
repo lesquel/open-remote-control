@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test"
-import { createCircuitBreaker } from "./circuit-breaker"
+import { createCircuitBreaker } from "./index"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

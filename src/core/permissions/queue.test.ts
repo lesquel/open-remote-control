@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createPermissionQueue } from "./permission-queue"
+import { createPermissionQueue } from "./queue"
 
 describe("createPermissionQueue", () => {
   test("waitForResponse resolves when resolve() is called", async () => {

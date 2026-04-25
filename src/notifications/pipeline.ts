@@ -1,9 +1,9 @@
 import type { PluginInput } from "@opencode-ai/plugin"
-import type { BusEvent, PilotEvent } from "../types"
-import type { EventBus } from "./event-bus"
-import type { TelegramBot } from "./telegram"
-import type { PushService } from "./push"
-import type { AuditLog } from "./audit"
+import type { BusEvent, PilotEvent } from "../core/events/types"
+import type { EventBus } from "../core/events/bus"
+import type { TelegramBot } from "./channels/telegram/index"
+import type { PushService } from "./channels/push/service"
+import type { AuditLog } from "../core/audit/log"
 
 export interface NotificationService {
   /** Emit any bus event to all connected SSE clients. */

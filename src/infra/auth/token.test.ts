@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { generateToken } from "./auth"
+import { generateToken } from "./token"
 
 describe("generateToken", () => {
   test("returns a 64-character hex string", () => {

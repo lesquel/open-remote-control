@@ -23,7 +23,7 @@ import {
 import type {
   CodexHookEvent,
   CodexPermissionResponse,
-} from "../../server/types"
+} from "../../core/events/types"
 
 // ─── Auth helper ─────────────────────────────────────────────────────────────
 

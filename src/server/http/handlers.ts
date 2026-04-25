@@ -14,12 +14,12 @@ import {
   validatePushTest,
   validateSettingsPatch,
 } from "./validators"
-import { generateToken } from "../util/auth"
-import { updateStateToken } from "../services/state"
-import { getLocalIP } from "../util/network"
-import { getTunnelInfo } from "../services/tunnel"
+import { generateToken } from "../../infra/auth/token"
+import { updateStateToken } from "../../core/state/store"
+import { getLocalIP } from "../../infra/network/ip"
+import { getTunnelInfo } from "../../infra/tunnel/index"
 import { PILOT_VERSION, LOCALHOST_ADDRESSES, VAPID_DEFAULT_SUBJECT } from "../constants"
-import { MSG } from "../strings"
+import { MSG } from "../../core/strings"
 import {
   RESTART_REQUIRED_FIELDS,
   envKeyFor,
@@ -28,8 +28,8 @@ import {
   projectConfigToSettings,
   resolveSources,
 } from "../config"
-import type { PushSubscriptionJson } from "../services/push"
-import type { PilotSettings } from "../services/settings-store"
+import type { PushSubscriptionJson } from "../../notifications/channels/push/service"
+import type { PilotSettings } from "../../core/settings/store"
 import type {
   Agent,
   LspStatus,
