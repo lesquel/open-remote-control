@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed — Architecture refactor (v1.18.0 internal restructure, no breaking changes)
+
+**Architecture refactor — internal restructure (no breaking changes).** Reorganized
+`src/` from technology-layered (`server/{http,services,util,hooks,dashboard}`) to
+domain-screaming (`core, transport, integrations, notifications, infra, dashboard,
+tui, cli, server`). Applies Hexagonal-lite (explicit ports for `NotificationChannel`
+and `AgentIntegration`) and Screaming Architecture (folder names announce purpose
+not technology). 6 atomic commits + JD remediation, 377 tests preserved.
+
+Public API surface unchanged: npm exports `./server` and `./tui`, the `opencode-pilot`
+CLI binary, all 30+ HTTP routes, `PILOT_*` env vars, on-disk paths, and the OpenCode
+plugin contract are all 100% backward compatible.
+
+Adding a new agent CLI integration (e.g., Cursor) is now ONE folder under
+`integrations/<name>/` plus ONE line in the composition root.
+
+Additional cleanups folded into the final commit:
+- `NotificationEvent.kind` union gains `'session.idle'` variant (was incorrectly mapping to `'tool.completed'`)
+- `TelegramChannel`, `PushService`, `PushSubscriptionJson` extracted to `core/types/notification-channels.ts` — transport/ no longer imports types from notifications/ siblings
+- `RouteContext` in `transport/http/routes.ts` is now a type alias to the infra generic (eliminates naming collision risk)
+- `createTelegramBot` deprecated alias removed (no consumers remained)
+- HTTP integration tests moved from `dashboard/__tests__/` to `transport/http/__tests__/` (correct classification)
+- Inline `import("./ports").NotificationEvent` usages in pipeline.ts replaced with top-level import
+
+See `docs/ARCHITECTURE.md` for the new architecture and `docs/REFACTOR-2026-04-architecture.md`
+for the full migration history with rationale.
+
+---
+
 ### Added — Codex CLI Hook Bridge (issue #4)
 
 New HTTP bridge that lets [Codex CLI](https://github.com/openai/codex) report its lifecycle events to opencode-pilot in real time. Codex operators can monitor sessions, receive prompt events, and approve/deny tool-use permissions from the existing opencode-pilot dashboard.

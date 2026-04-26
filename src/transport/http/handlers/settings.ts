@@ -12,7 +12,7 @@ import {
 } from "../../../server/config"
 import { VAPID_DEFAULT_SUBJECT } from "../../../server/constants"
 import { MSG } from "../../../core/strings"
-import type { PushSubscriptionJson } from "../../../notifications/pipeline"
+import type { PushSubscriptionJson } from "../../../core/types/notification-channels"
 import type { PilotSettings } from "../../../core/settings/store"
 
 // ─── Web Push ────────────────────────────────────────────────────────────────

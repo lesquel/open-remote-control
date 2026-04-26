@@ -355,8 +355,3 @@ export function createTelegramChannel(
   }
 }
 
-/**
- * @deprecated Use createTelegramChannel instead.
- * Kept for backward compatibility during the Commit 3 transition.
- */
-export const createTelegramBot = createTelegramChannel

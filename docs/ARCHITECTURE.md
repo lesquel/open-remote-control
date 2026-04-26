@@ -1,359 +1,235 @@
 # Architecture
 
-opencode-pilot is an OpenCode plugin that adds a remote-control layer on top
-of the OpenCode SDK. It exposes sessions, prompts, permissions, and live
-events over HTTP + Server-Sent Events so you can monitor and drive OpenCode
-from a phone, another machine, or a public URL — without changing how
-OpenCode itself works.
+opencode-pilot is an OpenCode plugin that adds a remote-control layer on top of the OpenCode SDK. It exposes sessions, prompts, permissions, and live events over HTTP + Server-Sent Events so you can monitor and drive OpenCode from a phone, another machine, or a public URL — without changing how OpenCode itself works.
 
-The plugin consists of two independent entry points, both wired up in the
-same package:
+**Current version:** v1.18.0. The internal structure was fully reorganized in this version — see `docs/REFACTOR-2026-04-architecture.md` for the full migration history and rationale.
 
-- A **server plugin** that spins up `Bun.serve` on port 4097, serves a PWA
-  dashboard, and registers OpenCode lifecycle hooks.
-- A **TUI plugin** that adds slash commands to the OpenCode TUI and reacts
-  to pilot events from the server plugin.
+---
 
-Everything is implemented with **factory functions** (`createEventBus`,
-`createPermissionQueue`, etc.) — no classes. Dependencies are passed in at
-construction time and the factory returns a small interface. This makes the
-code easy to test and easy to reason about.
+## Top-level modules
 
-## System Diagram
+The `src/` tree is organized as **Screaming Architecture** — folder names announce what the system does, not what technology it uses.
+
+| Module | Purpose | May import from |
+|---|---|---|
+| `infra/` | Reusable technical plumbing (tunnel, QR, logger, paths, auth token, circuit-breaker, dotenv) | NOTHING (absolute bottom) |
+| `core/` | Pure domain rules: sessions, permissions, events, audit, settings, state | `infra/` only |
+| `transport/` | How the outside world talks to the core (today: HTTP only) | `core/`, `infra/` |
+| `integrations/` | Each external CLI agent (opencode, codex) is a closed module with its own wiring API | `core/`, `infra/`, `transport/` (via `AgentIntegration` port) |
+| `notifications/` | Fan-out to outbound channels (telegram, push, future: slack, discord) | `core/`, `infra/` |
+| `dashboard/` | Browser SPA served by `transport/http/` | NOTHING (browser runtime, no backend imports) |
+| `tui/` | TUI plugin that registers slash-commands in OpenCode | `core/`, `infra/` |
+| `cli/` | `opencode-pilot init` binary | `infra/` |
+| `server/` | **Façade** — the composition root; the only file allowed to import across all layers | EVERYTHING |
+
+---
+
+## Dependency rule (precise)
+
+```
+infra/ ← core/ ← (transport/, integrations/, notifications/) ← server/index.ts
+```
+
+- **`infra/` is the absolute bottom.** No project-internal imports.
+- **`core/` imports only from `infra/`.** This lets domain logic (permissions, audit, state) use filesystem helpers without dragging in HTTP, Telegram, or Codex.
+- **`transport/`, `integrations/`, and `notifications/` import from `core/` and `infra/`.** Cross-imports between siblings (e.g., `transport/ → notifications/`) are FORBIDDEN except through the two explicit ports below.
+- **`server/index.ts` is the only file that imports across all layers.** It is the composition root by definition — standard hexagonal/clean architecture.
+
+This rule is enforced by convention (documented here, in `AGENTS.md` §3, and in code review). If violations recur, mechanical enforcement via `eslint-plugin-import/no-restricted-paths` is the natural next step.
+
+---
+
+## Two explicit ports
+
+Ports are interfaces defined where there are multiple implementations and likely future growth. All other capabilities have a single implementation each — their factory function `create*(): T` already serves as the contract without a separate interface.
+
+### `NotificationChannel` — `src/notifications/ports.ts`
+
+```ts
+export interface NotificationChannel {
+  readonly name: string          // 'telegram' | 'push' | 'slack' | ...
+  readonly enabled: () => boolean
+  readonly send: (event: NotificationEvent) => Promise<NotificationResult>
+}
+
+export type NotificationEvent = {
+  kind:
+    | 'permission.pending'
+    | 'permission.resolved'
+    | 'tool.completed'
+    | 'session.idle'
+    | 'session.error'
+  payload: Record<string, unknown>
+}
+```
+
+`enabled()` is a function (not a property) so runtime config changes via the dashboard settings store activate/deactivate channels without restart.
+
+Implementations: `notifications/channels/telegram/index.ts`, `notifications/channels/push/index.ts`.
+
+### `AgentIntegration` — `src/integrations/ports.ts`
+
+```ts
+export interface AgentIntegration {
+  readonly name: string          // 'opencode' | 'codex' | 'cursor' | ...
+  readonly setup: (deps: IntegrationDeps) => IntegrationHandle
+}
+
+export type IntegrationDeps = {
+  permissions: PermissionQueue
+  events: EventBus
+  audit: AuditLog
+  registerRoute?: (route: RouteSpec) => void   // Codex uses this
+  registerHook?: (event: string, handler: HookFn) => void  // future use
+}
+```
+
+The composition root passes `registerRoute` only to integrations that need HTTP; `registerHook` only to integrations that are native SDK plugins.
+
+Implementations: `integrations/opencode/index.ts`, `integrations/codex/index.ts`.
+
+---
+
+## Composition root — `src/server/index.ts`
+
+The composition root is the only file that crosses all layers. It is organized in 7 named sections:
+
+```
+0. ENV + CONFIG      loadDotEnv, loadConfigSafe, mergeStoredSettings, resolveSources
+1. CORE              getSharedEventBus (singleton), createPermissionQueue, createAuditLog, createSettingsStore
+2. NOTIFICATIONS     createPushService → push subsystem, createTelegramChannel, createNotificationService
+3. STATE + BANNER    generateToken, startTunnel, writeBanner, writeState lifecycle
+4. TRANSPORT         createRemoteServer({ permissions, events, audit, settings, push, config, token })
+5. INTEGRATIONS      opencodeIntegration.setup, codexIntegration.setup (self-registers /codex routes)
+6. START             server.start() — primary/passive port-binding with promotion watcher
+7. PLUGIN HANDLE     return { event, permission.ask, tool.execute.before, tool.execute.after }
+```
+
+**Shutdown order** (per spec): `opencode.shutdown()` + `codexHandle.shutdown()` → `server.stop()` → `tunnel.stop()` → `notifications.flush()` → `clearState()`.
+
+---
+
+## Recipes
+
+### How to add a new agent CLI integration (e.g., Cursor)
+
+1. Create `src/integrations/cursor/index.ts`:
+
+```ts
+import type { AgentIntegration } from '../ports'
+
+export const cursorIntegration: AgentIntegration = {
+  name: 'cursor',
+  setup: ({ permissions, events, audit, registerRoute }) => {
+    registerRoute!({
+      method: 'POST',
+      pattern: /^\/cursor\/hooks\/(?<event>[^/]+)$/,
+      auth: 'none',
+      handler: async (ctx) => { /* ... */ },
+    })
+    return { shutdown: async () => {} }
+  },
+}
+```
+
+2. Add ONE line in `src/server/index.ts`:
+
+```ts
+const cursor = cursorIntegration.setup({ permissions, events, audit, registerRoute: server.registerRoute })
+// and in shutdown: await cursor.shutdown()
+```
+
+Zero changes to `transport/`, `core/`, `notifications/`, or any other file.
+
+### How to add a new notification channel (e.g., Slack)
+
+1. Create `src/notifications/channels/slack/index.ts`:
+
+```ts
+import type { NotificationChannel } from '../../ports'
+
+export function createSlackChannel(config: SlackConfig | null): NotificationChannel {
+  if (!config) {
+    return { name: 'slack', enabled: () => false, send: async () => ({ ok: true }) }
+  }
+  // ... implementation
+  return { name: 'slack', enabled: () => true, send: async (event) => { /* ... */ } }
+}
+```
+
+2. Add ONE line in the composition root:
+
+```ts
+channels: [createTelegramChannel(...), push.channel, createSlackChannel(config.slack)]
+```
+
+Zero changes to `pipeline.ts`. Zero changes to `core/`. The port does the work.
+
+---
+
+## Web Push subsystem (special case)
+
+Web Push has three concerns beyond a fire-and-forget channel:
+
+1. **VAPID key management** — `POST /settings/vapid/generate` creates a key pair
+2. **Subscription registration** — browsers POST subscription objects for storage
+3. **Fan-out sending** — the actual channel behavior
+
+These are bundled in `notifications/channels/push/service.ts` (`createPushService`), which returns a rich object. The composition root extracts `push.channel` for the notification pipeline and passes the full `push` service into the HTTP server so the settings handler can call `push.generateVapid()` and `push.addSubscription()` via dependency injection — no direct `transport/ → notifications/` import.
+
+---
+
+## System diagram
 
 ```mermaid
 flowchart LR
     subgraph Host["Developer machine"]
         OC["OpenCode TUI<br/>(process)"]
-        Pilot["opencode-pilot<br/>server plugin"]
-        Bun["Bun.serve<br/>127.0.0.1:4097"]
-        TUI["opencode-pilot<br/>tui plugin"]
-
-        OC -- loads --> Pilot
+        subgraph Plugin["opencode-pilot plugin"]
+            Root["server/index.ts<br/>(composition root)"]
+            Core["core/"]
+            Transport["transport/http/"]
+            Integrations["integrations/"]
+            Notifications["notifications/"]
+            Infra["infra/"]
+        end
+        TUI["tui/ plugin"]
+        OC -- loads --> Plugin
         OC -- loads --> TUI
-        Pilot -- starts --> Bun
+        Root --> Core
+        Root --> Transport
+        Root --> Integrations
+        Root --> Notifications
+        Core --> Infra
+        Transport --> Core
+        Notifications --> Core
+        Integrations --> Core
     end
-
     Phone["Dashboard PWA<br/>(browser)"]
-    TG["Telegram<br/>Bot API"]
+    TG["Telegram Bot API"]
     Tunnel["cloudflared / ngrok<br/>(optional)"]
-
-    Bun <-- "HTTP + SSE" --> Phone
-    Pilot <-- "HTTPS polling" --> TG
-    Bun -. "forwarded" .- Tunnel
+    Transport <-- "HTTP + SSE" --> Phone
+    Notifications <-- "HTTPS" --> TG
+    Transport -. "forwarded" .- Tunnel
     Tunnel <-- "HTTPS" --> Phone
 ```
 
-- OpenCode loads both the server plugin and the TUI plugin from the same
-  package.
-- The server plugin owns `Bun.serve`, the event bus, the permission queue,
-  the Telegram bot, and the tunnel lifecycle.
-- The TUI plugin reads the state file written by the server plugin and
-  subscribes to pilot events over the OpenCode event bus.
-- The dashboard PWA is static HTML/JS/CSS served from the same `Bun.serve`
-  instance — no separate web server.
-- Telegram and tunnels are optional; if they fail to start, the plugin logs
-  a warning and keeps running.
+---
 
-## Components
+## Security model
 
-### Server plugin (`src/server/`)
+- **Auth token** — `crypto.randomBytes(32).toString("hex")` — 64 hex chars generated at startup. Rotatable via `POST /auth/rotate`. Persisted in `pilot-state.json` only for the TUI to display.
+- **Bearer scheme** — every `auth: "required"` route checks `Authorization: Bearer <token>`. `/events` also accepts `?token=` because `EventSource` cannot set custom headers.
+- **Localhost by default** — `PILOT_HOST=127.0.0.1`. Exposed to LAN/internet only when `PILOT_TUNNEL` is set.
+- **Audit log** — every authed request, every permission decision, every SSE connection appended as JSON Lines to `.opencode/pilot-audit.log`.
+- **Path traversal guard** — static dashboard handler rejects paths containing `..`.
+- **Primary/passive promotion** — if port 4097 is taken (multiple OpenCode windows), the second instance runs passive (no HTTP, no tunnel) and auto-promotes when the primary exits.
 
-| File | Responsibility |
-|---|---|
-| `index.ts` | Entry point. Wires every factory together, starts the HTTP server, writes the state file, writes the banner, installs hooks, registers graceful shutdown handlers. |
-| `config.ts` | Parses env vars with `loadConfig` / `loadConfigSafe`. Throws `ConfigError` on invalid values; `loadConfigSafe` logs a warning and falls back to defaults. |
-| `constants.ts` | Magic numbers in one place: `DEFAULT_PORT=4097`, `DEFAULT_HOST=127.0.0.1`, `DEFAULT_PERMISSION_TIMEOUT_MS=300_000`, `SSE_KEEPALIVE_INTERVAL_MS=25_000`, `BUN_SERVE_IDLE_TIMEOUT_SEC=255`. |
-| `types.ts` | The `PilotEvent` discriminated union, `BusEvent` (pilot + SDK passthrough), and `PilotError` base class. |
+---
 
-### Hooks (`src/server/hooks/`)
+## References
 
-OpenCode lifecycle callbacks that bridge the SDK to the pilot services.
-
-- `event.ts` — `createEventHook`: receives every SDK event, forwards it to
-  the SSE bus via `notifications.emit`, and inspects `session.status` /
-  `session.error` to fire Telegram idle and error notifications.
-- `permission.ask.ts` — `createPermissionAskHook`: when OpenCode asks for
-  permission, it fires `pilot.permission.pending` on the bus, pushes a
-  Telegram message, and parks on the permission queue. If a resolver
-  answers before the timeout, the hook sets `output.status` to `allow` or
-  `deny`. If nothing answers, control falls back to the TUI.
-- `tool.ts` — `createToolHooks`: emits `pilot.tool.started` and
-  `pilot.tool.completed` on `tool.execute.before` / `tool.execute.after`.
-
-### HTTP (`src/server/http/`)
-
-- `server.ts` — `createRemoteServer`: sets up `Bun.serve` with
-  `idleTimeout: 255`, handles CORS preflight, dispatches to the route
-  table, runs the auth middleware for `auth: "required"` routes.
-- `routes.ts` — the route table. Each route has a regex pattern (with
-  named capture groups for `:id` params), an `auth` requirement
-  (`required` / `optional` / `none`), and a handler.
-- `handlers.ts` — one function per route. Handlers receive a
-  `RouteContext` (`req`, `url`, `params`, `deps`) and return a `Response`.
-- `auth.ts` — `validateToken` checks `Authorization: Bearer <token>`,
-  `getIP` extracts forwarded IP headers for the audit log.
-- `cors.ts` — `CORS_HEADERS` constant and `corsPreflightResponse()`.
-- `json.ts` — `json()` and `jsonError()` helpers with consistent CORS and
-  error shape.
-
-### Services (`src/server/services/`)
-
-Small, independent factories. Most have no dependencies on each other —
-they are composed in `index.ts`.
-
-- `event-bus.ts` — `createEventBus`: in-memory SSE fanout. `emit(event)`
-  broadcasts to all connected `ReadableStream` controllers. Dead clients
-  (errored enqueue) are pruned. Every stream starts with a
-  `pilot.connected` event and sends a `: ping\n\n` keepalive every 25 s.
-- `permission-queue.ts` — `createPermissionQueue`: a map of
-  `permissionID → resolver`. `waitForResponse(id)` returns a promise that
-  resolves when `resolve(id, action)` is called, or to `null` after the
-  configured timeout.
-- `audit.ts` — `createAuditLog`: append-only JSON Lines file at
-  `.opencode/pilot-audit.log`. Also mirrors each entry to `ctx.client.app.log`.
-- `state.ts` — `writeState` / `readState` / `clearState` for the
-  `.opencode/pilot-state.json` file. Consumed by the TUI plugin.
-- `tunnel.ts` — `startTunnel`: spawns `cloudflared` or `ngrok` and scrapes
-  stdout/stderr for the public URL. Returns `{publicUrl: null}` if the
-  binary is missing or times out — never throws.
-- `telegram.ts` — `createTelegramBot`: sends messages, requests
-  permissions with inline buttons, and runs a `getUpdates` long-poll loop
-  to receive `callback_query` presses that resolve the permission queue.
-- `qr.ts` — wraps `qrcode-terminal` to render the banner QR.
-- `banner.ts` — `writeBanner`: composes the ASCII banner (URL + token +
-  QR + direct link + optional PWA deep-link) and writes it to
-  `.opencode/pilot-banner.txt`.
-- `notifications.ts` — `createNotificationService`: the unified pipeline.
-  Every hook calls this instead of reaching into the bus, Telegram, or
-  audit directly. Keeps fan-out logic in one place.
-
-### Util (`src/server/util/`)
-
-- `auth.ts` — `generateToken()` returns `crypto.randomBytes(32).toString("hex")`.
-- `network.ts` — `getLocalIP()` picks the first non-loopback IPv4 address
-  for the banner's LAN URL.
-
-### Dashboard (`src/server/dashboard/`)
-
-A static Progressive Web App served by the same `Bun.serve`. Split into
-one file per concern so it stays readable without a bundler:
-
-- `index.html` — shell, imports `main.js`, references `styles.css`.
-- `main.js` — entry point, wires the modules together on load.
-- `auth.js` — reads the token from the URL hash or prompts for it.
-- `sse.js` — opens `EventSource` against `/events?token=…`.
-- `api.js` — thin wrapper around `fetch` with the Bearer header.
-- `state.js` — client-side state store (sessions, messages, diffs).
-- `sessions.js`, `messages.js`, `multi-view.js`, `diff.js`,
-  `permissions.js`, `markdown.js`, `settings.js`, `shortcuts.js`,
-  `toast.js`, `connect.js` — one module per UI concern.
-- `sw.js` + `manifest.json` + `icons/` — service worker + PWA manifest
-  for offline caching and "Add to Home Screen".
-
-### TUI plugin (`src/tui/`)
-
-A single file (`index.ts`) that:
-
-1. Registers two slash commands: `/remote-control` (aliases `/pilot`,
-   `/rc`) and `/pilot-token`. Both read `.opencode/pilot-state.json` and
-   show the banner or the raw token as a toast.
-2. Subscribes to `pilot.permission.pending`, `pilot.client.connected`, and
-   `pilot.client.disconnected` on the TUI event bus and shows a toast for
-   each.
-
-The TUI plugin does **not** import from `src/server/`. The two sides
-communicate through the state file and the event bus — both owned by
-OpenCode, not by this plugin.
-
-## Data Flow
-
-### 1. Event flow — OpenCode to the dashboard
-
-```mermaid
-sequenceDiagram
-    participant SDK as OpenCode SDK
-    participant Hook as event hook
-    participant Bus as EventBus
-    participant SSE as /events SSE
-    participant UI as Dashboard PWA
-
-    SDK->>Hook: event (any SDK event)
-    Hook->>Bus: notifications.emit(event)
-    Bus->>SSE: controller.enqueue(data: ...)
-    SSE-->>UI: data: {...}\n\n
-    UI->>UI: dispatch to module (messages, diff, …)
-```
-
-Every SDK event is forwarded as-is, plus typed `pilot.*` events for
-pilot-specific state transitions.
-
-### 2. Permission flow
-
-```mermaid
-sequenceDiagram
-    participant SDK as OpenCode SDK
-    participant Hook as permission.ask hook
-    participant Queue as PermissionQueue
-    participant Notify as Notifications
-    participant UI as Dashboard / Telegram
-
-    SDK->>Hook: permission.ask(id, title, …)
-    Hook->>Notify: notifyPermissionPending(id, …)
-    Notify->>UI: SSE event + Telegram message
-    Hook->>Queue: waitForResponse(id)  (Promise parks)
-
-    alt User responds in time
-        UI->>Queue: resolve(id, allow/deny)
-        Queue-->>Hook: {action}
-        Hook->>SDK: output.status = action
-    else Timeout (default 5 min)
-        Queue-->>Hook: null
-        Hook->>SDK: output.status stays "ask" (falls back to TUI)
-    end
-```
-
-The queue is an in-memory `Map<permissionID, resolver>`. Telegram
-callback presses and HTTP `POST /permissions/:id` both call the same
-`resolve(id, action)` — any channel can answer.
-
-### 3. Tool execution flow
-
-```mermaid
-sequenceDiagram
-    participant SDK as OpenCode SDK
-    participant Before as tool.execute.before
-    participant After as tool.execute.after
-    participant Bus as EventBus
-
-    SDK->>Before: {tool, sessionID, callID}
-    Before->>Bus: emit pilot.tool.started
-    SDK->>SDK: run tool
-    SDK->>After: {tool, sessionID, callID}, {title}
-    After->>Bus: emit pilot.tool.completed
-```
-
-These events let the dashboard render live "Running `bash: …`" chips and
-mark them completed when the tool returns.
-
-## Security Model
-
-- **Auth token.** `crypto.randomBytes(32).toString("hex")` — 64 hex chars,
-  generated at startup. Not persisted outside `.opencode/pilot-state.json`.
-- **Bearer scheme.** Every `auth: "required"` route needs
-  `Authorization: Bearer <token>`. The `/events` SSE endpoint also accepts
-  `?token=<token>` as a query param because `EventSource` cannot set
-  custom headers.
-- **Localhost by default.** `PILOT_HOST=127.0.0.1`. The banner emits a
-  warning when the host is localhost but a tunnel/LAN is expected.
-- **Audit log.** Every authed request, every permission decision, every
-  SSE connection is appended as JSON to `.opencode/pilot-audit.log`.
-- **Permission timeout.** `PILOT_PERMISSION_TIMEOUT` (default 300 000 ms).
-  When the queue times out, control falls back to the TUI — no silent
-  approval.
-- **Tunnel = public exposure.** When `PILOT_TUNNEL` is not `off`, the
-  dashboard is reachable from the internet. The auth token is the only
-  barrier. Rotate it by restarting OpenCode.
-- **Path traversal.** The dashboard static-file handler rejects any path
-  containing `..`.
-
-## Event Types
-
-Taken directly from `src/server/types.ts`:
-
-```ts
-export type PilotEvent =
-  | { type: "pilot.connected"; properties: { timestamp: number } }
-  | {
-      type: "pilot.permission.pending"
-      properties: {
-        permissionID: string
-        title: string
-        sessionID: string
-        permissionType: string
-        pattern?: string | string[]
-        metadata: Record<string, unknown>
-      }
-    }
-  | {
-      type: "pilot.permission.resolved"
-      properties: {
-        permissionID: string
-        action: "allow" | "deny"
-        source: "remote" | "telegram" | "tui"
-      }
-    }
-  | {
-      type: "pilot.tool.started"
-      properties: { tool: string; sessionID: string; callID: string }
-    }
-  | {
-      type: "pilot.tool.completed"
-      properties: { tool: string; sessionID: string; callID: string; title: string }
-    }
-  | { type: "pilot.client.connected"; properties: { ip: string; timestamp: number } }
-  | { type: "pilot.client.disconnected"; properties: { timestamp: number } }
-```
-
-Any SDK event flows through as `SdkEvent` (`{ type: string; properties: Record<string, unknown> }`).
-The union of both is `BusEvent` — what `EventBus.emit` accepts.
-
-## Route Table
-
-| Method | Path | Auth |
-|---|---|---|
-| `GET` | `/` | none |
-| `GET` | `/dashboard/*` | none |
-| `GET` | `/*.{js,css,json,svg,png,ico,woff,woff2,ttf}` | none |
-| `GET` | `/{icons,assets}/*.{js,css,json,svg,png,ico,woff,woff2,ttf}` | none |
-| `GET` | `/status` | required |
-| `GET` | `/sessions` | required |
-| `POST` | `/sessions` | required |
-| `GET` | `/sessions/:id` | required |
-| `GET` | `/sessions/:id/messages` | required |
-| `GET` | `/sessions/:id/diff` | required |
-| `POST` | `/sessions/:id/prompt` | required |
-| `POST` | `/sessions/:id/abort` | required |
-| `GET` | `/permissions` | required |
-| `POST` | `/permissions/:id` | required |
-| `GET` | `/events` | optional (Bearer header or `?token=`) |
-| `GET` | `/tools` | required |
-| `GET` | `/project` | required |
-
-Order in the route array matters only where patterns could overlap — more
-specific routes come first. See `src/server/http/routes.ts` for the full
-ordered table.
-
-## Extending
-
-### Add a new pilot event type
-
-1. Add a variant to the `PilotEvent` union in `src/server/types.ts`.
-2. Emit it from the relevant hook or service via
-   `notifications.emitPilot({ type: "...", properties: {...} })`.
-3. Handle it in `src/server/dashboard/sse.js` (dispatch to a module).
-4. Handle it in `src/tui/index.ts` if the TUI should react too.
-
-### Add a new HTTP route
-
-1. Add the handler function to `src/server/http/handlers.ts`. Use the
-   existing `RouteContext` shape and return a `Response` via the `json`
-   / `jsonError` helpers.
-2. Register it in the `routes` array in `src/server/http/routes.ts` with
-   its regex pattern and auth requirement.
-3. Add the route to the table in `CLAUDE.md` and the top-level
-   `README.md`.
-4. If the route mutates state, call `deps.audit.log(action, details)` so
-   the operation shows up in the audit log.
-
-### Add a new notification channel
-
-To add, say, Slack or Discord alongside Telegram:
-
-1. Create `src/server/services/slack.ts` with a `createSlackBot` factory
-   exposing the methods the pipeline needs (`sendMessage`,
-   `sendPermissionRequest`, `sendStartup`, `stop`).
-2. Instantiate it in `src/server/index.ts` and pass it to
-   `createNotificationService`.
-3. Keep the "silently disabled when config is missing" pattern — every
-   channel should no-op when env vars are absent instead of throwing.
+- `docs/REFACTOR-2026-04-architecture.md` — full spec for the v1.18.0 architecture migration (6 atomic commits + JD remediation), with design decisions, risk analysis, and per-commit acceptance gates.
+- `src/server/index.ts` — the composition root; live wiring of all 8 modules.
+- `AGENTS.md` §3 — hard conventions (dependency rule, factory pattern, test co-location).
+- `AGENTS.md` §4 — release process (the three-version-bump rule, tag/push order).

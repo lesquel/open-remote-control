@@ -19,44 +19,90 @@ bun install
 # Add to .opencode/plugins/ or opencode.json plugin array
 ```
 
-## Structure
+## Structure (as of v1.18.0 — Screaming Architecture)
 
 ```
-src/server/
-├── index.ts                 # Entry point — wires everything up, graceful shutdown
-├── config.ts                # Parse + validate env vars (loadConfig / loadConfigSafe)
-├── types.ts                 # Shared types: PilotEvent, BusEvent, PilotError
-├── hooks/
-│   ├── index.ts            # Barrel
-│   ├── event.ts            # SDK event hook handler
-│   ├── permission.ask.ts   # permission.ask hook
-│   └── tool.ts             # tool.execute.before/after hooks
-├── http/
-│   ├── server.ts           # Bun.serve setup + route dispatch
-│   ├── routes.ts           # Route table (matchRoute)
-│   ├── handlers.ts         # One function per route
-│   ├── auth.ts             # validateToken, getIP
-│   ├── cors.ts             # CORS headers + preflight helper
-│   └── json.ts             # json(), jsonError() helpers
-├── services/
-│   ├── event-bus.ts        # SSE bus (createEventBus)
-│   ├── permission-queue.ts # Permission queue (createPermissionQueue)
-│   ├── audit.ts            # Audit log (createAuditLog)
-│   ├── state.ts            # State file read/write/clear
-│   ├── tunnel.ts           # Tunnel provider (cloudflared/ngrok)
-│   ├── telegram.ts         # Telegram bot (createTelegramBot)
-│   ├── qr.ts               # QR code generation
-│   ├── banner.ts           # Banner file generation (writeBanner)
-│   ├── settings-store.ts   # Persistent JSON config (~/.opencode-pilot/config.json) — v1.12
-│   └── notifications.ts    # Unified notification pipeline (createNotificationService)
-└── util/
-    ├── auth.ts             # Token generation (generateToken)
-    └── network.ts          # Local IP detection (getLocalIP)
-
-src/server/dashboard/        # Split dashboard (served from GET / and GET /dashboard/*)
-src/tui/
-└── index.ts                 # TUI plugin — slash commands, event listeners
+src/
+├── core/                     # DOMAIN — pure business rules, no HTTP/Telegram/Codex
+│   ├── index.ts              # Barrel: createPermissionQueue, createAuditLog, getSharedEventBus, ...
+│   ├── permissions/          # createPermissionQueue
+│   ├── events/               # getSharedEventBus + PilotEvent / BusEvent types
+│   ├── audit/                # createAuditLog + rotation
+│   ├── settings/             # createSettingsStore
+│   ├── state/                # writeState / clearState / globalStatePath
+│   ├── strings.ts            # MSG dictionary (user-facing strings)
+│   ├── errors.ts             # PilotError + ConfigError
+│   └── types/                # Shared cross-layer type contracts
+│       ├── notification-service.ts  # NotificationService interface
+│       └── notification-channels.ts # TelegramChannel, PushService, PushSubscriptionJson
+│
+├── transport/                # HOW the core is exposed to the outside world
+│   └── http/
+│       ├── server.ts         # Bun.serve setup + route dispatch (createRemoteServer)
+│       ├── routes.ts         # Core route table + RouteDeps + RouteContext
+│       ├── validation.ts     # Body validation middleware
+│       ├── handlers/         # One file per domain
+│       │   ├── sessions.ts
+│       │   ├── permissions.ts
+│       │   ├── events.ts     # /events SSE endpoint
+│       │   ├── settings.ts   # /settings* + /settings/vapid/generate + push endpoints
+│       │   ├── system.ts     # /, /dashboard/*, /status, /health, /connect-info, /auth/rotate
+│       │   └── projects.ts
+│       ├── validators/       # Validation schemas per domain
+│       ├── middlewares/      # auth.ts, cors.ts, json.ts
+│       └── __tests__/        # Cross-handler integration tests (server.test.ts, integration.test.ts)
+│
+├── integrations/             # ADAPTERS for external CLI agents
+│   ├── ports.ts              # interface AgentIntegration + IntegrationDeps + RouteSpec
+│   ├── opencode/             # Native SDK hook integration
+│   │   ├── index.ts          # opencodeIntegration: AgentIntegration
+│   │   └── hooks/            # event.ts, permission.ask.ts, tool.ts, index.ts
+│   └── codex/                # Codex CLI bridge (POST /codex/hooks/:event)
+│       ├── index.ts          # codexIntegration: AgentIntegration
+│       ├── handlers.ts       # Dispatch table for each hook event
+│       └── validators.ts
+│
+├── notifications/            # FAN-OUT for outbound notifications
+│   ├── ports.ts              # interface NotificationChannel + NotificationEvent
+│   ├── pipeline.ts           # createNotificationService (fan-out orchestrator)
+│   └── channels/
+│       ├── telegram/
+│       │   └── index.ts      # createTelegramChannel: TelegramChannel (extends NotificationChannel)
+│       └── push/             # Web Push subsystem
+│           ├── index.ts      # createPushChannel: NotificationChannel
+│           ├── service.ts    # createPushService — VAPID + subscription mgmt + channel
+│           ├── vapid.ts      # VAPID key generation + persistence
+│           ├── subscriptions.ts
+│           └── types.ts
+│
+├── infra/                    # Reusable technical plumbing (no domain, no HTTP specifics)
+│   ├── tunnel/               # cloudflared / ngrok (startTunnel)
+│   ├── qr/                   # QR code generation
+│   ├── banner/               # writeBanner
+│   ├── logger/               # createLogger
+│   ├── network/              # getLocalIP
+│   ├── auth/                 # generateToken
+│   ├── circuit-breaker/
+│   ├── paths/                # getPluginConfigDir, configFile, stateFile
+│   ├── http/                 # Generic HTTP types: RouteContext<TDeps>, Route<TDeps>, auth/cors/json
+│   └── dotenv/               # loadDotEnv
+│
+├── dashboard/                # Browser SPA (served by transport/http/ as static files)
+│   ├── index.html            # Entry point — var GEN = "x.y.z" (bumped on release)
+│   ├── main.js, styles.css, sw.js, manifest.json, constants.js
+│   ├── api/, state/, sse/, auth/, components/, modals/, ui/, routing/
+│   └── __tests__/            # asset-sanity.test.ts (guards release pre-flight)
+│
+├── tui/                      # OpenCode TUI plugin (slash commands, event listeners)
+├── cli/                      # `opencode-pilot init` binary
+│
+└── server/                   # FAÇADE — preserves `./server` npm export
+    ├── index.ts              # Composition root: wires all 8 modules, returns plugin handle
+    ├── config.ts             # loadConfigSafe / mergeStoredSettings / resolveSources
+    └── constants.ts          # PILOT_VERSION (hard-referenced by release script — do NOT move)
 ```
+
+**Dependency rule:** `infra/` ← `core/` ← (`transport/`, `integrations/`, `notifications/`) ← `server/index.ts` (composition root, only file that imports across all layers). Cross-sibling imports between `transport/`, `integrations/`, and `notifications/` are forbidden except through the two explicit ports in `integrations/ports.ts` and `notifications/ports.ts`.
 
 ## Rules
 - Factory functions with `create` prefix, no classes
@@ -82,7 +128,7 @@ Priority (highest wins): shell env > `~/.opencode-pilot/config.json` > `.env` > 
 - `PILOT_HOOK_TOKEN` (default: unset) — optional dedicated bearer token accepted on `POST /codex/hooks/*`; when set, both this token AND the main token are accepted on that path
 - `PILOT_CODEX_PERMISSION_TIMEOUT_MS` (default: 250000, max: 250000) — how long to wait for a permission decision on Codex hook PermissionRequest before auto-denying. Values > 250000ms throw ConfigError at startup (Bun's idleTimeout cap is 255s; longer values cause a connection drop instead of a structured deny)
 
-Editable from the dashboard Settings UI (writes to `~/.opencode-pilot/config.json`): everything except `PILOT_DEV`. See `services/settings-store.ts`.
+Editable from the dashboard Settings UI (writes to `~/.opencode-pilot/config.json`): everything except `PILOT_DEV`. See `src/core/settings/store.ts`.
 
 ## Event Types (PilotEvent discriminated union)
 - `pilot.connected` — SSE client connected

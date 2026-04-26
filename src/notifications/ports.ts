@@ -16,6 +16,7 @@ export type NotificationEvent = {
     | 'permission.pending'
     | 'permission.resolved'
     | 'tool.completed'
+    | 'session.idle'
     | 'session.error'
   payload: Record<string, unknown>
 }

@@ -3,8 +3,7 @@ import type { Config } from "../../server/config"
 import type { AuditLog } from "../../core/audit/log"
 import type { EventBus } from "../../core/events/bus"
 import type { PermissionQueue } from "../../core/permissions/queue"
-import type { TelegramChannel } from "../../notifications/pipeline"
-import type { PushService } from "../../notifications/pipeline"
+import type { TelegramChannel, PushService } from "../../core/types/notification-channels"
 import type { SettingsStore } from "../../core/settings/store"
 import type { Logger } from "../../infra/logger/index"
 import type { AuthRequirement, RouteParams } from "../../infra/http/types"
@@ -52,12 +51,7 @@ export interface RouteDeps {
 }
 
 /** Concrete per-request context for the main HTTP server (specialized with RouteDeps). */
-export interface RouteContext {
-  req: Request
-  url: URL
-  params: RouteParams
-  deps: RouteDeps
-}
+export type RouteContext = import("../../infra/http/types").RouteContext<RouteDeps>
 
 export interface Route {
   method: "GET" | "POST" | "DELETE" | "PUT" | "PATCH"

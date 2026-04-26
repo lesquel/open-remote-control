@@ -4,7 +4,7 @@ import type { EventBus } from "../core/events/bus"
 import type { TelegramChannel } from "./channels/telegram/index"
 import type { PushService } from "./channels/push/service"
 import type { AuditLog } from "../core/audit/log"
-import type { NotificationChannel } from "./ports"
+import type { NotificationChannel, NotificationEvent } from "./ports"
 import type { NotificationService } from "../core/types/notification-service"
 
 // Re-export the NotificationService type from core/ so both notifications/ and
@@ -25,7 +25,7 @@ export type { TelegramChannel } from "./channels/telegram/index"
 // Re-export createTelegramChannel and createPushService so test files and
 // other consumers can import from the pipeline barrel instead of reaching
 // into the channel sub-directories directly.
-export { createTelegramChannel, createTelegramBot } from "./channels/telegram/index"
+export { createTelegramChannel } from "./channels/telegram/index"
 export { createPushService } from "./channels/push/service"
 
 export interface NotificationServiceDeps {
@@ -96,7 +96,7 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
     // Fan-out to additional channels (e.g. future Slack, Discord, webhook channels).
     // Each channel decides independently whether it is enabled; disabled channels
     // are skipped. Failures are isolated — one failing channel does not prevent others.
-    const channelEvent: import("./ports").NotificationEvent = {
+    const channelEvent: NotificationEvent = {
       kind: "permission.pending",
       payload: { permissionID, title, sessionID, permissionType, pattern, metadata },
     }
@@ -140,9 +140,9 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
       audit.log("telegram.send_failed", { error: String(err), kind: "session_idle" })
     }
     // Fan-out to additional channels
-    const channelEvent: import("./ports").NotificationEvent = {
-      kind: "tool.completed",
-      payload: { sessionID, title, kind: "session_idle" },
+    const channelEvent: NotificationEvent = {
+      kind: "session.idle",
+      payload: { sessionID, title },
     }
     for (const ch of channels) {
       if (!ch.enabled()) continue
@@ -166,7 +166,7 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
       audit.log("telegram.send_failed", { error: String(err), kind: "session_error" })
     }
     // Fan-out to additional channels
-    const channelEvent: import("./ports").NotificationEvent = {
+    const channelEvent: NotificationEvent = {
       kind: "session.error",
       payload: { sessionID, title, error },
     }

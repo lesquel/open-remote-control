@@ -1,18 +1,19 @@
 // integration.test.ts — End-to-end HTTP integration tests for critical flows.
 // Tests run against a real Bun.serve instance with a fake OpenCode SDK client.
-// Mirrors the pattern in src/transport/http/__tests__/server.test.ts.
+// Moved from src/dashboard/__tests__/integration.test.ts (Commit 6) — this is
+// an HTTP transport integration test, not a dashboard test.
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test"
 import type { PluginInput } from "@opencode-ai/plugin"
-import type { Config } from "../../server/config"
-import type { AuditLog } from "../../core/audit/log"
-import { createEventBus } from "../../core/events/bus"
-import { createPermissionQueue } from "../../core/permissions/queue"
-import { createTelegramChannel } from "../../notifications/pipeline"
-import { createPushService } from "../../notifications/pipeline"
-import type { Logger } from "../../infra/logger/index"
-import type { RouteDeps } from "../../transport/http/routes"
-import { createRemoteServer, type RemoteServer } from "../../transport/http/server"
+import type { Config } from "../../../server/config"
+import type { AuditLog } from "../../../core/audit/log"
+import { createEventBus } from "../../../core/events/bus"
+import { createPermissionQueue } from "../../../core/permissions/queue"
+import { createTelegramChannel } from "../../../notifications/channels/telegram/index"
+import { createPushService } from "../../../notifications/channels/push/service"
+import type { Logger } from "../../../infra/logger/index"
+import type { RouteDeps } from "../routes"
+import { createRemoteServer, type RemoteServer } from "../server"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -404,10 +404,6 @@ export default {
       }
     }
 
-    process.once("SIGINT", () => void shutdown())
-    process.once("SIGTERM", () => void shutdown())
-    process.once("exit", () => void shutdown())
-
     // ─── Integrations ────────────────────────────────────────────────────
     const sessionBusyStart = new Map<string, number>()
 
@@ -442,6 +438,16 @@ export default {
     // looked exactly like "dashboard never updates without reload" and
     // consumed four release cycles before the audit caught it.
     const roleAwareHooks = opencode.withRoleGating(() => role)
+
+    // ─── Signal handlers — registered AFTER all consts to avoid TDZ ──────────
+    // opencode, codexHandle, server, tunnel, notifications are all declared
+    // above. Registering handlers here ensures the closure never captures
+    // a variable in the temporal dead zone, even if a SIGINT arrives during
+    // the rare window between plugin boot and this line.
+    process.once("SIGINT", () => void shutdown())
+    process.once("SIGTERM", () => void shutdown())
+    process.once("exit", () => void shutdown())
+
     return {
       event: roleAwareHooks.event,
       "permission.ask": roleAwareHooks["permission.ask"],
