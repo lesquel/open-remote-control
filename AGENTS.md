@@ -105,6 +105,17 @@ If a service file grows past ~300 lines, split it. `notifications.ts` is the fan
 
 `core/permissions/queue.ts` ↔ `core/permissions/queue.test.ts`. Integration / cross-handler tests live under `__tests__/` (e.g., `transport/http/__tests__/server.test.ts`). Don't put all tests in a top-level `tests/` folder — co-location makes refactors atomic.
 
+### Per-folder `AGENTS.md` must stay in sync
+
+Every top-level folder under `src/` has its own `AGENTS.md` describing the module in ~30 lines. When modifying code in `src/<module>/`, update `src/<module>/AGENTS.md` IF you change:
+
+- the **imports allowed/forbidden** (dependency rule)
+- the **public API** (what other modules consume)
+- the **key file roles** (rename, split, add a notable file)
+- any **"DO NOT"** item
+
+Stale per-folder docs are worse than no docs — they actively mislead. If you can't be bothered to update a per-folder AGENTS.md when you change its scope, delete the file instead of leaving it stale.
+
 ---
 
 ## 4. Release process — EXACT checklist
