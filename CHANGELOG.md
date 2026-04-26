@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.18.1] - 2026-04-26
+
+### Fixed
+
+- **Dashboard sub-folder asset serving (P0 regression from v1.18.0).** When v1.18.0 reorganized the dashboard into sub-folders (`api/`, `auth/`, `components/`, `modals/`, `ui/`, `routing/`, `state/`, `sse/`), the route table in `transport/http/routes.ts` only allowed `icons|assets` as sub-folders for static serving. Every other sub-folder request fell through to the 404 catch-all that returns JSON, and the browser blocked all dashboard module imports with `MIME type "application/json" not allowed for module`. Result: dashboard appeared blank with ~30 console errors. Fix: regex now lists all 9 real dashboard sub-folders. Added regression test `GET /<sub-folder>/<file>.js serves dashboard sub-folder JS as a real module` in `transport/http/__tests__/server.test.ts` exercising 8 sub-folder paths.
+
+If you hit the broken dashboard on v1.18.0, hard-refresh once after upgrading to v1.18.1 to clear the stale service-worker cache.
+
 ## [1.18.0] - 2026-04-26
 
 ### Changed — Architecture refactor (internal restructure, no breaking changes)

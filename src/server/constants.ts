@@ -1,7 +1,7 @@
 // ─── Shared constants ────────────────────────────────────────────────────────
 // Single source of truth for magic numbers and version strings.
 
-export const PILOT_VERSION = "1.18.0"
+export const PILOT_VERSION = "1.18.1"
 export const DEFAULT_PORT = 4097
 // Default host: `0.0.0.0` so the dashboard is immediately reachable from LAN
 // (phone, second laptop) without the user needing to discover the host

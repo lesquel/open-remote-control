@@ -316,6 +316,31 @@ describe("HTTP server integration", () => {
     expect(body).toMatch(/const\s+CACHE_NAME\s*=\s*"pilot-v\d+\.\d+\.\d+"/)
   })
 
+  test("GET /<sub-folder>/<file>.js serves dashboard sub-folder JS as a real module (regression v1.18.1)", async () => {
+    // Regression: v1.18.0 reorganized the dashboard into sub-folders (api/, auth/,
+    // components/, modals/, ui/, routing/, state/, sse/) but the routes.ts regex
+    // only allowed icons|assets, so `/components/sessions.js` etc. fell through to
+    // the 404 catch-all that returns JSON. The browser then blocked every dashboard
+    // module with "MIME type application/json not allowed for module".
+    // Verify each real sub-folder is reachable and returns a JS MIME type.
+    const subfolderProbes = [
+      "/components/sessions.js",
+      "/auth/auth.js",
+      "/state/state.js",
+      "/sse/sse.js",
+      "/ui/toast.js",
+      "/modals/connect-modal.js",
+      "/api/api.js",
+      "/routing/hash-dir-router.js",
+    ]
+    for (const path of subfolderProbes) {
+      const res = await fetch(`${baseUrl}${path}`)
+      expect(res.status).toBe(200)
+      const ct = res.headers.get("content-type") ?? ""
+      expect(ct).toMatch(/javascript|ecmascript/)
+    }
+  })
+
   test("OPTIONS / preflight returns CORS headers", async () => {
     const res = await fetch(`${baseUrl}/`, { method: "OPTIONS" })
     expect(res.status).toBe(204)
