@@ -4,6 +4,443 @@ Deck de 20 slides para una presentación de 20–30 minutos. Cubre problema, sol
 
 ---
 
+## Documento técnico detallado — tecnologías, funcionamiento y alcance
+
+> **Nota de versión:** el pitch original fue escrito con datos de v1.14.1. En el repositorio actual, `package.json` y `src/server/constants.ts` indican **v1.16.13**. Esta sección resume el funcionamiento real del proyecto según el código y la documentación actual, manteniendo el pitch como narrativa de presentación.
+
+### 1. Resumen ejecutivo
+
+**OpenCode Pilot** es un plugin para OpenCode que agrega una capa de control remoto sobre sesiones locales de agentes de IA. Su objetivo es que el usuario pueda supervisar, manejar y autorizar una sesión de OpenCode desde un navegador, un celular, otro equipo en la red local o un enlace público mediante túnel.
+
+El producto combina:
+
+- Un **plugin server** que levanta un servidor HTTP con `Bun.serve`.
+- Un **plugin TUI** que registra comandos dentro de la terminal de OpenCode.
+- Un **dashboard web PWA** que muestra sesiones, mensajes, permisos, diffs, costos, estado de herramientas y configuración.
+- Un **canal de eventos en vivo** usando Server-Sent Events.
+- Integraciones opcionales con **Telegram**, **Web Push**, **cloudflared** y **ngrok**.
+
+La idea central es simple: OpenCode sigue ejecutándose localmente, pero OpenCode Pilot expone una interfaz segura para ver qué está pasando, enviar prompts y responder permisos sin estar pegado a la terminal.
+
+### 2. Tecnologías principales
+
+| Área | Tecnología | Uso dentro del proyecto |
+|---|---|---|
+| Runtime | **Bun** | Ejecuta el plugin, corre tests y sirve el dashboard con `Bun.serve`. |
+| Lenguaje | **TypeScript** | Código del servidor, CLI y plugin TUI con tipado estricto. |
+| SDK | **`@opencode-ai/plugin`** | Integra OpenCode Pilot con hooks, eventos, cliente SDK y comandos TUI. |
+| Servidor HTTP | **`Bun.serve`** | Expone rutas REST, SSE y assets estáticos del dashboard. |
+| Streaming | **Server-Sent Events (SSE)** | Envía eventos en vivo al navegador sin polling. |
+| Frontend | **JavaScript vanilla + ES modules** | Dashboard sin framework; módulos por responsabilidad. |
+| PWA | **Service Worker + Manifest** | Permite instalación, cache básico y experiencia móvil. |
+| Notificaciones push | **`web-push` + VAPID** | Notificaciones aunque el navegador esté cerrado. |
+| Telegram | **Telegram Bot API** | Alertas y respuesta remota a permisos desde Telegram. |
+| QR | **`qrcode-terminal`** | Genera QR en terminal/banner para conectar desde el celular. |
+| Persistencia | **JSON / JSONL local** | Estado, configuración, auditoría y banner en archivos locales. |
+| Testing | **Bun test** | Pruebas unitarias e integración para servidor, config, cola, push, TUI y utilidades. |
+| Distribución | **npm package público** | Paquete `@lesquel/opencode-pilot` con binario `opencode-pilot`. |
+| Licencia | **MIT** | Permite uso, modificación y distribución con pocas restricciones. |
+
+### 3. Instalación y entrada del sistema
+
+El flujo recomendado de instalación es:
+
+```bash
+npx @lesquel/opencode-pilot init
+# o
+bunx @lesquel/opencode-pilot init
+```
+
+El comando `init` instala el plugin en el directorio global de configuración de OpenCode y registra el paquete en dos archivos distintos:
+
+1. `opencode.json` — carga el **server plugin**.
+2. `tui.json` — carga el **TUI plugin** y sus slash commands.
+
+Esta separación es importante porque OpenCode usa dos loaders de plugins. Si el paquete se registra solo en uno, el usuario obtiene media funcionalidad: por ejemplo, puede levantarse el servidor pero no aparecer los comandos `/remote`, o viceversa.
+
+### 4. Arquitectura general
+
+La arquitectura se basa en tres piezas:
+
+```text
+┌──────────────────────┐
+│ OpenCode TUI          │
+│ - Slash commands      │
+│ - Toasts              │
+│ - Sesión local        │
+└──────────┬───────────┘
+           │ carga plugins / event bus
+           ▼
+┌──────────────────────┐        HTTP + SSE        ┌──────────────────────┐
+│ OpenCode Pilot Server │◀──────────────────────▶│ Dashboard PWA         │
+│ - Bun.serve           │                         │ - Navegador desktop   │
+│ - Hooks SDK           │                         │ - Celular             │
+│ - Event bus           │                         │ - Otro equipo LAN     │
+│ - Permission queue    │                         └──────────────────────┘
+│ - Audit log           │
+│ - Settings store      │        opcional
+│ - Telegram bot        │──────────────────────▶ Telegram
+│ - Web Push            │──────────────────────▶ Browser Push Service
+│ - Tunnel manager      │──────────────────────▶ cloudflared / ngrok
+└──────────────────────┘
+```
+
+El servidor no reemplaza a OpenCode. Actúa como una capa de control y observabilidad encima del proceso local. Los eventos del SDK se transforman en eventos HTTP/SSE que el dashboard puede consumir.
+
+### 5. Componentes internos
+
+#### 5.1 Server plugin
+
+Ubicación principal: `src/server/`.
+
+Responsabilidades:
+
+- Levantar `Bun.serve`.
+- Servir el dashboard web.
+- Registrar hooks de OpenCode.
+- Emitir eventos hacia SSE.
+- Gestionar permisos pendientes.
+- Leer y escribir configuración.
+- Crear logs de auditoría.
+- Inicializar Telegram, Push y túneles si están configurados.
+- Escribir archivos de estado para que el TUI pueda leer la URL, token y estado del servidor.
+
+Archivos clave:
+
+- `src/server/index.ts` — compone todos los servicios.
+- `src/server/config.ts` — carga configuración desde env, `.env`, settings y defaults.
+- `src/server/constants.ts` — valores base como puerto, host, timeouts, versión y límites.
+- `src/server/types.ts` — eventos `PilotEvent`, errores y tipos compartidos.
+
+#### 5.2 Hooks de OpenCode
+
+Ubicación: `src/server/hooks/`.
+
+Los hooks conectan el SDK de OpenCode con OpenCode Pilot:
+
+- `event.ts` recibe eventos del SDK y los reenvía al bus.
+- `permission.ask.ts` intercepta solicitudes de permiso, las publica y espera una respuesta.
+- `tool.ts` emite eventos cuando una herramienta empieza y termina.
+
+Estos hooks permiten que el dashboard vea en vivo:
+
+- Mensajes.
+- Herramientas ejecutándose.
+- Permisos pendientes.
+- Errores.
+- Cambios de estado.
+- Subagentes.
+- Conexiones y desconexiones.
+
+#### 5.3 HTTP router
+
+Ubicación: `src/server/http/`.
+
+El router usa una tabla de rutas declarativa en `routes.ts`. Cada ruta define:
+
+- Método HTTP.
+- Patrón de URL.
+- Nivel de autenticación: `none`, `optional` o `required`.
+- Handler que procesa la petición.
+
+Endpoints representativos:
+
+| Endpoint | Función | Auth |
+|---|---|---|
+| `GET /` | Sirve el dashboard | No |
+| `GET /health` | Health check | No |
+| `GET /status` | Estado del servidor | Sí |
+| `GET /sessions` | Lista sesiones | Sí |
+| `POST /sessions` | Crea sesión | Sí |
+| `GET /sessions/:id/messages` | Lee mensajes de una sesión | Sí |
+| `POST /sessions/:id/prompt` | Envía prompt remoto | Sí |
+| `POST /sessions/:id/abort` | Aborta generación | Sí |
+| `GET /sessions/:id/diff` | Muestra diff de archivos cambiados | Sí |
+| `GET /permissions` | Lista permisos pendientes | Sí |
+| `POST /permissions/:id` | Aprueba o deniega permiso | Sí |
+| `GET /events` | Stream SSE | Opcional: header Bearer o `?token=` |
+| `GET /connect-info` | URLs local/LAN/túnel para conectar móvil | Sí |
+| `POST /auth/rotate` | Rota token activo | Sí |
+| `GET /agents` | Lista agentes disponibles | Sí |
+| `GET /providers` | Lista proveedores | Sí |
+| `GET /mcp/status` | Estado MCP | Sí |
+| `GET /lsp/status` | Estado LSP | Sí |
+| `GET /file/list` | Árbol de archivos | Sí |
+| `GET /file/content` | Contenido de archivo | Sí |
+| `GET /fs/glob` | Búsqueda glob opcional | Sí |
+| `GET /fs/read` | Lectura absoluta opcional | Sí |
+| `GET /settings` | Configuración actual | Sí |
+| `PATCH /settings` | Guarda configuración | Sí |
+| `POST /settings/reset` | Resetea configuración | Sí |
+| `POST /settings/vapid/generate` | Genera claves VAPID | Sí |
+
+#### 5.4 Servicios del servidor
+
+Ubicación: `src/server/services/`.
+
+Servicios principales:
+
+- **Event bus:** fanout en memoria para SSE; emite keepalive cada 25 segundos.
+- **Permission queue:** mantiene permisos pendientes y resuelve con `allow` o `deny`.
+- **Audit log:** registra operaciones en JSON Lines.
+- **Settings store:** persiste configuración editable desde UI.
+- **State store:** escribe estado del servidor para que el TUI lo lea.
+- **Banner:** genera texto con URL, token y QR.
+- **Tunnel manager:** levanta `cloudflared` o `ngrok` y extrae URL pública.
+- **Telegram bot:** envía alertas y procesa botones inline.
+- **Push service:** maneja suscripciones Web Push y envío de notificaciones.
+- **Notification service:** punto único de fanout hacia SSE, Telegram, Push y auditoría.
+
+#### 5.5 TUI plugin
+
+Ubicación: `src/tui/`.
+
+El TUI plugin agrega comandos dentro de OpenCode:
+
+- `/pilot`
+- `/pilot-token`
+- `/dashboard`
+- `/remote`
+- `/remote-control`
+
+Su responsabilidad es mostrar información de conexión, token, URL y estado del servidor. También puede reaccionar a eventos del bus con toasts dentro de la terminal.
+
+#### 5.6 Dashboard PWA
+
+Ubicación: `src/server/dashboard/`.
+
+El dashboard es una aplicación web sin framework. Está dividido por módulos:
+
+- `main.js` — arranque general.
+- `api.js` / `api-fetch.js` — llamadas HTTP autenticadas.
+- `sse.js` — conexión `EventSource`.
+- `auth.js` — manejo del token.
+- `sessions.js` / `messages.js` — sesiones y transcript.
+- `permissions.js` — banners de permisos.
+- `project-tabs.js` — tabs por proyecto.
+- `multi-view.js` — vista múltiple.
+- `diff.js` — archivos cambiados.
+- `settings.js` — configuración editable.
+- `push-notifications.js` — Web Push.
+- `connect.js` / `connect-modal.js` — conexión por QR, LAN y túnel.
+- `file-browser.js` — exploración de archivos.
+- `cost-panel.js` — uso y costos.
+- `sw.js` / `manifest.json` — PWA e instalación.
+
+La decisión de usar JavaScript vanilla reduce dependencias, tamaño y superficie de ataque. También facilita que el plugin sirva todo desde el mismo proceso de Bun sin build step complejo.
+
+### 6. Funcionamiento paso a paso
+
+#### 6.1 Arranque
+
+1. El usuario abre OpenCode.
+2. OpenCode carga el plugin server desde `opencode.json`.
+3. OpenCode carga el plugin TUI desde `tui.json`.
+4. El server plugin lee configuración:
+   - variables de shell,
+   - `~/.opencode-pilot/config.json`,
+   - archivos `.env`,
+   - defaults.
+5. Se genera un token aleatorio.
+6. Se inicia `Bun.serve`.
+7. Se escribe `pilot-state.json` con información de conexión.
+8. Se escribe `pilot-banner.txt` con URL, token y QR.
+9. El usuario abre el dashboard o ejecuta `/remote`.
+
+#### 6.2 Conexión del dashboard
+
+1. El navegador abre la URL del dashboard.
+2. El dashboard obtiene token desde URL, hash o input manual.
+3. Las llamadas REST usan `Authorization: Bearer <token>`.
+4. La conexión SSE usa `EventSource`; como `EventSource` no permite headers personalizados, también se acepta `?token=...`.
+5. El servidor valida token y empieza a enviar eventos.
+
+#### 6.3 Envío de prompt remoto
+
+1. El usuario escribe un prompt en el dashboard.
+2. El dashboard llama `POST /sessions/:id/prompt`.
+3. El server usa el cliente de OpenCode para enviar el prompt a la sesión.
+4. Los eventos de respuesta salen por hooks del SDK.
+5. El event bus los transmite por SSE.
+6. El dashboard renderiza el texto y estados de herramientas en vivo.
+
+#### 6.4 Permisos remotos
+
+1. OpenCode pide permiso para una herramienta sensible.
+2. El hook `permission.ask` crea evento `pilot.permission.pending`.
+3. El evento llega al dashboard, Telegram y Push si están activos.
+4. El permiso queda en la cola con timeout configurable.
+5. El usuario aprueba o deniega desde dashboard o Telegram.
+6. El server resuelve la cola.
+7. El hook devuelve `allow` o `deny` a OpenCode.
+8. Se emite `pilot.permission.resolved`.
+9. Los clientes cierran el banner o actualizan el estado.
+
+#### 6.5 Streaming en vivo
+
+El streaming se realiza mediante SSE:
+
+- No hay polling constante.
+- El servidor mantiene conexiones abiertas.
+- El keepalive evita cierres por inactividad.
+- Si un cliente se cae, se elimina del fanout.
+- Si el navegador reconecta, vuelve a suscribirse.
+
+Esto permite que el dashboard muestre tokens, herramientas y estado de sesión en tiempo real.
+
+#### 6.6 Multi-proyecto
+
+OpenCode Pilot puede mostrar sesiones de varios proyectos en pestañas. El dashboard usa el directorio activo y hashes de URL para enfocar el proyecto correcto. Cada pestaña mantiene su propio estado de sesiones, mensajes y carga para evitar refetch innecesario.
+
+#### 6.7 Multi-instancia
+
+Si se abren varios procesos de OpenCode:
+
+1. El primer proceso que toma el puerto actúa como **primary**.
+2. Otros procesos detectan puerto ocupado y entran en modo pasivo.
+3. Los pasivos verifican periódicamente si el puerto queda libre.
+4. Si el primary termina, un pasivo se promueve y toma el control.
+
+Este patrón evita peleas por el puerto y permite continuidad si una instancia se cierra o falla.
+
+### 7. Configuración
+
+Orden de precedencia:
+
+```text
+shell env > ~/.opencode-pilot/config.json > .env > defaults
+```
+
+Variables importantes:
+
+| Variable | Valor por defecto actual | Descripción |
+|---|---:|---|
+| `PILOT_PORT` | `4097` | Puerto del servidor. |
+| `PILOT_HOST` | `0.0.0.0` | Dirección de bind. En versiones anteriores era `127.0.0.1`; el código actual usa LAN-ready por defecto. |
+| `PILOT_TUNNEL` | off | `cloudflared` o `ngrok`. |
+| `PILOT_PERMISSION_TIMEOUT` | `300000` | Timeout de permisos en ms. |
+| `PILOT_TELEGRAM_TOKEN` | — | Token de bot Telegram. |
+| `PILOT_TELEGRAM_CHAT_ID` | — | Chat destino. |
+| `PILOT_VAPID_PUBLIC_KEY` | — | Clave pública Web Push. |
+| `PILOT_VAPID_PRIVATE_KEY` | — | Clave privada Web Push. |
+| `PILOT_VAPID_SUBJECT` | `mailto:admin@opencode-pilot.local` | Subject VAPID. |
+| `PILOT_ENABLE_GLOB_OPENER` | `false` | Habilita lectura/búsqueda avanzada de archivos. |
+| `PILOT_DEV` | `false` | Relee assets del dashboard en desarrollo. |
+| `PILOT_FETCH_TIMEOUT_MS` | `10000` | Timeout para llamadas salientes. |
+
+La UI de Settings marca el origen de cada valor: `shell`, `.env`, `saved` o `default`. Si un campo viene de shell, queda bloqueado para evitar confusión.
+
+### 8. Seguridad
+
+El modelo de seguridad combina varias capas:
+
+1. **Token Bearer aleatorio:** generado con 32 bytes y representado en hex.
+2. **Auth requerida:** casi todos los endpoints dinámicos requieren token.
+3. **SSE autenticado:** acepta header Bearer o `?token=` por limitación de `EventSource`.
+4. **Rotación de token:** `POST /auth/rotate` invalida clientes existentes.
+5. **Audit log:** registra conexiones, decisiones y operaciones remotas.
+6. **Validación de rutas:** evita traversal, null bytes, paths excesivos y entradas inválidas.
+7. **Límites de body:** rechaza cuerpos mayores a 1 MiB.
+8. **Errores tipados:** evita filtrar stacks internos en respuestas.
+9. **Features sensibles opt-in:** glob opener, túnel, Telegram y Push requieren configuración.
+10. **Túnel con advertencia:** si se expone a internet, el token se trata como contraseña.
+
+### 9. Persistencia local
+
+OpenCode Pilot evita bases de datos externas. Usa archivos locales:
+
+| Archivo | Propósito |
+|---|---|
+| `~/.opencode-pilot/config.json` | Configuración guardada desde la UI. |
+| `.opencode/pilot-state.json` | Estado de servidor, token y URL para el TUI. |
+| `.opencode/pilot-banner.txt` | Banner con instrucciones de conexión. |
+| `.opencode/pilot-audit.log` | Log JSONL de auditoría. |
+
+Esto hace que el plugin sea portable, simple de depurar y fácil de ejecutar en entornos locales.
+
+### 10. Casos de uso principales
+
+#### Desarrollo individual con celular
+
+El agente trabaja en una tarea larga. El usuario se aleja del computador. Si aparece un permiso, puede aprobar o denegar desde el celular.
+
+#### Pair programming remoto
+
+El usuario activa un túnel y comparte la URL con token. Otra persona puede ver la misma sesión y colaborar en la supervisión.
+
+#### Múltiples proyectos
+
+El dashboard agrupa sesiones por directorio y permite cambiar de contexto sin abrir varias terminales o ventanas.
+
+#### Debug de sesiones largas
+
+El usuario revisa historial, mensajes, herramientas, diffs y errores desde el dashboard, incluso si la sesión lleva tiempo ejecutándose.
+
+#### Alertas de equipo
+
+Telegram puede avisar a un canal o chat cuando hay permisos o cuando termina una ejecución relevante.
+
+### 11. Calidad, pruebas y mantenimiento
+
+El proyecto tiene pruebas para:
+
+- Configuración.
+- Autenticación HTTP.
+- Servidor y rutas.
+- Validación de requests.
+- Cola de permisos.
+- Push notifications.
+- Settings store.
+- State store.
+- Rotación de auditoría.
+- Circuit breaker.
+- Utilidades de auth.
+- Comandos TUI y construcción de URLs.
+
+Scripts principales:
+
+```bash
+bun test
+bun run typecheck
+bun run lint
+bun run prepublishOnly
+```
+
+Antes de publicar, `prepublishOnly` ejecuta guardas, typecheck y tests.
+
+### 12. Decisiones de diseño destacadas
+
+- **Sin framework frontend:** reduce dependencias y complejidad de build.
+- **Factory functions en servidor:** favorece testabilidad e inyección de dependencias.
+- **Estado local en archivos:** evita base de datos y facilita diagnóstico.
+- **SSE en vez de WebSockets:** suficiente para streaming servidor-cliente y más simple de operar.
+- **Dos entry points:** necesario por la arquitectura de loaders de OpenCode.
+- **Configuración editable desde UI:** reduce fricción para usuarios no expertos.
+- **Integraciones opcionales:** Telegram, Push y túneles no son obligatorios.
+
+### 13. Limitaciones y consideraciones
+
+- Si se expone por túnel, el token debe protegerse como una contraseña.
+- `EventSource` obliga a permitir token por query param para SSE.
+- El dashboard depende de que OpenCode siga corriendo localmente.
+- El modo LAN amplía superficie de red; se debe usar en redes confiables.
+- Algunas configuraciones requieren reiniciar OpenCode para aplicarse.
+- El file browser avanzado está desactivado por defecto por seguridad.
+
+### 14. Roadmap técnico sugerido
+
+Según los documentos y el pitch, las líneas futuras incluyen:
+
+- Integración con Slack.
+- Integración con Discord.
+- Más vistas en multi-view, como diff grid o cost tracker.
+- Keybindings configurables.
+- Cloud relay propio como alternativa a túneles locales.
+- Session replay para reproducir sesiones grabadas.
+- Limpieza y endurecimiento adicional de handlers de eventos en el frontend.
+
+---
+
 ## Slide 1 — Portada
 
 **Título:** OpenCode Pilot
