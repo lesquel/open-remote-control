@@ -7,7 +7,7 @@ import { CORS_HEADERS } from "../middlewares/cors"
 import { validateToken } from "../middlewares/auth"
 import { getLocalIP } from "../../../infra/network/ip"
 import { getTunnelInfo } from "../../../infra/tunnel/index"
-import { PILOT_VERSION, LOCALHOST_ADDRESSES } from "../../../server/constants"
+import { LOCALHOST_ADDRESSES } from "../../../infra/http/constants"
 import { MSG } from "../../../core/strings"
 
 // ─── Dashboard path ─────────────────────────────────────────────────────────
@@ -143,11 +143,11 @@ function ensureAssetsLoaded(): void {
  * Keep this function pure and O(1) per file — it runs inside every
  * response path.
  */
-function applyTemplating(relativePath: string, content: Buffer): Buffer {
+function applyTemplating(relativePath: string, content: Buffer, pilotVersion: string): Buffer {
   if (relativePath === "sw.js") {
     const replaced = content
       .toString("utf-8")
-      .replace(/__PILOT_CACHE_VERSION__/g, `pilot-v${PILOT_VERSION}`)
+      .replace(/__PILOT_CACHE_VERSION__/g, `pilot-v${pilotVersion}`)
     return Buffer.from(replaced, "utf-8")
   }
   return content
@@ -174,7 +174,7 @@ async function serveDashboardFile(
     }
     try {
       const raw = readFileSync(filePath)
-      const content = applyTemplating(relativePath, raw)
+      const content = applyTemplating(relativePath, raw, deps.pilotVersion)
       const mime = MIME[extname(filePath)] ?? "text/plain"
       return new Response(new Uint8Array(content), {
         headers: {
@@ -195,7 +195,7 @@ async function serveDashboardFile(
   if (!asset) {
     return jsonError("NOT_FOUND", "Not found", 404, CORS_HEADERS)
   }
-  const content = applyTemplating(relativePath, asset.content)
+  const content = applyTemplating(relativePath, asset.content, deps.pilotVersion)
   return new Response(new Uint8Array(content), {
     headers: {
       "Content-Type": asset.mime,
@@ -237,7 +237,7 @@ export async function getStatus({ deps }: RouteContext): Promise<Response> {
   const statuses = await deps.client.session.status()
   return json(
     {
-      pilot: { version: PILOT_VERSION, uptime: process.uptime() },
+      pilot: { version: deps.pilotVersion, uptime: process.uptime() },
       sessions: {
         total: sessions.data?.length ?? 0,
         statuses: statuses.data ?? {},
@@ -365,7 +365,7 @@ export async function getHealth({ deps }: RouteContext): Promise<Response> {
   return json(
     {
       status: anyDegraded ? "degraded" : "ok",
-      version: PILOT_VERSION,
+      version: deps.pilotVersion,
       uptime_s: Math.round(uptimeS),
       started_at: SERVER_STARTED_AT.toISOString(),
       sse_clients: deps.eventBus.clientCount(),

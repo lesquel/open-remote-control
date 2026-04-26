@@ -1,5 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { loadConfigSafe, mergeStoredSettings } from "./config"
+import { loadConfigSafe, mergeStoredSettings, resolveSources, projectConfigToSettings, envKeyFor, RESTART_REQUIRED_FIELDS } from "./config"
 import { loadDotEnv } from "../infra/dotenv/index"
 import { generateToken } from "../infra/auth/token"
 import { createAuditLog } from "../core/audit/log"
@@ -113,6 +113,22 @@ export default {
       settingsStore,
       shellEnv,
       envFileApplied: dotenv.applied,
+      pilotVersion: PILOT_VERSION,
+      settingsLoader: {
+        loadEffective(stored: import("../core/settings/store").PilotSettings) {
+          const effectiveEnv = mergeStoredSettings(process.env, shellEnv, stored)
+          const effective = loadConfigSafe(effectiveEnv, () => {
+            // swallow — we already warned once at boot
+          })
+          return {
+            effective,
+            settings: projectConfigToSettings(effective),
+            sources: resolveSources(shellEnv, dotenv.applied, stored),
+          }
+        },
+        envKeyFor,
+        restartRequiredFields: RESTART_REQUIRED_FIELDS,
+      },
     }
 
     if (config.vapid == null) {

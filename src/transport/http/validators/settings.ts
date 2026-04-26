@@ -1,7 +1,7 @@
 // validators/settings.ts — Validators for settings and push endpoints.
 
 import type { PilotSettings } from "../../../core/settings/store"
-import { LOCALHOST_ADDRESSES } from "../../../server/constants"
+import { LOCALHOST_ADDRESSES } from "../../../infra/http/constants"
 
 // ─── POST /push/subscribe ────────────────────────────────────────────────────
 

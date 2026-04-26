@@ -10,7 +10,7 @@ import { validateHookToken, getIP } from "../../infra/http/auth"
 import { json, jsonError } from "../../infra/http/json"
 import { CORS_HEADERS } from "../../infra/http/cors"
 import { readBoundedText } from "../../infra/http/text"
-import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
+import { MAX_REQUEST_BODY_BYTES } from "../../infra/http/constants"
 import {
   validateSessionStart,
   validateUserPromptSubmit,

@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test"
 import type { PluginInput } from "@opencode-ai/plugin"
-import type { Config } from "../../../server/config"
+import type { Config } from "../../../core/types/config"
 import type { AuditLog } from "../../../core/audit/log"
 import { createEventBus } from "../../../core/events/bus"
 import { createPermissionQueue } from "../../../core/permissions/queue"
@@ -153,6 +153,30 @@ function buildDeps(port: number): RouteDeps {
     settingsStore,
     shellEnv: {},
     envFileApplied: [],
+    pilotVersion: "0.0.0-test",
+    settingsLoader: {
+      loadEffective: () => ({
+        effective: config,
+        settings: {
+          port: config.port,
+          host: config.host,
+          permissionTimeoutMs: config.permissionTimeoutMs,
+          tunnel: config.tunnel,
+          telegramToken: "",
+          telegramChatId: "",
+          vapidPublicKey: "",
+          vapidPrivateKey: "",
+          vapidSubject: "",
+          enableGlobOpener: config.enableGlobOpener,
+          fetchTimeoutMs: config.fetchTimeoutMs,
+          projectStateMode: config.projectStateMode,
+          hookTokenConfigured: false,
+        },
+        sources: {},
+      }),
+      envKeyFor: () => "",
+      restartRequiredFields: [],
+    },
   }
   return deps
 }

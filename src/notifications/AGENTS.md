@@ -4,8 +4,9 @@
 
 ## Imports (dependency rule)
 - May import from: `core/`, `infra/`
-- **Note:** `channels/telegram/index.ts` imports `TELEGRAM_ERROR_MAX_CHARS` from `server/constants`; `channels/push/service.ts` imports `Config` from `server/config`. Documented deviations — those values should ideally live in `infra/` or be injected.
-- May NOT import from: `transport/`, `integrations/`
+- May NOT import from: `transport/`, `integrations/`, `server/`
+- `Config` type comes from `core/types/config` — NOT from `server/config`
+- `TELEGRAM_ERROR_MAX_CHARS` lives in `channels/telegram/constants.ts` — NOT in `server/constants`
 
 ## Public API (what other modules consume from here)
 - `createNotificationService(channels, ...): NotificationService` — (`pipeline.ts`) the fan-out orchestrator
@@ -19,6 +20,7 @@
 - `ports.ts` — `NotificationChannel`, `NotificationEvent`, `NotificationResult`
 - `pipeline.ts` — `createNotificationService`; subscribes to EventBus and calls `channel.send()` for each enabled channel; also the barrel for public types
 - `channels/telegram/index.ts` — `createTelegramChannel`; circuit-breaker wrapped Telegram Bot API
+- `channels/telegram/constants.ts` — `TELEGRAM_ERROR_MAX_CHARS` (telegram-specific limit)
 - `channels/push/service.ts` — `createPushService`; returns `{ channel, generateVapid, addSubscription, ... }`
 - `channels/push/vapid.ts` — VAPID key generation and persistence
 - `channels/push/subscriptions.ts` — in-memory + persisted subscription store

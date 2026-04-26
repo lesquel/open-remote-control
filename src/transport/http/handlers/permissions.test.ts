@@ -48,6 +48,42 @@ function makePermissionDeps(opts?: {
     settingsStore: { load: () => ({}), save: () => ({}), reset: () => {}, filePath: () => "/tmp/c.json" } as RouteDeps["settingsStore"],
     shellEnv: {},
     envFileApplied: [],
+    pilotVersion: "0.0.0-test",
+    settingsLoader: {
+      loadEffective: () => ({
+        effective: {
+          port: 4097,
+          host: "127.0.0.1",
+          permissionTimeoutMs: 300_000,
+          tunnel: "off" as const,
+          telegram: null,
+          dev: false,
+          vapid: null,
+          enableGlobOpener: false,
+          fetchTimeoutMs: 10_000,
+          projectStateMode: "auto" as const,
+          codexPermissionTimeoutMs: 300_000,
+        },
+        settings: {
+          port: 4097,
+          host: "127.0.0.1",
+          permissionTimeoutMs: 300_000,
+          tunnel: "off" as const,
+          telegramToken: "",
+          telegramChatId: "",
+          vapidPublicKey: "",
+          vapidPrivateKey: "",
+          vapidSubject: "",
+          enableGlobOpener: false,
+          fetchTimeoutMs: 10_000,
+          projectStateMode: "auto" as const,
+          hookTokenConfigured: false,
+        },
+        sources: {},
+      }),
+      envKeyFor: () => "",
+      restartRequiredFields: [],
+    },
   }
 }
 

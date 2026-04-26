@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Config } from "../../../server/config"
+import type { Config } from "../../../core/types/config"
 import type { AuditLog } from "../../../core/audit/log"
 import type { Logger } from "../../../infra/logger/index"
 import { createPushService } from "./service"

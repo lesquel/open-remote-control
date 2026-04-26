@@ -12,7 +12,7 @@
 // See docs/REFACTOR-2026-04-architecture.md "Web Push subsystem (special case)"
 // for the full dependency-rule rationale.
 
-import type { Config } from '../../../server/config'
+import type { Config } from '../../../core/types/config'
 import type { AuditLog } from '../../../core/audit/log'
 import type { Logger } from '../../../infra/logger/index'
 import { createCircuitBreaker } from '../../../infra/circuit-breaker/index'

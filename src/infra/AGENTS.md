@@ -4,7 +4,6 @@
 
 ## Imports (dependency rule)
 - May import from: Node.js built-ins, third-party npm packages only
-- **VIOLATION:** `infra/tunnel/index.ts` currently imports `TunnelProvider` from `server/config` and `TUNNEL_URL_PATTERNS / TUNNEL_START_TIMEOUT_MS / TUNNEL_KILL_GRACE_MS` from `server/constants`. This breaks the "absolute bottom" invariant. These constants/types should be moved to `infra/` or passed as arguments.
 - May NOT import from: any other `src/` module
 
 ## Public API (what other modules consume from here)
@@ -22,17 +21,23 @@
 - `getPluginConfigDir / getPluginStateDir / configFile / stateFile / shouldWriteProjectState` — (`paths/index.ts`)
 - `generateQR()` — (`qr/index.ts`)
 - `startTunnel()` — (`tunnel/index.ts`)
+- `TunnelProvider` — (`tunnel/types.ts`) type re-exported from `server/config`
+- `TUNNEL_START_TIMEOUT_MS / TUNNEL_KILL_GRACE_MS / TUNNEL_URL_PATTERNS` — (`tunnel/constants.ts`)
+- `MAX_REQUEST_BODY_BYTES / HTTP_STATUS / LOCALHOST_ADDRESSES / VAPID_DEFAULT_SUBJECT / DEFAULT_HOST / DEFAULT_PORT` — (`http/constants.ts`)
 
 ## Key files
 - `http/types.ts` — `RouteContext<TDeps>`, `Route<TDeps>` — the generic HTTP contract shared by `transport/` and `integrations/`
 - `http/auth.ts` — token validation + IP extraction
 - `paths/index.ts` — XDG-aware path resolution for config and state files
-- `tunnel/index.ts` — cloudflared / ngrok process management (**has server/ import violation**)
+- `tunnel/index.ts` — cloudflared / ngrok process management
+- `tunnel/types.ts` — `TunnelProvider` type (canonical location, re-exported by `server/config`)
+- `tunnel/constants.ts` — tunnel timing constants (`TUNNEL_START_TIMEOUT_MS`, `TUNNEL_KILL_GRACE_MS`, `TUNNEL_URL_PATTERNS`)
+- `http/constants.ts` — HTTP plumbing constants (`MAX_REQUEST_BODY_BYTES`, `HTTP_STATUS`, `LOCALHOST_ADDRESSES`, `VAPID_DEFAULT_SUBJECT`, `DEFAULT_HOST`, `DEFAULT_PORT`)
 - `circuit-breaker/index.ts` — generic circuit breaker for external HTTP calls
 
 ## DO NOT
 - Add domain logic (permissions, audit rules, event types) here.
-- Import from `core/`, `transport/`, `integrations/`, `notifications/`, or `server/`. The tunnel violation must not spread to other files.
+- Import from `core/`, `transport/`, `integrations/`, `notifications/`, or `server/`.
 
 ## See also
 - `docs/ARCHITECTURE.md` — dependency rule (infra is the absolute bottom)

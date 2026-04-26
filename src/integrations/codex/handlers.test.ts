@@ -361,7 +361,7 @@ describe("REQ-AUD-01 audit entries", () => {
 // NOTE: tests verifying that /codex/* is NOT in the central static routes table
 // live in src/transport/http/__tests__/server.test.ts (transport-layer concern).
 
-import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
+import { MAX_REQUEST_BODY_BYTES } from "../../infra/http/constants"
 import { codexIntegration } from "./index"
 import type { RouteSpec } from "../ports"
 

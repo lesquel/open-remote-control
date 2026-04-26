@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from "child_process"
 import { existsSync } from "fs"
 import { delimiter } from "path"
-import type { TunnelProvider } from "../../server/config"
-import { TUNNEL_URL_PATTERNS, TUNNEL_START_TIMEOUT_MS, TUNNEL_KILL_GRACE_MS } from "../../server/constants"
+import type { TunnelProvider } from "./types"
+import { TUNNEL_URL_PATTERNS, TUNNEL_START_TIMEOUT_MS, TUNNEL_KILL_GRACE_MS } from "./constants"
 
 export type { TunnelProvider }
 

@@ -10,8 +10,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import type { Config } from "../../../server/config"
-import { loadConfig } from "../../../server/config"
+import type { Config } from "../../../core/types/config"
+import { loadConfig, mergeStoredSettings, loadConfigSafe, resolveSources, projectConfigToSettings, envKeyFor, RESTART_REQUIRED_FIELDS } from "../../../server/config"
 import { createSettingsStore } from "../../../core/settings/store"
 import { createPermissionQueue } from "../../../core/permissions/queue"
 import type { Logger } from "../../../infra/logger/index"
@@ -33,6 +33,8 @@ function makeDeps(opts: {
 }): RouteDeps {
   const settingsStore = createSettingsStore({ logger: silentLogger, filePath: opts.configPath })
   const config = opts.config ?? loadConfig({})
+  const shellEnv = opts.shellEnv ?? {}
+  const envFileApplied = opts.envFileApplied ?? []
   return {
     // stubs — never exercised by the settings handlers we're testing
     client: {} as RouteDeps["client"],
@@ -51,8 +53,22 @@ function makeDeps(opts: {
     push: {} as RouteDeps["push"],
     logger: silentLogger,
     settingsStore,
-    shellEnv: opts.shellEnv ?? {},
-    envFileApplied: opts.envFileApplied ?? [],
+    shellEnv,
+    envFileApplied,
+    pilotVersion: "0.0.0-test",
+    settingsLoader: {
+      loadEffective(stored) {
+        const effectiveEnv = mergeStoredSettings(process.env, shellEnv, stored)
+        const effective = loadConfigSafe(effectiveEnv, () => {})
+        return {
+          effective,
+          settings: projectConfigToSettings(effective),
+          sources: resolveSources(shellEnv, envFileApplied, stored),
+        }
+      },
+      envKeyFor,
+      restartRequiredFields: RESTART_REQUIRED_FIELDS,
+    },
   }
 }
 

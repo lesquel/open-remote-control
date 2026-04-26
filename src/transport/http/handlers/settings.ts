@@ -2,15 +2,7 @@ import type { RouteContext } from "../routes"
 import { json, jsonError } from "../middlewares/json"
 import { CORS_HEADERS } from "../middlewares/cors"
 import { validatePushSubscribe, validatePushTest, validateSettingsPatch } from "../validators/settings"
-import {
-  RESTART_REQUIRED_FIELDS,
-  envKeyFor,
-  loadConfigSafe,
-  mergeStoredSettings,
-  projectConfigToSettings,
-  resolveSources,
-} from "../../../server/config"
-import { VAPID_DEFAULT_SUBJECT } from "../../../server/constants"
+import { VAPID_DEFAULT_SUBJECT } from "../../../infra/http/constants"
 import { MSG } from "../../../core/strings"
 import type { PushSubscriptionJson } from "../../../core/types/notification-channels"
 import type { PilotSettings } from "../../../core/settings/store"
@@ -149,9 +141,9 @@ function redactSecret(value: string | undefined): { configured: boolean; preview
 }
 
 function buildSettingsResponse(deps: RouteContext["deps"]): {
-  settings: ReturnType<typeof projectConfigToSettings>
-  sources: ReturnType<typeof resolveSources>
-  restartRequired: ReadonlyArray<keyof PilotSettings>
+  settings: import("../../../core/types/config").SettingsSnapshot
+  sources: import("../../../core/types/config").ConfigSources
+  restartRequired: ReadonlyArray<string>
   configFilePath: string
 } {
   // Recompute the effective config from the FRESH store + shell env every
@@ -162,14 +154,11 @@ function buildSettingsResponse(deps: RouteContext["deps"]): {
   // restart to take effect; `settings` below shows the value that WILL be
   // active after that restart.
   const stored = deps.settingsStore.load()
-  const effectiveEnv = mergeStoredSettings(process.env, deps.shellEnv, stored)
-  const effective = loadConfigSafe(effectiveEnv, () => {
-    // swallow — we already warned once at boot
-  })
+  const { settings, sources } = deps.settingsLoader.loadEffective(stored)
   return {
-    settings: projectConfigToSettings(effective),
-    sources: resolveSources(deps.shellEnv, deps.envFileApplied, stored),
-    restartRequired: RESTART_REQUIRED_FIELDS,
+    settings,
+    sources,
+    restartRequired: deps.settingsLoader.restartRequiredFields,
     configFilePath: deps.settingsStore.filePath(),
   }
 }
@@ -218,7 +207,7 @@ export async function patchSettings({ req, deps }: RouteContext): Promise<Respon
   // Reject fields that are pinned by shell-env — we cannot override those.
   const conflicts: string[] = []
   for (const key of Object.keys(validation.data) as Array<keyof PilotSettings>) {
-    const envKey = envKeyFor(key)
+    const envKey = deps.settingsLoader.envKeyFor(key)
     if (deps.shellEnv[envKey] !== undefined && deps.shellEnv[envKey] !== "") {
       conflicts.push(key)
     }

@@ -4,8 +4,12 @@
 
 ## Imports (dependency rule)
 - May import from: `core/`, `infra/`
-- **Note:** `routes.ts`, `server.ts`, `handlers/settings.ts`, `handlers/system.ts`, and `validators/settings.ts` also import from `server/constants` and `server/config` for `Config`, `PILOT_VERSION`, `LOCALHOST_ADDRESSES`, `MAX_REQUEST_BODY_BYTES`, and `VAPID_DEFAULT_SUBJECT`. This is a documented deviation from the strict rule — those constants travel down via dependency injection in practice, but are currently imported directly.
-- May NOT import from: `integrations/`, `notifications/`
+- May NOT import from: `integrations/`, `notifications/`, `server/`
+- `Config` type comes from `core/types/config` — NOT from `server/config`
+- HTTP constants (`MAX_REQUEST_BODY_BYTES`, `LOCALHOST_ADDRESSES`, `VAPID_DEFAULT_SUBJECT`) come from `infra/http/constants`
+- `PILOT_VERSION` is injected via `RouteDeps.pilotVersion` from the composition root — handlers never import it directly
+- Config-loading utilities (`loadConfigSafe`, `mergeStoredSettings`, etc.) are injected via `RouteDeps.settingsLoader` — `handlers/settings.ts` never imports from `server/config` directly
+- **Test files** (`*.test.ts`) that verify the settings integration boundary may import from `server/config` to construct realistic `settingsLoader` implementations — this is accepted for tests only
 
 ## Public API (what other modules consume from here)
 - `createRemoteServer(deps: RouteDeps): RemoteServer` — creates the Bun HTTP server, registers routes, exposes `server.registerRoute()` for integrations
@@ -35,6 +39,9 @@
 
 ## DO NOT
 - Import from `integrations/` or `notifications/` directly — use dependency injection via `RouteDeps`.
+- Import from `server/constants` or `server/config` — constants live in `infra/http/constants`, types in `core/types/config`.
+- Import `PILOT_VERSION` directly — use `deps.pilotVersion` (injected by composition root).
+- Import `loadConfigSafe` / `mergeStoredSettings` / `resolveSources` directly — use `deps.settingsLoader` (injected by composition root).
 - Add business logic to handlers — handlers orchestrate `core/` services, they don't own rules.
 
 ## See also

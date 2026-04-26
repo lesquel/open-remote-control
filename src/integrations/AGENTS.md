@@ -4,8 +4,8 @@
 
 ## Imports (dependency rule)
 - May import from: `core/`, `infra/`
-- **Note:** `codex/handlers.ts` also imports `MAX_REQUEST_BODY_BYTES` from `server/constants` — documented deviation.
-- May NOT import from: `transport/` (transport types come via `infra/http/types`), `notifications/`
+- May NOT import from: `transport/` (transport types come via `infra/http/types`), `notifications/`, `server/`
+- `MAX_REQUEST_BODY_BYTES` comes from `infra/http/constants` — NOT from `server/constants`
 
 ## Public API (what other modules consume from here)
 - `opencodeIntegration: AgentIntegration` — native SDK hook wiring (event, permission.ask, tool hooks)

@@ -3,7 +3,7 @@ import { CORS_HEADERS, corsPreflightResponse } from "./middlewares/cors"
 import { jsonError } from "./middlewares/json"
 import { matchRoute, routes } from "./routes"
 import type { RouteDeps, Route } from "./routes"
-import { MAX_REQUEST_BODY_BYTES } from "../../server/constants"
+import { MAX_REQUEST_BODY_BYTES } from "../../infra/http/constants"
 
 export interface RemoteServer {
   /**

@@ -1,5 +1,5 @@
 import type { PluginInput } from "@opencode-ai/plugin"
-import type { Config } from "../../server/config"
+import type { Config, SettingsLoaderHelper } from "../../core/types/config"
 import type { AuditLog } from "../../core/audit/log"
 import type { EventBus } from "../../core/events/bus"
 import type { PermissionQueue } from "../../core/permissions/queue"
@@ -20,6 +20,8 @@ export interface RouteDeps {
   worktree: PluginInput["worktree"]
   config: Config
   token: string
+  /** Injected by the composition root so transport/ never imports from server/. */
+  pilotVersion: string
   /**
    * Replace the active token. Called by POST /auth/rotate.
    * The server validates future requests against whatever deps.token holds
@@ -48,6 +50,11 @@ export interface RouteDeps {
   shellEnv: NodeJS.ProcessEnv
   /** Keys that the .env loader wrote into process.env (provenance). */
   envFileApplied: string[]
+  /**
+   * Injectable config-loading utilities. Provided by the composition root so
+   * transport/http/handlers/settings.ts never imports from server/ directly.
+   */
+  settingsLoader: SettingsLoaderHelper
 }
 
 /** Concrete per-request context for the main HTTP server (specialized with RouteDeps). */

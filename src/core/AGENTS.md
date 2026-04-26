@@ -30,6 +30,7 @@ All of the above re-exported from `core/index.ts`.
 - `state/store.ts` — `writeState/clearState`; pilot-state.json + project-state logic
 - `errors.ts` — `PilotError` base class
 - `strings.ts` — `MSG` dictionary (all user-facing strings live here)
+- `types/config.ts` — `Config`, `TelegramConfig`, `VapidConfig`, `SettingsSnapshot`, `SettingsLoaderHelper`, `ConfigSources`, `ConfigSource` (canonical location — re-exported by `server/config`)
 - `types/notification-service.ts` — `NotificationService` interface (consumed by integrations)
 - `types/notification-channels.ts` — `TelegramChannel`, `PushService`, `PushSubscriptionJson`
 

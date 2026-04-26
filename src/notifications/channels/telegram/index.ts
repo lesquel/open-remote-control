@@ -1,8 +1,8 @@
-import type { TelegramConfig } from "../../../server/config"
+import type { TelegramConfig } from "../../../core/types/config"
 import type { PermissionQueue } from "../../../core/permissions/queue"
 import type { Logger } from "../../../infra/logger/index"
 import { createCircuitBreaker } from "../../../infra/circuit-breaker/index"
-import { TELEGRAM_ERROR_MAX_CHARS } from "../../../server/constants"
+import { TELEGRAM_ERROR_MAX_CHARS } from "./constants"
 import type { NotificationChannel, NotificationResult } from "../../ports"
 
 /** Default fetch timeout for all Telegram API calls. */

@@ -16,56 +16,18 @@
 
 import { DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, DEFAULT_PROJECT_STATE_MODE, MAX_CODEX_PERMISSION_TIMEOUT_MS, VAPID_DEFAULT_SUBJECT } from "./constants"
 import type { PilotSettings } from "../core/settings/store"
-import type { ProjectStateMode } from "../core/state/store"
 
-export type TunnelProvider = "off" | "cloudflared" | "ngrok"
-export type { ProjectStateMode }
+// Re-export types from their canonical locations in core/ and infra/.
+// server/config.ts is the composition root area — these types belong in the
+// layers they describe, not here. Re-exports keep backward compatibility for
+// anything that still imports from server/config.
+export type { Config, TelegramConfig, VapidConfig, TunnelProvider, ProjectStateMode, ConfigSource } from "../core/types/config"
+import type { Config, TelegramConfig, VapidConfig, TunnelProvider, ProjectStateMode } from "../core/types/config"
 
-export interface TelegramConfig {
-  token: string
-  chatId: string
-}
-
-export interface VapidConfig {
-  publicKey: string
-  privateKey: string
-  subject: string
-}
-
-export interface Config {
-  port: number
-  host: string
-  permissionTimeoutMs: number
-  tunnel: TunnelProvider
-  telegram: TelegramConfig | null
-  /** When true, dashboard HTML is re-read from disk on each request (dev mode). */
-  dev: boolean
-  /** Web Push VAPID config — only set when BOTH keys are present. */
-  vapid: VapidConfig | null
-  /** Opt-in flag for the glob file opener endpoints. Disabled by default. */
-  enableGlobOpener: boolean
-  /** Timeout (ms) for outbound HTTP calls (Telegram, push). */
-  fetchTimeoutMs: number
-  /** Controls when per-project files are written to `<directory>/.opencode/`.
-   *  Defaults to `"auto"` (write only when `.opencode/` already exists). */
-  projectStateMode: ProjectStateMode
-  /** Optional separate token accepted on POST /codex/hooks/* endpoints.
-   *  When set, requests on that path can use EITHER this token OR the main
-   *  dashboard token. Undefined means fall back to main token only. */
-  hookToken?: string
-  /** Timeout (ms) for Codex permission requests via the hook bridge.
-   *  Defaults to permissionTimeoutMs, falls back to DEFAULT_CODEX_PERMISSION_TIMEOUT_MS. */
-  codexPermissionTimeoutMs: number
-}
-
-export type ConfigSource = "default" | "env-file" | "settings-store" | "shell-env"
-
-/**
- * Provenance map: for each UI-editable setting, where did its effective value
- * come from? Used by the Settings UI to badge inputs and disable fields whose
- * values come from shell-env (since those cannot be overridden by the store).
- */
-export type ConfigSources = Record<keyof PilotSettings, ConfigSource>
+/** Provenance map: for each UI-editable setting, where did its effective value
+ *  come from? Used by the Settings UI to badge inputs and disable fields whose
+ *  values come from shell-env (since those cannot be overridden by the store). */
+export type ConfigSources = Record<keyof PilotSettings, import("../core/types/config").ConfigSource>
 
 export class ConfigError extends Error {
   constructor(message: string) {
