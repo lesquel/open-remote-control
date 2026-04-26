@@ -1,21 +1,22 @@
 import type { Plugin } from "@opencode-ai/plugin"
-import { loadConfigSafe, mergeStoredSettings, resolveSources } from "./config"
-import { loadDotEnv } from "./util/dotenv"
-import { generateToken } from "./util/auth"
-import { createAuditLog } from "./services/audit"
-import { getSharedEventBus } from "./services/event-bus"
-import { createPermissionQueue } from "./services/permission-queue"
-import { createTelegramBot } from "./services/telegram"
-import { createPushService } from "./services/push"
-import { createSettingsStore } from "./services/settings-store"
-import { startTunnel } from "./services/tunnel"
-import { writeState, clearState, globalStatePath } from "./services/state"
+import { loadConfigSafe, mergeStoredSettings } from "./config"
+import { loadDotEnv } from "../infra/dotenv/index"
+import { generateToken } from "../infra/auth/token"
+import { createAuditLog } from "../core/audit/log"
+import { getSharedEventBus } from "../core/events/bus"
+import { createPermissionQueue } from "../core/permissions/queue"
+import { createTelegramChannel } from "../notifications/channels/telegram/index"
+import { createPushService } from "../notifications/channels/push/service"
+import { createSettingsStore } from "../core/settings/store"
+import { startTunnel } from "../infra/tunnel/index"
+import { writeState, clearState, globalStatePath } from "../core/state/store"
 import { existsSync } from "fs"
-import { writeBanner } from "./services/banner"
-import { createNotificationService } from "./services/notifications"
-import { createRemoteServer } from "./http/server"
-import { createEventHook, createPermissionAskHook, createToolHooks } from "./hooks"
-import { createLogger } from "./util/logger"
+import { writeBanner } from "../infra/banner/writer"
+import { createNotificationService } from "../notifications/pipeline"
+import { createRemoteServer } from "../transport/http/server"
+import { opencodeIntegration } from "../integrations/opencode/index"
+import { codexIntegration } from "../integrations/codex/index"
+import { createLogger } from "../infra/logger/index"
 import { PILOT_VERSION, TOAST_DURATION_MS, TOAST_PROMOTION_DURATION_MS, PROMOTION_POLL_INTERVAL_MS } from "./constants"
 
 export default {
@@ -81,10 +82,11 @@ export default {
     // shows pilot.connected then nothing" bug that survived v1.14 → v1.16.8.
     const eventBus = getSharedEventBus()
     const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
-    const telegram = createTelegramBot(config.telegram, permissionQueue, logger)
+    const codexPermissionQueue = createPermissionQueue(config.codexPermissionTimeoutMs)
+    const telegram = createTelegramChannel(config.telegram, permissionQueue, codexPermissionQueue, logger)
     const push = createPushService({ config, audit, logger })
 
-    const notifications = createNotificationService(eventBus, telegram, audit, push)
+    const notifications = createNotificationService({ eventBus, telegram, audit, push })
 
     // ─── RouteDeps object — mutable so token rotation works ───────────────
     // rotateToken mutates deps.token in-place; the server reads deps.token on
@@ -104,6 +106,7 @@ export default {
       audit,
       eventBus,
       permissionQueue,
+      codexPermissionQueue,
       telegram,
       push,
       logger,
@@ -124,6 +127,15 @@ export default {
     }
 
     const server = createRemoteServer(deps)
+
+    // Wire Codex integration via the port — self-registers /codex/hooks/:event route
+    const codexHandle = codexIntegration.setup({
+      permissions: permissionQueue,
+      codexPermissions: codexPermissionQueue,
+      events: eventBus,
+      audit,
+      registerRoute: (route) => server.registerRoute(route),
+    })
 
     // Promotion model:
     //
@@ -381,31 +393,31 @@ export default {
         promotionTimer = null
       }
       try { telegram.stop() } catch {}
+      // Spec order: integrations → http → tunnel → notifications.flush → clearState
+      try { await opencode.shutdown() } catch {}
+      try { await codexHandle.shutdown() } catch {}
       if (role === "primary") {
-        try { tunnel.stop() } catch {}
         try { server.stop() } catch {}
+        try { tunnel.stop() } catch {}
+        try { await notifications.flush() } catch {}
         try { clearState(ctx.directory) } catch {}
       }
     }
 
-    process.once("SIGINT", () => void shutdown())
-    process.once("SIGTERM", () => void shutdown())
-    process.once("exit", () => void shutdown())
-
-    // ─── Hooks ───────────────────────────────────────────────────────────
+    // ─── Integrations ────────────────────────────────────────────────────
     const sessionBusyStart = new Map<string, number>()
-    const eventHook = createEventHook(
+
+    // Wire OpenCode integration via the port — returns hook handlers to
+    // spread into the Plugin's return value (return-shape pattern).
+    // See: OpenCode SDK spike result in docs/REFACTOR-2026-04-architecture.md
+    // The SDK has no registerHook() on PluginInput; hooks are returned objects.
+    const opencode = opencodeIntegration.setup({
       notifications,
       sessionBusyStart,
-      ctx.client,
+      client: ctx.client,
+      permissions: permissionQueue,
       audit,
-    )
-    const permissionAskHook = createPermissionAskHook(
-      notifications,
-      permissionQueue,
-      audit,
-    )
-    const toolHooks = createToolHooks(notifications)
+    })
 
     // Role-aware gating, narrowly scoped:
     //
@@ -425,18 +437,26 @@ export default {
     // was actually connected to if its role snapshot was out of date. That
     // looked exactly like "dashboard never updates without reload" and
     // consumed four release cycles before the audit caught it.
+    const roleAwareHooks = opencode.withRoleGating(() => role)
+
+    // ─── Signal handlers — registered AFTER all consts to avoid TDZ ──────────
+    // opencode, codexHandle, server, tunnel, notifications are all declared
+    // above. Registering handlers here ensures the closure never captures
+    // a variable in the temporal dead zone, even if a SIGINT arrives during
+    // the rare window between plugin boot and this line.
+    process.once("SIGINT", () => void shutdown())
+    process.once("SIGTERM", () => void shutdown())
+    process.once("exit", () => void shutdown())
+
     return {
-      event: eventHook,
-      "permission.ask": async (input, output) => {
-        if (role === "passive") return
-        return permissionAskHook(input, output)
-      },
+      event: roleAwareHooks.event,
+      "permission.ask": roleAwareHooks["permission.ask"],
       "tool.execute.before": async (input, output) =>
-        toolHooks.handleToolBefore(input, {
+        roleAwareHooks["tool.execute.before"](input, {
           args: (output?.args ?? {}) as Record<string, unknown>,
         }),
       "tool.execute.after": async (input, output) =>
-        toolHooks.handleToolAfter(
+        roleAwareHooks["tool.execute.after"](
           { ...input, args: input.args as Record<string, unknown> | undefined },
           output,
         ),

@@ -40,6 +40,37 @@ It complements:
 
 ## 3. Hard conventions
 
+### Structure — 8 top-level modules (as of v1.18.0)
+
+```
+src/
+├── core/          # DOMAIN — pure business rules (permissions, audit, events, state, settings)
+│                  #   May import from: infra/ only
+├── transport/     # HOW the core is exposed externally (today: HTTP only)
+│                  #   May import from: core/, infra/
+├── integrations/  # ADAPTERS for external CLI agents (opencode native hooks, codex bridge)
+│                  #   May import from: core/, infra/, transport/ (via AgentIntegration port)
+├── notifications/ # FAN-OUT for outbound channels (telegram, push, future: slack, discord)
+│                  #   May import from: core/, infra/
+├── infra/         # Reusable technical plumbing (tunnel, QR, logger, paths, auth, etc.)
+│                  #   May import from: NOTHING (absolute bottom)
+├── dashboard/     # Browser SPA served by transport/http/ — no backend imports
+├── tui/           # OpenCode TUI plugin (slash commands, event listeners)
+│                  #   May import from: core/, infra/
+├── cli/           # `opencode-pilot init` binary
+│                  #   May import from: infra/
+└── server/        # FAÇADE — preserves `./server` npm export; only composition root
+                   #   May import from: EVERYTHING (this is the composition root)
+```
+
+**Dependency rule (precise):** `infra/` is the absolute bottom. `core/` imports only from `infra/`. `notifications/`, `integrations/`, and `transport/` import from `core/` and `infra/`. Cross-imports between siblings happen ONLY through the explicit ports (`AgentIntegration`, `NotificationChannel`), never via direct file imports. `server/index.ts` is the ONLY file allowed to import across all layers — it is the composition root by design.
+
+**Two explicit ports:**
+- `src/notifications/ports.ts` — `NotificationChannel` (telegram, push, future channels)
+- `src/integrations/ports.ts` — `AgentIntegration` (opencode, codex, future agents)
+
+See `docs/ARCHITECTURE.md` for the full architecture and `docs/REFACTOR-2026-04-architecture.md` for migration rationale.
+
 ### Factory functions, no classes
 
 ```ts
@@ -50,7 +81,7 @@ export function createEventBus(): EventBus { /* ... */ }
 export class EventBus { /* ... */ }
 ```
 
-Every file under `src/server/services/`, `src/server/hooks/`, and `src/server/http/` follows the factory pattern. Breaking the convention in one file forces every caller to special-case.
+Every file under `src/core/`, `src/notifications/`, `src/integrations/`, and `src/transport/http/` follows the factory pattern. Breaking the convention in one file forces every caller to special-case.
 
 ### No silent failures
 
@@ -72,7 +103,7 @@ If a service file grows past ~300 lines, split it. `notifications.ts` is the fan
 
 ### Tests sit next to code
 
-`services/state.ts` ↔ `services/state.test.ts`. Integration / regression tests live under `__tests__/`. Don't put all tests in a top-level `tests/` folder — co-location makes refactors atomic.
+`core/permissions/queue.ts` ↔ `core/permissions/queue.test.ts`. Integration / cross-handler tests live under `__tests__/` (e.g., `transport/http/__tests__/server.test.ts`). Don't put all tests in a top-level `tests/` folder — co-location makes refactors atomic.
 
 ---
 
@@ -86,7 +117,7 @@ Quick form:
 # 1. Bump THREE places (all must match exactly, asset-sanity test enforces it):
 #    - package.json::version
 #    - src/server/constants.ts::PILOT_VERSION
-#    - src/server/dashboard/index.html  → var GEN = "x.y.z"
+#    - src/dashboard/index.html  → var GEN = "x.y.z"
 #
 # 2. Add a CHANGELOG.md entry at the top (Keep-a-Changelog format, most recent first).
 #

@@ -14,9 +14,9 @@
 // in process.env, so config resolution passes the original shell snapshot
 // separately (`shellEnv`) to distinguish the two.
 
-import { DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, DEFAULT_PROJECT_STATE_MODE, VAPID_DEFAULT_SUBJECT } from "./constants"
-import type { PilotSettings } from "./services/settings-store"
-import type { ProjectStateMode } from "./services/state"
+import { DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, DEFAULT_PROJECT_STATE_MODE, MAX_CODEX_PERMISSION_TIMEOUT_MS, VAPID_DEFAULT_SUBJECT } from "./constants"
+import type { PilotSettings } from "../core/settings/store"
+import type { ProjectStateMode } from "../core/state/store"
 
 export type TunnelProvider = "off" | "cloudflared" | "ngrok"
 export type { ProjectStateMode }
@@ -49,6 +49,13 @@ export interface Config {
   /** Controls when per-project files are written to `<directory>/.opencode/`.
    *  Defaults to `"auto"` (write only when `.opencode/` already exists). */
   projectStateMode: ProjectStateMode
+  /** Optional separate token accepted on POST /codex/hooks/* endpoints.
+   *  When set, requests on that path can use EITHER this token OR the main
+   *  dashboard token. Undefined means fall back to main token only. */
+  hookToken?: string
+  /** Timeout (ms) for Codex permission requests via the hook bridge.
+   *  Defaults to permissionTimeoutMs, falls back to DEFAULT_CODEX_PERMISSION_TIMEOUT_MS. */
+  codexPermissionTimeoutMs: number
 }
 
 export type ConfigSource = "default" | "env-file" | "settings-store" | "shell-env"
@@ -106,6 +113,7 @@ const ENV_KEY_MAP: Record<keyof PilotSettings, string> = {
   enableGlobOpener: "PILOT_ENABLE_GLOB_OPENER",
   fetchTimeoutMs: "PILOT_FETCH_TIMEOUT_MS",
   projectStateMode: "PILOT_PROJECT_STATE",
+  hookToken: "PILOT_HOOK_TOKEN",
 }
 
 export function envKeyFor(field: keyof PilotSettings): string {
@@ -174,6 +182,37 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const fetchTimeoutMs = parseIntOrDefault(env.PILOT_FETCH_TIMEOUT_MS, 10_000)
   const projectStateMode = parseProjectStateMode(env.PILOT_PROJECT_STATE)
 
+  // hookToken — optional separate token for /codex/hooks/* endpoints
+  const hookToken = env.PILOT_HOOK_TOKEN && env.PILOT_HOOK_TOKEN.length > 0
+    ? env.PILOT_HOOK_TOKEN
+    : undefined
+
+  // codexPermissionTimeoutMs — with fallback chain:
+  //   PILOT_CODEX_PERMISSION_TIMEOUT_MS → PILOT_PERMISSION_TIMEOUT → DEFAULT
+  let codexPermissionTimeoutMs: number
+  if (env.PILOT_CODEX_PERMISSION_TIMEOUT_MS !== undefined && env.PILOT_CODEX_PERMISSION_TIMEOUT_MS !== "") {
+    const raw = env.PILOT_CODEX_PERMISSION_TIMEOUT_MS
+    const n = parseInt(raw, 10)
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new ConfigError(
+        `Invalid PILOT_CODEX_PERMISSION_TIMEOUT_MS: "${raw}". Must be a positive integer (milliseconds).`,
+      )
+    }
+    if (n > MAX_CODEX_PERMISSION_TIMEOUT_MS) {
+      throw new ConfigError(
+        `PILOT_CODEX_PERMISSION_TIMEOUT_MS must be ≤ ${MAX_CODEX_PERMISSION_TIMEOUT_MS}ms (Bun's idle timeout cap is 255s; longer values would cause Codex to see a connection drop instead of a structured deny response).`,
+      )
+    }
+    codexPermissionTimeoutMs = n
+  } else {
+    // Fall back to permissionTimeoutMs if PILOT_PERMISSION_TIMEOUT was set, else default.
+    // Cap at MAX_CODEX_PERMISSION_TIMEOUT_MS so the fallback can never exceed the Bun limit.
+    const fallback = permissionTimeoutMs !== DEFAULT_PERMISSION_TIMEOUT_MS
+      ? permissionTimeoutMs
+      : DEFAULT_CODEX_PERMISSION_TIMEOUT_MS
+    codexPermissionTimeoutMs = Math.min(fallback, MAX_CODEX_PERMISSION_TIMEOUT_MS)
+  }
+
   return {
     port,
     host,
@@ -185,6 +224,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     enableGlobOpener,
     fetchTimeoutMs,
     projectStateMode,
+    hookToken,
+    codexPermissionTimeoutMs,
   }
 }
 
@@ -247,7 +288,7 @@ export function resolveSources(
  * Project the effective Config down to the PilotSettings shape the UI expects.
  * Used by GET /settings so the client can display a single structured object.
  */
-export function projectConfigToSettings(config: Config): Required<PilotSettings> {
+export function projectConfigToSettings(config: Config): Omit<Required<PilotSettings>, "hookToken"> & { hookTokenConfigured: boolean } {
   return {
     port: config.port,
     host: config.host,
@@ -261,6 +302,8 @@ export function projectConfigToSettings(config: Config): Required<PilotSettings>
     enableGlobOpener: config.enableGlobOpener,
     fetchTimeoutMs: config.fetchTimeoutMs,
     projectStateMode: config.projectStateMode,
+    // hookToken is intentionally omitted — raw token must never leave this module
+    hookTokenConfigured: Boolean(config.hookToken && config.hookToken.length > 0),
   }
 }
 

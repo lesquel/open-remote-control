@@ -7,7 +7,7 @@ import {
   resolveSources,
   RESTART_REQUIRED_FIELDS,
 } from "./config"
-import { DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT } from "./constants"
+import { DEFAULT_HOST, DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, MAX_CODEX_PERMISSION_TIMEOUT_MS } from "./constants"
 
 describe("loadConfig", () => {
   test("returns defaults when env is empty", () => {
@@ -205,6 +205,77 @@ describe("loadConfig — PILOT_PROJECT_STATE integration", () => {
 
   test("RESTART_REQUIRED_FIELDS does NOT include projectStateMode (Decision 2)", () => {
     expect(RESTART_REQUIRED_FIELDS).not.toContain("projectStateMode")
+  })
+})
+
+// ── Phase 2: codex hook config (codex-hooks-bridge) ──────────────────────────
+
+describe("loadConfig — hookToken", () => {
+  test("parses PILOT_HOOK_TOKEN into config.hookToken", () => {
+    const cfg = loadConfig({ PILOT_HOOK_TOKEN: "mySecret123" })
+    expect(cfg.hookToken).toBe("mySecret123")
+  })
+
+  test("hookToken is undefined when PILOT_HOOK_TOKEN not set", () => {
+    const cfg = loadConfig({})
+    expect(cfg.hookToken).toBeUndefined()
+  })
+})
+
+describe("loadConfig — codexPermissionTimeoutMs", () => {
+  test("parses PILOT_CODEX_PERMISSION_TIMEOUT_MS", () => {
+    const cfg = loadConfig({ PILOT_CODEX_PERMISSION_TIMEOUT_MS: "60000" })
+    expect(cfg.codexPermissionTimeoutMs).toBe(60_000)
+  })
+
+  test("falls back to PILOT_PERMISSION_TIMEOUT when PILOT_CODEX_PERMISSION_TIMEOUT_MS is missing", () => {
+    const cfg = loadConfig({ PILOT_PERMISSION_TIMEOUT: "120000" })
+    expect(cfg.codexPermissionTimeoutMs).toBe(120_000)
+  })
+
+  test("defaults to DEFAULT_CODEX_PERMISSION_TIMEOUT_MS (250000) when neither env var is set", () => {
+    const cfg = loadConfig({})
+    expect(cfg.codexPermissionTimeoutMs).toBe(DEFAULT_CODEX_PERMISSION_TIMEOUT_MS)
+  })
+
+  test("falls back to DEFAULT_CODEX_PERMISSION_TIMEOUT_MS when PILOT_PERMISSION_TIMEOUT equals DEFAULT_PERMISSION_TIMEOUT_MS (WARNING-01 + Fix-6 cap)", () => {
+    // PILOT_PERMISSION_TIMEOUT=300000 equals DEFAULT_PERMISSION_TIMEOUT_MS, so fallback
+    // uses DEFAULT_CODEX_PERMISSION_TIMEOUT_MS (250000), then caps at MAX (250000) — result is 250000.
+    const cfg = loadConfig({ PILOT_PERMISSION_TIMEOUT: String(DEFAULT_PERMISSION_TIMEOUT_MS) })
+    expect(cfg.codexPermissionTimeoutMs).toBe(DEFAULT_CODEX_PERMISSION_TIMEOUT_MS)
+  })
+
+  test("throws ConfigError when PILOT_CODEX_PERMISSION_TIMEOUT_MS is non-numeric", () => {
+    expect(() => loadConfig({ PILOT_CODEX_PERMISSION_TIMEOUT_MS: "abc" })).toThrow(ConfigError)
+  })
+
+  test("throws ConfigError when PILOT_CODEX_PERMISSION_TIMEOUT_MS exceeds MAX_CODEX_PERMISSION_TIMEOUT_MS (300000)", () => {
+    expect(() => loadConfig({ PILOT_CODEX_PERMISSION_TIMEOUT_MS: "300000" })).toThrow(ConfigError)
+    const err = (() => {
+      try {
+        loadConfig({ PILOT_CODEX_PERMISSION_TIMEOUT_MS: "300000" })
+      } catch (e) {
+        return e as Error
+      }
+    })()
+    expect(err).toBeInstanceOf(ConfigError)
+    expect(err!.message).toContain("250000")
+  })
+
+  test("accepts PILOT_CODEX_PERMISSION_TIMEOUT_MS = MAX (250000)", () => {
+    const cfg = loadConfig({ PILOT_CODEX_PERMISSION_TIMEOUT_MS: String(MAX_CODEX_PERMISSION_TIMEOUT_MS) })
+    expect(cfg.codexPermissionTimeoutMs).toBe(MAX_CODEX_PERMISSION_TIMEOUT_MS)
+  })
+
+  test("DEFAULT_CODEX_PERMISSION_TIMEOUT_MS is 250000 (capped below Bun 255s idle timeout)", () => {
+    expect(DEFAULT_CODEX_PERMISSION_TIMEOUT_MS).toBe(250_000)
+    expect(DEFAULT_CODEX_PERMISSION_TIMEOUT_MS).toBeLessThanOrEqual(MAX_CODEX_PERMISSION_TIMEOUT_MS)
+  })
+
+  test("fallback via PILOT_PERMISSION_TIMEOUT is capped at MAX_CODEX_PERMISSION_TIMEOUT_MS", () => {
+    // PILOT_PERMISSION_TIMEOUT > MAX should be capped, not thrown
+    const cfg = loadConfig({ PILOT_PERMISSION_TIMEOUT: "400000" })
+    expect(cfg.codexPermissionTimeoutMs).toBe(MAX_CODEX_PERMISSION_TIMEOUT_MS)
   })
 })
 

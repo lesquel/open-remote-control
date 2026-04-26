@@ -1,6 +1,6 @@
 // paths.ts — XDG-aware path helpers for the TUI and CLI.
 //
-// This file intentionally duplicates the logic from src/server/util/paths.ts.
+// This file intentionally duplicates the logic from src/infra/paths/index.ts.
 // Reason: the TUI and CLI run in a different deployment context from the server
 // plugin. Importing across that boundary would create a hard coupling that
 // breaks when the two modules are loaded in separate Bun instances or bundled
