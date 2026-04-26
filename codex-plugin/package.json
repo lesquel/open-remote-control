@@ -1,0 +1,8 @@
+{
+  "name": "codex-plugin-opencode-pilot",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  }
+}

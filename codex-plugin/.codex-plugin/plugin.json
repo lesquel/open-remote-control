@@ -1,0 +1,22 @@
+{
+  "name": "opencode-pilot",
+  "version": "1.18.1",
+  "description": "Remote control dashboard for Codex sessions — monitor, send prompts, approve permissions, get notifications.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "OpenCode Pilot",
+    "shortDescription": "Remote control for your Codex sessions",
+    "longDescription": "Monitor sessions, approve permissions, send prompts, and receive push/Telegram notifications — all from a browser dashboard or your phone. Requires opencode-pilot HTTP server running locally (install via `npm i -g @lesquel/opencode-pilot` and run `opencode`).",
+    "developerName": "lesquel",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read"],
+    "websiteURL": "https://github.com/lesquel/open-remote-control",
+    "brandColor": "#3B82F6",
+    "defaultPrompt": [
+      "Open the remote control dashboard",
+      "Configure my Codex hooks for opencode-pilot",
+      "Check pilot status and dashboard URL"
+    ]
+  }
+}

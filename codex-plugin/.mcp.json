@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "opencode-pilot": {
+      "command": "node",
+      "args": ["scripts/mcp-server.mjs"],
+      "env": {
+        "PILOT_URL": "",
+        "PILOT_TOKEN": ""
+      }
+    }
+  }
+}
