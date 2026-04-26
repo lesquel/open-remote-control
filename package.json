@@ -74,7 +74,10 @@
     "multi-project",
     "developer-tools",
     "claude",
-    "anthropic"
+    "anthropic",
+    "codex",
+    "codex-cli",
+    "openai"
   ],
   "dependencies": {
     "@opencode-ai/plugin": "latest",

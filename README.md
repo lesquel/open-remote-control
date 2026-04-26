@@ -1,6 +1,6 @@
 # @lesquel/opencode-pilot
 
-> Remote control plugin for [OpenCode](https://opencode.ai) — monitor sessions, send prompts, approve permissions, switch agents, and get notifications from your phone or any browser.
+> Remote control plugin for [OpenCode](https://opencode.ai) and [Codex CLI](https://github.com/openai/codex) — monitor sessions, send prompts, approve permissions, switch agents, and get notifications from your phone or any browser.
 
 [![npm version](https://img.shields.io/npm/v/@lesquel/opencode-pilot.svg)](https://www.npmjs.com/package/@lesquel/opencode-pilot)
 [![npm downloads](https://img.shields.io/npm/dm/@lesquel/opencode-pilot.svg)](https://www.npmjs.com/package/@lesquel/opencode-pilot)
@@ -23,6 +23,7 @@ Spin up OpenCode locally, get a web dashboard you can open on your laptop or pho
 - Diff view of all files changed
 - File browser with live filter
 - Connect from your phone via QR code (LAN or public tunnel)
+- **Monitor [Codex CLI](https://github.com/openai/codex) sessions too** via the `/codex/hooks/:event` HTTP bridge — same dashboard, same notifications, same permission flow (see [`docs/CODEX-INTEGRATION.md`](./docs/CODEX-INTEGRATION.md))
 
 All from one keyboard shortcut (`?` opens the command palette).
 
