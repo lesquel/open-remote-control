@@ -4,9 +4,9 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [1.18.0] - 2026-04-26
 
-### Changed — Architecture refactor (v1.18.0 internal restructure, no breaking changes)
+### Changed — Architecture refactor (internal restructure, no breaking changes)
 
 **Architecture refactor — internal restructure (no breaking changes).** Reorganized
 `src/` from technology-layered (`server/{http,services,util,hooks,dashboard}`) to
