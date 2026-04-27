@@ -29,7 +29,6 @@ const PRECACHE = [
   "./auth/auth.js",
   "./sse/sse.js",
   "./components/markdown.js",
-  "./ui/diff.js",
   "./components/messages.js",
   "./components/sessions.js",
   "./components/multi-view.js",
