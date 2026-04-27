@@ -234,8 +234,7 @@ function attachInlineValidation(inputId, validate) {
   const el = document.getElementById(inputId)
   if (!el) return
   const hint = document.createElement('small')
-  hint.className = 'pcf-hint'
-  hint.style.color = '#ff8585'
+  hint.className = 'pcf-hint pcf-hint--error'
   hint.style.display = 'none'
   // Insert after the input's closest wrapping element (.pcf-secret-wrap) or the input itself.
   const anchor = el.closest('.pcf-secret-wrap') || el
