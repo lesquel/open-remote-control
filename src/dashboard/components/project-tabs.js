@@ -185,14 +185,18 @@ export async function switchProjectTab(id) {
       }
     } catch (_) {}
 
-    // Background refresh: fetch fresh sessions for this tab so the list is
-    // never stuck showing data from a previous tab or an old cached load.
-    // Fire-and-forget — the UI already shows cached data above; this updates
-    // it once the network call completes.
-    try {
-      const { loadSessions } = await import('./sessions.js')
-      loadSessions(false).catch(() => {})
-    } catch (_) {}
+    // Do NOT fire a background loadSessions(false) here.
+    //
+    // The fire-and-forget loadSessions(false) that was added in the #9 fix
+    // runs concurrently with SSE events and calls setState({ sessions }) without
+    // calling autoSelect(). When the active session was null at that moment,
+    // the SSE handleEvent guard `if (activeSession && !multiviewActive)` saw
+    // null and skipped loadMessages — AI responses were silently dropped (#17).
+    //
+    // The SSE stream already guarantees freshness:
+    //  - onopen calls loadSessions(true) after every reconnect
+    //  - session.* events call loadSessions() on every server-side change
+    // An extra background call is therefore redundant and harmful.
   }
 
   renderTabs()
