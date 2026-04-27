@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.18.3] - 2026-04-27
+
+### Fixed
+
+- **AI response was missing + not persisted in existing sessions (#17, P0).** Regression introduced by the v1.18.2 project-tabs scoping. After `switchProjectTab()`, `state.activeSession` could remain `null` (when a tab had cached sessions but no prior selection), so the SSE event handler's `if (activeSession && !multiviewActive)` guard short-circuited and `loadMessages` was never called. Result: assistant messages silently dropped and never persisted. Fix: auto-select the most-recently-updated session after `syncActiveTabToState()` if no selection exists, and remove the racy background `loadSessions(false)` call (the SSE `onopen` already triggers a full `loadSessions(true)` so the extra call only created concurrent setState races with SSE event handlers).
+- **Files sidebar did not refresh on project tab switch (#18).** Companion fix to v1.18.2's #9: `switchProjectTab()` reloaded sessions for the new directory but the file-browser cache (`childrenCache`) was never cleared, so the sidebar kept showing the previous project's files. Fix: call `window.__fileBrowser?.refresh()` from `switchProjectTab()`, which clears the cache and re-fetches `.` for the new `activeDirectory`.
+- **New chat now preselects the default agent + syncs both display surfaces (#19).** Creating a new session left both the compose-bar agent strip and the session info-bar agent badge with no value. Added `pickDefaultAgent(agents)` pure helper (`agent.default === true` → first item fallback) and wired both surfaces through a shared `_sessionAgentPrefs` channel so they always show the same value. `presetSessionAgent()` is invoked after `createSession()` to seed the preference.
+
+### Removed
+
+- **Inert "Diff" tab next to "Messages" (#20).** Half-implemented feature — the tab existed and called `loadDiff` → `fetchDiff` → `GET /sessions/:id/diff`, but no UI ever rendered the result. Removed the markup, related CSS, and the dead JS path. Backend `GET /sessions/:id/diff` route is preserved for the future implementation tracked in #22.
+
 ## [1.18.2] - 2026-04-26
 
 ### Fixed
