@@ -1,9 +1,11 @@
 // connect-modal.js — "Connect from phone" modal
-// Shows LAN, tunnel, and local URLs with QR codes rendered via dynamically
-// loaded qrcode library. Falls back to copyable URL text if CDN unavailable.
+// Shows LAN URL (+ tunnel above it when active) with QR code rendered via
+// dynamically loaded qrcode library. Localhost URL is intentionally omitted —
+// phones cannot reach 127.0.0.1 (closes #7).
 import { fetchConnectInfo } from '../api/api.js'
 import { toast } from '../ui/toast.js'
 import { openModal } from './modal-helper.js'
+import { pickBestUrlForMobile } from './connect-url-picker.js'
 
 // ── QR loader (cached promise, loaded once) ────────────────────────────────
 
@@ -69,7 +71,6 @@ async function renderQR(container, url) {
 // ── State ──────────────────────────────────────────────────────────────────
 
 let _isOpen = false
-let _activeTab = 'lan'
 let _connectInfo = null
 let _refreshTimer = null
 let _modalHandle = null
@@ -129,52 +130,49 @@ function _renderContent() {
   const body = document.getElementById('connect-phone-body')
   if (!body) return
 
-  body.innerHTML = `
-    <div class="cpm-tabs">
-      <button class="cpm-tab${_activeTab === 'lan' ? ' active' : ''}" data-tab="lan">Local network</button>
-      <button class="cpm-tab${_activeTab === 'tunnel' ? ' active' : ''}" data-tab="tunnel">Public tunnel</button>
-      <button class="cpm-tab${_activeTab === 'local' ? ' active' : ''}" data-tab="local">Localhost</button>
-    </div>
-    <div class="cpm-tab-content" id="cpm-tab-content"></div>
-  `
-
-  body.querySelectorAll('.cpm-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      _activeTab = btn.dataset.tab
-      body.querySelectorAll('.cpm-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === _activeTab))
-      _renderTab(document.getElementById('cpm-tab-content'))
-    })
-  })
-
-  _renderTab(document.getElementById('cpm-tab-content'))
-}
-
-function _renderTab(container) {
-  if (!container) return
-
   if (!_connectInfo) {
-    container.innerHTML = '<div class="cpm-loading">Loading…</div>'
+    body.innerHTML = '<div class="cpm-loading">Loading…</div>'
     return
   }
 
-  if (_activeTab === 'lan')    _renderLanTab(container)
-  if (_activeTab === 'tunnel') _renderTunnelTab(container)
-  if (_activeTab === 'local')  _renderLocalTab(container)
-}
+  const { lan, tunnel } = _connectInfo
 
-function _renderLanTab(container) {
-  const { lan } = _connectInfo
+  let html = ''
 
-  if (!lan.available) {
-    container.innerHTML = `
+  // ── Tunnel section (shown only when active) ────────────────────────────
+  if (tunnel?.available && tunnel?.url) {
+    html += `
+      <div class="cpm-section cpm-section--tunnel">
+        <div class="cpm-section-header">
+          <span class="cpm-section-label">Public tunnel</span>
+          <span class="cpm-provider-badge">via ${escHtml(tunnel.provider ?? '')}</span>
+        </div>
+        <div class="cpm-qr-wrap" id="cpm-qr-tunnel"></div>
+        <div class="cpm-url-row">
+          <code class="cpm-url">${escHtml(tunnel.url)}</code>
+          <button class="btn btn-ghost cpm-copy-btn" data-copy="${escHtml(tunnel.url)}">Copy</button>
+        </div>
+        <div class="cpm-warning-box cpm-warning-box--security">
+          Anyone with this URL + token can control your OpenCode. Treat the token as a password.
+        </div>
+      </div>
+    `
+  }
+
+  // ── LAN section ────────────────────────────────────────────────────────
+  html += '<div class="cpm-section cpm-section--lan">'
+
+  if (tunnel?.available) {
+    html += '<div class="cpm-section-label">Local network</div>'
+  }
+
+  if (!lan?.available) {
+    html += `
       <div class="cpm-warning-box">
-        No non-loopback network interface detected. Connect to a Wi-Fi or wired network.
+        LAN access is disabled. Set <code>PILOT_HOST=0.0.0.0</code> and restart to enable mobile access.
       </div>`
-    return
-  }
-
-  if (!lan.exposed) {
-    container.innerHTML = `
+  } else if (!lan.exposed) {
+    html += `
       <div class="cpm-warning-box">
         Server is bound to localhost only. To allow phone access, set
         <code>PILOT_HOST=0.0.0.0</code> and restart OpenCode.
@@ -186,88 +184,30 @@ function _renderLanTab(container) {
       <div class="cpm-note">
         Make sure your phone is on the same Wi-Fi network before binding to 0.0.0.0.
       </div>`
-    return
+  } else {
+    // LAN is available and exposed — show QR only when no tunnel (avoid two QR codes)
+    if (!tunnel?.available) {
+      html += `<div class="cpm-qr-wrap" id="cpm-qr-lan"></div>`
+    }
+    html += `
+      <div class="cpm-url-row">
+        <code class="cpm-url">${escHtml(lan.url ?? '')}</code>
+        <button class="btn btn-ghost cpm-copy-btn" data-copy="${escHtml(lan.url ?? '')}">Copy</button>
+      </div>
+      <div class="cpm-note">Make sure your phone is on the same Wi-Fi network.</div>`
   }
 
-  container.innerHTML = `
-    <div class="cpm-qr-wrap" id="cpm-qr-lan"></div>
-    <div class="cpm-url-row">
-      <code class="cpm-url" id="cpm-url-lan">${escHtml(lan.url ?? '')}</code>
-      <button class="btn btn-ghost cpm-copy-btn" data-copy="${escHtml(lan.url ?? '')}">Copy</button>
-    </div>
-    <div class="cpm-note">Make sure your phone is on the same Wi-Fi network.</div>
-  `
-  _wireCopyButtons(container)
-  renderQR(document.getElementById('cpm-qr-lan'), lan.url ?? '')
-}
+  html += '</div>'
 
-function _renderTunnelTab(container) {
-  const { tunnel } = _connectInfo
+  body.innerHTML = html
+  _wireCopyButtons(body)
 
-  if (!tunnel.available) {
-    const providerHint = tunnel.provider
-      ? `Provider: <strong>${escHtml(tunnel.provider)}</strong> — status: <strong>${escHtml(tunnel.status)}</strong><br>`
-      : ''
-    container.innerHTML = `
-      <div class="cpm-info-box">
-        ${providerHint}
-        No tunnel is currently active.
-      </div>
-      <div class="cpm-instructions">
-        <div class="cpm-instructions-title">How to enable a public tunnel:</div>
-        <div class="cpm-instructions-step">
-          <strong>Option 1 — Cloudflare Tunnel (recommended, zero-config):</strong><br>
-          <ol>
-            <li>Install cloudflared: <code>brew install cloudflare/cloudflare/cloudflared</code></li>
-            <li>Restart OpenCode with: <code>PILOT_TUNNEL=cloudflared</code></li>
-          </ol>
-        </div>
-        <div class="cpm-instructions-step">
-          <strong>Option 2 — ngrok:</strong><br>
-          <ol>
-            <li>Install ngrok: <code>brew install ngrok/ngrok/ngrok</code></li>
-            <li>Authenticate: <code>ngrok config add-authtoken YOUR_TOKEN</code></li>
-            <li>Restart OpenCode with: <code>PILOT_TUNNEL=ngrok</code></li>
-          </ol>
-        </div>
-      </div>
-      <div class="cpm-note">
-        ${escHtml(tunnel.howTo ?? '')}
-      </div>`
-    return
+  // Render QR for the primary URL (tunnel takes priority)
+  if (tunnel?.available && tunnel?.url) {
+    renderQR(document.getElementById('cpm-qr-tunnel'), tunnel.url)
+  } else if (lan?.available && lan?.exposed && lan?.url) {
+    renderQR(document.getElementById('cpm-qr-lan'), lan.url)
   }
-
-  container.innerHTML = `
-    <div class="cpm-qr-wrap" id="cpm-qr-tunnel"></div>
-    <div class="cpm-url-row">
-      <code class="cpm-url" id="cpm-url-tunnel">${escHtml(tunnel.url ?? '')}</code>
-      <button class="btn btn-ghost cpm-copy-btn" data-copy="${escHtml(tunnel.url ?? '')}">Copy</button>
-    </div>
-    <div class="cpm-provider-badge">via ${escHtml(tunnel.provider ?? '')}</div>
-    <div class="cpm-warning-box cpm-warning-box--security">
-      Anyone with this URL + token can control your OpenCode. Treat the token as a password.
-      Rotate it regularly via the command palette (Rotate Token).
-    </div>
-  `
-  _wireCopyButtons(container)
-  renderQR(document.getElementById('cpm-qr-tunnel'), tunnel.url ?? '')
-}
-
-function _renderLocalTab(container) {
-  const { local } = _connectInfo
-
-  container.innerHTML = `
-    <div class="cpm-qr-wrap" id="cpm-qr-local"></div>
-    <div class="cpm-url-row">
-      <code class="cpm-url" id="cpm-url-local">${escHtml(local.url)}</code>
-      <button class="btn btn-ghost cpm-copy-btn" data-copy="${escHtml(local.url)}">Copy</button>
-    </div>
-    <div class="cpm-note">
-      Localhost only — useful for same-device access or Tauri-style setups.
-    </div>
-  `
-  _wireCopyButtons(container)
-  renderQR(document.getElementById('cpm-qr-local'), local.url)
 }
 
 function _wireCopyButtons(container) {
