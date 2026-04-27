@@ -120,6 +120,11 @@ export function addProjectTab(directory, label) {
     return existing
   }
   const tab = stateAddTab(directory, label)
+  // Fix #10: persist the new tab immediately after creation, before switchProjectTab
+  // runs its async phases.  switchProjectTab also calls persistTabs() synchronously
+  // before its first await, but calling it here as well ensures the tab is saved
+  // even in edge cases (e.g. switchProjectTab returns early due to a stale id race).
+  persistTabs()
   switchProjectTab(tab.id)
   return tab
 }
@@ -147,14 +152,16 @@ export async function switchProjectTab(id) {
   // strip / right panel reflect the new project's config.
   try { await window.__refreshReferences?.() } catch (_) {}
 
-  // Lazy session load: only fetch if this tab hasn't been populated yet.
+  // Session load strategy (fix #9):
+  // - Unloaded tab: call ensureSessionsLoaded to fetch fresh data.
+  // - Already-loaded tab: render cached data immediately for a snappy switch,
+  //   then trigger a background refresh so stale cache never persists.
+  //   Previously, loaded tabs only re-rendered from cache, meaning any data
+  //   that leaked from a different tab or became stale was never corrected.
   if (!tab.loaded) {
     await ensureSessionsLoaded(tab)
   } else {
-    // Tab was previously loaded — re-render sessions list and messages pane
-    // so the UI reflects the restored tab data immediately (fix for "frozen"
-    // session switch: renderSessions + loadMessages were only called in
-    // ensureSessionsLoaded, which was skipped for already-loaded tabs).
+    // Render cached data immediately so the switch feels instant.
     try {
       const { renderSessions, updateHeaderSession, updateInfoBar } = await import('./sessions.js')
       renderSessions()
@@ -172,6 +179,15 @@ export async function switchProjectTab(id) {
         // would otherwise keep showing the previous tab's files.
         try { window.__refreshFilesChanged?.(activeSession) } catch (_) {}
       }
+    } catch (_) {}
+
+    // Background refresh: fetch fresh sessions for this tab so the list is
+    // never stuck showing data from a previous tab or an old cached load.
+    // Fire-and-forget — the UI already shows cached data above; this updates
+    // it once the network call completes.
+    try {
+      const { loadSessions } = await import('./sessions.js')
+      loadSessions(false).catch(() => {})
     } catch (_) {}
   }
 
