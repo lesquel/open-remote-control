@@ -158,6 +158,24 @@ export function switchProjectTab(id) {
   state.activeProjectId = tab.id
   state.activeDirectory = tab.directory ?? null
   syncActiveTabToState()
+
+  // If the tab has cached sessions but no active session, auto-select the
+  // most-recently-updated one so SSE routing in handleEvent works correctly.
+  // Without this guard, switching to an already-loaded tab that had never
+  // selected a session leaves state.activeSession = null — the SSE handler's
+  // `if (activeSession && !multiviewActive)` guard then skips loadMessages
+  // and AI responses are silently dropped (issue #17).
+  if (!state.activeSession) {
+    const ids = Object.keys(state.sessions)
+    if (ids.length > 0) {
+      const best = ids.reduce((a, b) =>
+        ((state.sessions[b]?.time?.updated ?? 0) > (state.sessions[a]?.time?.updated ?? 0)) ? b : a
+      )
+      state.activeSession = best
+      tab.activeSession   = best
+    }
+  }
+
   return tab
 }
 
