@@ -1,7 +1,7 @@
 // main.js — Entry point: resolves auth, bootstraps all modules
 import { initWelcome } from './components/welcome.js'
 import { resolveToken, showTokenExpiredScreen, clearStoredToken } from './auth/auth.js'
-import { setState, getActiveDirectory, subscribe, getProjectTabs } from './state/state.js'
+import { setState, getActiveDirectory, getActiveProjectTab, subscribe, getProjectTabs } from './state/state.js'
 import { initMarkdown } from './components/markdown.js'
 import { loadSettings } from './components/settings.js'
 import { loadMVState, initMultiView, showMultiview } from './components/multi-view.js'
@@ -520,8 +520,12 @@ async function bootstrap() {
   }
 
   function _refreshProjectLabel() {
-    const dir = getActiveDirectory()
-    const label = dir ? (dir.split('/').filter(Boolean).pop() ?? 'project') : 'default'
+    // Fix #8: read the active tab's .label (the single source of truth) instead
+    // of re-deriving from getActiveDirectory(). Re-deriving produces 'default'
+    // when activeDirectory is null even if the tab has a meaningful label set by
+    // the user or auto-derived from the worktree basename.
+    const activeTab = getActiveProjectTab()
+    const label = activeTab?.label ?? 'default'
     const sidebarLabel = document.getElementById('sessions-project-label')
     const headerLabel  = document.getElementById('header-project-label')
     if (sidebarLabel) sidebarLabel.textContent = label
