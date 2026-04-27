@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.18.2] - 2026-04-26
+
+### Fixed
+
+- **Project tab title shows actual folder name (#8).** Previously the tab title was re-derived from `getActiveDirectory()` and fell back to the literal string `"default"` when no directory was set; now it reads the persisted `tab.label` so each tab consistently shows the project name it was created with.
+- **Switching project tabs now refreshes sessions and files (#9).** Tab switches were not triggering a session list refresh — the dashboard kept showing the previous tab's data. Now switching to a loaded tab kicks off a background `loadSessions()` against that project's directory.
+- **Adding a project persists immediately (#10).** `addProjectTab()` relied on the (unawaited) `switchProjectTab()` to persist the new tab. New tabs now call `persistTabs()` explicitly so they survive a reload.
+- **Notifications tab layout (#14).** The push-notification row used the `.setting-row` flex layout while sibling Telegram/VAPID rows used the `.pcf-row` 3-column grid. On viewports under 500 px the grid stacked to one column but the flex row stayed two-column, breaking alignment. Push row now uses the same grid model so all notification rows stack consistently on mobile.
+- **Cloudflared tunnel orphan grandchild on shutdown (#15).** When cloudflared is installed via `bun install -g cloudflared`, the bun wrapper spawns the native binary as a grandchild. `child.kill('SIGTERM')` only signaled the wrapper PID, leaving the native cloudflared process running indefinitely. Tunnel processes are now spawned with `detached: true` and killed via `process.kill(-pid, signal)` to signal the entire process group.
+- **`waitForUrl()` no longer drops URLs split across stdout chunks (#16).** Previously the regex ran against each stdout chunk independently, so a URL split across two TCP chunks (e.g. `https://abc-d` then `ef.trycloudflare.com`) was missed and the function timed out after 20s. Cloudflared output is now accumulated into a rolling buffer (capped at 64 KiB) and the regex runs against the cumulative text on every chunk.
+
+### Changed
+
+- **Connect modal shows LAN/tunnel only, drops the localhost URL (#7).** The "Localhost" tab in the connect-from-phone modal was useless for its purpose — phones cannot reach `127.0.0.1`. Modal now shows only the tunnel URL (when active) and the LAN URL, with a hint when LAN is unavailable. The `pickBestUrlForMobile()` helper was extracted to a pure module so it's unit-testable without a DOM.
+
+### Internal
+
+- **Settings UI polish (#12).** Inline error hints now use a CSS class instead of a hardcoded `#ff8585` color so they respect the active theme. `.settings-status` gains `flex: 1` so the restart-required banner does not push the Save button off-screen. Added a visual divider between the push toggle and Telegram fields in the Notifications pane.
+- **Removed orphaned `.settings-box` CSS (#13).** ~53 lines of CSS rules and mobile media-query overrides referencing the dead `.settings-box` class (replaced with `.modal-panel` in the Wave-5 modal refactor) were removed.
+
 ## [1.18.1] - 2026-04-26
 
 ### Fixed
