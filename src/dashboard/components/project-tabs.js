@@ -146,6 +146,10 @@ export async function switchProjectTab(id) {
   // Refresh panels that depend on activeDirectory.
   try { window.__refreshRightPanel?.() } catch (_) {}
   try { window.__refreshLabelStrip?.() } catch (_) {}
+  // Fix #18: reset the file browser so it loads the new project's files, not
+  // the previous tab's cached tree. refresh() clears childrenCache + expandedDirs
+  // and triggers a fresh fetchFileList call for the new activeDirectory.
+  try { window.__fileBrowser?.refresh() } catch (_) {}
 
   // Re-fetch references for the new directory (agents, providers, MCP, …).
   // This is cheap-ish (one-shot load per session) and necessary so the label
