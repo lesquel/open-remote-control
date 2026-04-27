@@ -4633,6 +4633,7 @@ body {
   font-size: 10px;
   color: var(--text-muted);
 }
+.pcf-hint--error { color: #ff8585; }
 
 .pcf-secret-wrap {
   display: flex;
@@ -5009,6 +5010,7 @@ kbd {
 
 .settings-panes { padding: 12px 18px; max-height: calc(100vh - 220px); overflow-y: auto; }
 .settings-pane > * + * { margin-top: 12px; }
+.settings-section-divider { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
 
 .settings-footer {
   display: flex;
@@ -5018,5 +5020,5 @@ kbd {
   padding: 12px 18px;
   border-top: 1px solid var(--border);
 }
-.settings-status { font-size: 0.85rem; color: var(--text-dim); }
+.settings-status { font-size: 0.85rem; color: var(--text-dim); flex: 1; min-width: 0; }
 
