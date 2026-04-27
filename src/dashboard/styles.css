@@ -1356,40 +1356,6 @@ body {
  * `.modal-backdrop` + `.modal-backdrop[hidden]` rules control visibility
  * exactly like every other modal in the dashboard.
  */
-.settings-box {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px 20px;
-  min-width: 280px;
-  max-width: 360px;
-  /* When the plugin config expands every section, the modal can exceed
-     viewport height. Cap at 85vh and let the box scroll its own content
-     instead of clipping off-screen. Mobile (<=768px) already overrides. */
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
-  /* Subtle scrollbar that doesn't steal from the horizontal padding. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-.settings-box::-webkit-scrollbar { width: 6px; }
-.settings-box::-webkit-scrollbar-track { background: transparent; }
-.settings-box::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
-}
-.settings-box::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
-.settings-box h3 {
-  font-size: 11px;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  font-weight: 700;
-  margin-bottom: 2px;
-}
 .setting-row {
   display: flex;
   align-items: center;
@@ -3267,19 +3233,6 @@ body {
 
 /* ── 7. Modals: full-screen on mobile ────────────────────────────────────── */
 @media (max-width: 768px) {
-  /* Settings modal */
-  .settings-box {
-    width: 100vw;
-    max-width: 100vw;
-    min-width: 0;
-    border-radius: 0;
-    border: none;
-    border-top: 1px solid var(--border);
-    padding: 20px 16px;
-    height: auto;
-    max-height: 90vh;
-    overflow-y: auto;
-  }
   #settings-modal {
     align-items: flex-end;
   }
@@ -4580,11 +4533,7 @@ body {
 
 /* ── Plugin configuration (v1.12) ─────────────────────────────────────────
    New "Plugin configuration" section inside the Settings modal. Lets users
-   edit plugin env vars from the UI — persisted to ~/.opencode-pilot/config.json.
-
-   Widens the settings box to fit inputs on desktop; collapses nicely on mobile. */
-
-.settings-box { max-width: 460px; }
+   edit plugin env vars from the UI — persisted to ~/.opencode-pilot/config.json. */
 
 .plugin-config-section {
   border-top: 1px solid var(--border);
@@ -4748,7 +4697,6 @@ body {
 }
 
 @media (max-width: 768px) {
-  .settings-box { max-width: 100vw; }
   .pcf-row {
     grid-template-columns: 1fr;
     gap: 4px;
