@@ -7,6 +7,8 @@
  * function is exercised.
  */
 
+import { describe, it, expect } from "bun:test"
+
 // We test the pure function by importing it directly from the JS module.
 // Bun supports mixed TS/JS imports natively.
 import { pickBestUrlForMobile } from './connect-url-picker.js'
