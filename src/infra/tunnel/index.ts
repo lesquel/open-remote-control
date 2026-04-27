@@ -76,8 +76,14 @@ async function startCloudflared(port: number): Promise<TunnelInstance> {
   const proc = spawn(
     "cloudflared",
     ["tunnel", "--url", `http://127.0.0.1:${port}`, "--no-autoupdate"],
-    { stdio: ["ignore", "pipe", "pipe"] },
+    // detached: true makes the child a process-group leader (pgid == pid).
+    // This is required so that process.kill(-pid, signal) in killTunnelProcess
+    // signals the entire group — including any grandchild spawned by the bun
+    // wrapper when cloudflared is installed via `bun install -g` (issue #15).
+    { stdio: ["ignore", "pipe", "pipe"], detached: true },
   )
+  // Unref so our process can exit without waiting for cloudflared.
+  proc.unref()
 
   const publicUrl = await waitForUrl(proc, TUNNEL_URL_PATTERNS.cloudflared, TUNNEL_START_TIMEOUT_MS)
 
@@ -95,9 +101,13 @@ async function startNgrok(port: number): Promise<TunnelInstance> {
     return { publicUrl: null, provider: "ngrok", stop: () => {} }
   }
 
+  // detached: true — same rationale as cloudflared (issue #15): makes the child
+  // a process-group leader so killTunnelProcess can signal the whole group.
   const proc = spawn("ngrok", ["http", `${port}`, "--log=stdout"], {
     stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
   })
+  proc.unref()
 
   const publicUrl = await waitForUrl(
     proc,
@@ -114,28 +124,42 @@ async function startNgrok(port: number): Promise<TunnelInstance> {
   }
 }
 
-// Aggressively kill a tunnel child. Some providers (cloudflared in particular)
-// re-spawn or hold their socket long enough that a polite SIGTERM is slow —
-// if the parent OpenCode process is closing a window, the tunnel must die
-// now, not eventually. We SIGTERM first, then SIGKILL at 400ms if it's
-// still breathing, then run the on-dead callback.
+// Aggressively kill a tunnel child and its entire process group. Some providers
+// (cloudflared in particular) re-spawn or hold their socket long enough that a
+// polite SIGTERM is slow — if the parent OpenCode process is closing a window,
+// the tunnel must die now, not eventually.
+//
+// When the child was spawned with `detached: true` (which we do for cloudflared
+// and ngrok) it becomes its own process-group leader with pgid == pid. Sending
+// SIGTERM to the negative PID signals every process in that group — including
+// any grandchild spawned by the bun wrapper when the tool is installed via
+// `bun install -g` (issue #15). We SIGTERM the group first, then SIGKILL the
+// group at 400 ms if anything is still breathing, then run the on-dead callback.
 function killTunnelProcess(proc: ChildProcess, onDead: () => void): void {
   if (proc.exitCode !== null || proc.killed) {
     onDead()
     return
   }
-  try {
-    proc.kill("SIGTERM")
-  } catch {
-    // already gone
+  const pid = proc.pid
+  const sendSignal = (sig: NodeJS.Signals) => {
+    if (pid === undefined) return
+    // Prefer process-group kill (negative PID) so grandchildren are included.
+    // Fall back to proc.kill() if the group signal throws (e.g. ESRCH when the
+    // process is already gone, or EPERM in a restricted sandbox).
+    try {
+      process.kill(-pid, sig)
+    } catch {
+      try {
+        proc.kill(sig)
+      } catch {
+        // already gone — ignore
+      }
+    }
   }
+  sendSignal("SIGTERM")
   const killTimer = setTimeout(() => {
     if (proc.exitCode === null && !proc.killed) {
-      try {
-        proc.kill("SIGKILL")
-      } catch {
-        // already gone
-      }
+      sendSignal("SIGKILL")
     }
   }, TUNNEL_KILL_GRACE_MS)
   const onExit = () => {
