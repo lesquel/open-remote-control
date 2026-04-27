@@ -95,18 +95,6 @@ function renderPanel(container, files) {
     localStorage.setItem(COLLAPSED_KEY, container.classList.contains('collapsed') ? '1' : '0')
   })
 
-  // Click a file row → switch to the Diff tab
-  container.querySelectorAll('.files-changed-item').forEach(el => {
-    el.addEventListener('click', () => {
-      // Activate the diff tab
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
-      document.querySelectorAll('.tab-panel').forEach(t => t.classList.remove('active'))
-      const diffTab = document.querySelector('.tab[data-tab="diff-tab"]')
-      const diffPanel = document.getElementById('diff-tab')
-      if (diffTab)  diffTab.classList.add('active')
-      if (diffPanel) diffPanel.classList.add('active')
-    })
-  })
 }
 
 // ── Debounce helper ────────────────────────────────────────────────────────
