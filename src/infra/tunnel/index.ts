@@ -3,6 +3,7 @@ import { existsSync } from "fs"
 import { delimiter } from "path"
 import type { TunnelProvider } from "./types"
 import { TUNNEL_URL_PATTERNS, TUNNEL_START_TIMEOUT_MS, TUNNEL_KILL_GRACE_MS } from "./constants"
+import { createUrlExtractor } from "./url-extractor"
 
 export type { TunnelProvider }
 
@@ -153,6 +154,11 @@ function waitForUrl(
 ): Promise<string | null> {
   return new Promise((resolve) => {
     let resolved = false
+    // A single extractor is shared across stdout and stderr so that a URL split
+    // across two consecutive chunks (TCP fragmentation, slow machine) is still
+    // detected correctly. Each call to extractor.feed() appends to a rolling
+    // buffer and runs the regex against the accumulated text.
+    const extractor = createUrlExtractor(pattern)
 
     const timer = setTimeout(() => {
       if (!resolved) {
@@ -162,12 +168,11 @@ function waitForUrl(
     }, timeoutMs)
 
     function scan(chunk: Buffer): void {
-      const text = chunk.toString()
-      const match = text.match(pattern)
-      if (match && !resolved) {
+      const url = extractor.feed(chunk.toString())
+      if (url !== null && !resolved) {
         resolved = true
         clearTimeout(timer)
-        resolve(match[0])
+        resolve(url)
       }
     }
 
