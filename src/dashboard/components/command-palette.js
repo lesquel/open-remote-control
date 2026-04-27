@@ -799,6 +799,24 @@ export function getActiveSessionAgentPref() {
   return activeSession ? _sessionAgentPrefs.get(activeSession) ?? null : null
 }
 
+/**
+ * Pre-seed an agent preference for a session that was just created.
+ * Called by sessions.js after createSession() so both the label-strip
+ * and the send path know which agent to use on the first prompt.
+ *
+ * Deliberately does NOT show a toast — this is an automatic default,
+ * not an explicit user choice.
+ *
+ * @param {string} sessionId
+ * @param {string} agentName
+ */
+export function presetSessionAgent(sessionId, agentName) {
+  if (!sessionId || !agentName) return
+  _sessionAgentPrefs.set(sessionId, agentName)
+  // Update label-strip immediately so it shows the pending agent
+  window.__labelStripSetPending?.({ agent: agentName })
+}
+
 function copySessionId() {
   const { activeSession } = getState()
   if (!activeSession) { toast('No session selected'); return }
@@ -1059,6 +1077,11 @@ export function initCommandPalette() {
 
   // Expose agent picker globally so the compose-bar agent button can trigger it
   window.__openAgentPicker = openAgentPicker
+
+  // Expose agent-pref getter globally so sessions.js updateInfoBar can read
+  // the per-session preference without a circular import.
+  window.__getSessionAgentPref = (sessionId) =>
+    sessionId ? (_sessionAgentPrefs.get(sessionId) ?? null) : null
 }
 
 // ── Custom folder modal ────────────────────────────────────────────────────

@@ -6,8 +6,9 @@ import { loadDiff } from '../ui/diff.js'
 import { toast } from '../ui/toast.js'
 import { loadSubagents } from './subagents.js'
 import { refreshFilesChanged } from './files-changed-bridge.js'
-import { getAgent, agentColorFromName } from './references.js'
+import { getAgent, agentColorFromName, getAgents } from './references.js'
 import { LIMITS, STORAGE_KEYS, AGENT_BADGE_CLASS, EVENTS } from '../constants.js'
+import { pickDefaultAgent } from './default-agent.js'
 
 // Dynamic import to break circular dependency with multi-view.js
 async function addToMultiview(id) {
@@ -570,9 +571,16 @@ export function updateInfoBar(id, title, status, session) {
     hint.innerHTML = `Resume in TUI: <code>opencode --session ${esc(id)}</code>`
   }
 
-  // Agent badge on the session header (if the session exposes a mode/agent)
+  // Agent badge on the session header.
+  // Priority: session's own mode/agent field > pending pref from command-palette
+  // > default agent from /agents. This keeps both display surfaces in sync —
+  // the label-strip (compose bar) uses the same pending-pref mechanism.
   const agentBadge = document.getElementById('info-agent-badge')
-  const agent = sessionAgent(session)
+  const sessionOwnAgent = sessionAgent(session)
+  // Read pending pref lazily to avoid circular import (command-palette → sessions → command-palette)
+  const pendingPrefAgent = window.__getSessionAgentPref?.(id) ?? null
+  const defaultAgent = pickDefaultAgent(getAgents())
+  const agent = sessionOwnAgent ?? pendingPrefAgent ?? defaultAgent?.name ?? null
   if (agentBadge) {
     if (agent) {
       agentBadge.textContent = agent
@@ -678,6 +686,18 @@ export async function createSession() {
       setState({ sessions: { ...sessions, [s.id]: s } })
       updateAgentFilterOptions()
       renderSessions()
+
+      // Preselect the default agent for this brand-new session.
+      // Both display surfaces (label-strip and info-bar) must agree.
+      // We do this via a dynamic import to avoid a circular dep at module
+      // load time (command-palette → sessions → command-palette).
+      const defaultAgent = pickDefaultAgent(getAgents())
+      if (defaultAgent?.name) {
+        import('./command-palette.js')
+          .then(m => m.presetSessionAgent(s.id, defaultAgent.name))
+          .catch(() => {})
+      }
+
       if (multiviewActive) {
         addToMultiview(s.id)
       } else {

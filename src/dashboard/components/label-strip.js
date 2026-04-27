@@ -3,10 +3,11 @@
 // Fixed: references:ready re-render, raw fallback for unknown agents/models.
 // Fixed (B2): normalise wrapped SDK messages ({ info, parts }), add pending model indicator.
 import { getState, subscribe } from '../state/state.js'
-import { getModel, getProvider, getAgent, agentColorFromName, getFirstDefaultModel } from './references.js'
+import { getModel, getProvider, getAgent, agentColorFromName, getFirstDefaultModel, getAgents } from './references.js'
 import { fetchMessages } from '../api/api.js'
 import { normalizeMessage } from './messages.js'
 import { EVENTS } from '../constants.js'
+import { pickDefaultAgent } from './default-agent.js'
 
 /**
  * Factory: createLabelStrip({ container, state })
@@ -87,11 +88,12 @@ export function createLabelStrip({ container }) {
     const { activeSession } = getState()
 
     if (!activeSession) {
-      // No session — show defaults from references
+      // No session — show defaults from references (agent + model)
       const def = getFirstDefaultModel()
+      const defaultAgent = pickDefaultAgent(getAgents())
       const reason = 'no-session'
-      console.debug('[pilot:data] label-strip reason=%s modelId=%s providerId=%s', reason, def?.modelId, def?.providerId)
-      applyLabels(null, def?.modelId ?? null, def?.providerId ?? null, false)
+      console.debug('[pilot:data] label-strip reason=%s agent=%s modelId=%s providerId=%s', reason, defaultAgent?.name, def?.modelId, def?.providerId)
+      applyLabels(defaultAgent?.name ?? null, def?.modelId ?? null, def?.providerId ?? null, false)
       return
     }
 
@@ -141,10 +143,12 @@ export function createLabelStrip({ container }) {
     } else {
       const def = getFirstDefaultModel()
       const hasPending = !!_pendingPref
+      const defaultAgent = pickDefaultAgent(getAgents())
+      const displayAgent = _pendingPref?.agent ?? defaultAgent?.name ?? null
       const displayModel = _pendingPref?.modelID  ?? (def?.modelId ?? null)
       const displayProv  = _pendingPref?.providerID ?? (def?.providerId ?? null)
-      console.debug('[pilot:data] label-strip reason=no-messages model=%s prov=%s pending=%s', displayModel, displayProv, hasPending)
-      applyLabels(_pendingPref?.agent ?? null, displayModel, displayProv, hasPending)
+      console.debug('[pilot:data] label-strip reason=no-messages agent=%s model=%s prov=%s pending=%s', displayAgent, displayModel, displayProv, hasPending)
+      applyLabels(displayAgent, displayModel, displayProv, hasPending)
     }
   }
 
