@@ -23,6 +23,7 @@ const PRECACHE = [
   "./",
   "./index.html",
   "./styles.css",
+  "./tokens.css",
   "./main.js",
   "./state/state.js",
   "./api/api.js",
