@@ -1,8 +1,49 @@
 // Tests for validators/settings.ts.
-// Covers projectStateMode (project-state-opt-in) and hookToken (codex-hooks-bridge).
+// Covers projectStateMode (project-state-opt-in), hookToken (codex-hooks-bridge),
+// and tunnel provider (tunnel-ui-toggle-23).
 
 import { describe, expect, test } from "bun:test"
 import { validateSettingsPatch } from "./settings"
+
+// ── #23: tunnel provider validation ──────────────────────────────────────────
+
+describe("validateSettingsPatch — tunnel", () => {
+  test("accepts 'off'", () => {
+    const result = validateSettingsPatch({ tunnel: "off" })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.tunnel).toBe("off")
+  })
+
+  test("accepts 'cloudflared'", () => {
+    const result = validateSettingsPatch({ tunnel: "cloudflared" })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.tunnel).toBe("cloudflared")
+  })
+
+  test("accepts 'ngrok'", () => {
+    const result = validateSettingsPatch({ tunnel: "ngrok" })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.data.tunnel).toBe("ngrok")
+  })
+
+  test("rejects 'frp' with error naming tunnel", () => {
+    const result = validateSettingsPatch({ tunnel: "frp" })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("tunnel")
+  })
+
+  test("rejects numeric 1 with error naming tunnel", () => {
+    const result = validateSettingsPatch({ tunnel: 1 })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("tunnel")
+  })
+
+  test("rejects empty string with error", () => {
+    const result = validateSettingsPatch({ tunnel: "" })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("tunnel")
+  })
+})
 
 // ── Batch 6: projectStateMode validation ─────────────────────────────────────
 
