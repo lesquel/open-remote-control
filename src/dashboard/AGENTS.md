@@ -21,6 +21,7 @@
 - `ui/` — low-level UI utilities (diff, push notifications, shortcuts, toast, sound)
 - `routing/hash-dir-router.js` — hash-based SPA router
 - `__tests__/asset-sanity.test.ts` — **release pre-flight regression guard**: recursively scans all `.js` files for hardcoded `PILOT_VERSION` strings and checks version consistency across the three canonical locations
+- `tokens.css` — **vendored** design tokens from `lesquel/remote-control-landing@<sha>`; DO NOT edit by hand — re-run `scripts/sync-design-tokens.ts` to update
 - `__tests__/cost-pinned.test.ts`, `normalizeMessage.test.ts`, etc. — unit tests for browser-side logic
 
 ## Conventions specific to this folder
