@@ -238,7 +238,7 @@ function renderSessionRow(id, ctx) {
   const title = s.title || id.slice(0, 8)
   const cls = id === activeSession ? 'active' : ''
   const ago = timeAgo(s?.time?.updated)
-  const inMV = mvPanels.has(id) ? ' style="border-left-color:var(--warning)"' : ''
+  const inMV = mvPanels.has(id) ? ' style="border-left-color:var(--warn)"' : ''
   const agent = sessionAgent(s)
   const agentBadge = agent ? renderCompactAgentBadge(agent) : ''
   const meta = sessionMeta?.[id] ?? {}

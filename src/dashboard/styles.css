@@ -1,48 +1,26 @@
 /* ── CSS Custom Properties ──────────────────────────────────────────────── */
+/* Dashboard-specific layout + extra semantic tokens.
+   Color and typography tokens come from tokens.css (vendored from
+   lesquel/remote-control-landing@6dd3e09c04cb210fe1b15762c8e34cb94239d406).
+   Do NOT redefine palette tokens here — they belong in tokens.css and
+   arrive via a sibling <link>. */
 :root {
-  /* TUI dark purple palette */
-  --bg:        #1e1b2e;
-  --bg-2:   #26223a;
-  --bg-3:  #2e2a42;
-  --line:    #3a3550;
-  --line-2:   #4a4565;
-  --fg:      #d4d0e8;
-  --fg-muted:  #7a7594;
-  --fg-dim:#5a5575;
+  /* Typography alias — TUI uses mono everywhere */
+  --ui: var(--mono);
 
-  /* Accent colors */
-  --accent:    #5e9eff;
-  --success:   #27c93f;
-  --warning:   #ffbd2e;
-  --danger:    #ff5f56;
-  --purple:    #a78bfa;
+  /* Semantic accent tokens not provided by tokens.css */
+  --success: oklch(0.78 0.17 145);
 
-  /* Traffic light chrome */
+  /* Traffic light chrome (literal hex; PR 4/5 may revisit) */
   --tl-red:    #ff5f56;
   --tl-yellow: #ffbd2e;
   --tl-green:  #27c93f;
 
-  /* Typography */
-  --mono: "JetBrains Mono","Fira Code","Cascadia Code",ui-monospace,monospace;
-  --ui:   var(--mono);  /* TUI uses mono everywhere */
-
   /* Layout */
-  --radius: 3px;
   --radius-sm: 2px;
   --header-h: 36px;
   --footer-h: 28px;
   --sidebar-w: 220px;
-}
-
-.theme-light {
-  --bg:       #f0eef8;
-  --bg-2:  #e8e6f4;
-  --bg-3: #dddae8;
-  --line:   #c8c4d8;
-  --line-2:  #b0accc;
-  --fg:     #1e1b2e;
-  --fg-muted: #524f63;
-  --fg-dim: #706d82;
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────── */
@@ -145,7 +123,7 @@ body {
   flex-shrink: 0;
 }
 .conn-dot.connected     { background: var(--success); box-shadow: 0 0 4px var(--success); }
-.conn-dot.error         { background: var(--warning); }
+.conn-dot.error         { background: var(--warn); }
 .conn-dot.disconnected  { background: var(--danger); }
 
 .conn-label {
@@ -153,7 +131,7 @@ body {
   font-size: 11px;
   white-space: nowrap;
 }
-.conn-label.reconnecting { color: var(--warning); }
+.conn-label.reconnecting { color: var(--warn); }
 
 /* Header action buttons (minimal, TUI style) */
 .header-actions {
@@ -240,7 +218,7 @@ body {
 .perm-item { display: flex; flex-direction: column; gap: 6px; }
 .perm-title {
   font-weight: 700;
-  color: var(--warning);
+  color: var(--warn);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .08em;
@@ -490,7 +468,7 @@ body {
 }
 .agent-badge--plan   { border-color: rgba(94,158,255,.4);  color: var(--accent);  }
 .agent-badge--build  { border-color: rgba(39,201,63,.4);   color: var(--success); }
-.agent-badge--custom { border-color: rgba(167,139,250,.4); color: var(--purple);  }
+.agent-badge--custom { border-color: color-mix(in oklch, var(--accent) 35%, transparent); color: var(--accent);  }
 .agent-badge--compact {
   font-size: 8px;
   padding: 0 4px;
@@ -842,7 +820,7 @@ body {
   border-radius: 2px;
   font-family: var(--mono);
   font-size: .9em;
-  color: var(--purple);
+  color: var(--accent);
 }
 .message-body.md-rendered pre {
   margin: .5em 0;
@@ -890,7 +868,7 @@ body {
 .tool-header:hover { color: var(--fg); }
 .tool-name { font-family: var(--mono); font-weight: 600; color: var(--fg-muted); }
 .tool-status { font-size: 9px; padding: 0 4px; border-radius: 2px; }
-.tool-status.pending  { color: var(--warning); }
+.tool-status.pending  { color: var(--warn); }
 .tool-status.running  { color: var(--accent); }
 .tool-status.completed { color: var(--success); }
 .tool-status.error    { color: var(--danger); }
@@ -934,7 +912,7 @@ body {
   width: 12px;
   text-align: center;
 }
-.tool-prefix--pending  { color: var(--warning); }
+.tool-prefix--pending  { color: var(--warn); }
 .tool-prefix--running  { color: var(--accent); animation: tool-pulse 1s ease-in-out infinite; }
 .tool-prefix--completed { color: var(--fg-dim); }
 .tool-prefix--error    { color: var(--danger); }
@@ -972,14 +950,14 @@ body {
 
 /* MCP server bracket */
 .tool-mcp-server {
-  color: var(--purple);
+  color: var(--accent);
   font-size: 11px;
   flex-shrink: 0;
 }
 
 /* Status-specific overrides for meta/name */
 .tool-status--error { color: var(--danger) !important; }
-.tool-status--pending { color: var(--warning) !important; }
+.tool-status--pending { color: var(--warn) !important; }
 
 /* ── Panel Error Boundary ────────────────────────────────────────────────── */
 .panel-error {
@@ -1281,7 +1259,7 @@ body {
   background: var(--fg-dim);
 }
 .mv-status-dot.badge-idle   { background: var(--fg-dim); }
-.mv-status-dot.badge-busy   { background: var(--warning); box-shadow: 0 0 6px var(--warning); animation: mv-pulse 1.4s ease-in-out infinite; }
+.mv-status-dot.badge-busy   { background: var(--warn); box-shadow: 0 0 6px var(--warn); animation: mv-pulse 1.4s ease-in-out infinite; }
 .mv-status-dot.badge-error  { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
 @keyframes mv-pulse {
   0%, 100% { opacity: .6; }
@@ -2304,7 +2282,7 @@ body {
 }
 
 .tw-item--completed .tw-item-icon { color: var(--success); }
-.tw-item--in-progress .tw-item-icon { color: var(--warning); }
+.tw-item--in-progress .tw-item-icon { color: var(--warn); }
 .tw-item--pending .tw-item-icon { color: var(--fg-dim); }
 
 .tw-item-text {
@@ -2546,7 +2524,7 @@ body {
 
 /* MCP status colors */
 .mcp-status--connected    { color: var(--success); }
-.mcp-status--needs-auth   { color: var(--warning); }
+.mcp-status--needs-auth   { color: var(--warn); }
 .mcp-status--failed       { color: var(--danger); }
 .mcp-status--disabled     { color: var(--fg-dim); }
 
@@ -3007,7 +2985,7 @@ body {
 /* ── Live filter results ─────────────────────────────────────────────────── */
 
 .fb-filter-match {
-  background: var(--warning);
+  background: var(--warn);
   color: var(--bg);
   border-radius: 1px;
   padding: 0 1px;
@@ -3709,9 +3687,9 @@ body {
 
 .retry-notice {
   font-size: 10px;
-  color: var(--warning);
+  color: var(--warn);
   padding: 3px 10px;
-  border-left: 2px solid var(--warning);
+  border-left: 2px solid var(--warn);
   margin: 4px 0;
 }
 .compaction-notice {
@@ -3888,7 +3866,7 @@ body {
 
 .qr-offline-label {
   font-size: 11px;
-  color: var(--warning);
+  color: var(--warn);
 }
 
 .qr-offline-hint {
@@ -3963,8 +3941,8 @@ body {
 .cpm-warning-box {
   width: 100%;
   max-width: 420px;
-  background: color-mix(in srgb, var(--warning) 10%, var(--bg-3));
-  border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--line));
+  background: color-mix(in srgb, var(--warn) 10%, var(--bg-3));
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line));
   border-radius: var(--radius-sm);
   color: var(--fg);
   font-size: 10px;
