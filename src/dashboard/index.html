@@ -112,6 +112,26 @@
     }
   })();
 </script>
+
+<script>
+  // Inlined to prevent layout shift. Applies body[data-grid] and
+  // body[data-scanlines] synchronously before first paint.
+  // Default: both OFF — user must opt in via Settings.
+  (function() {
+    try {
+      if (localStorage.getItem('pilot-grid') === '1') {
+        document.body.setAttribute('data-grid', 'true');
+      }
+      if (localStorage.getItem('pilot-scanlines') === '1') {
+        document.body.setAttribute('data-scanlines', 'true');
+      }
+    } catch (_) {
+      // localStorage unavailable (e.g. private mode) — decorations stay off.
+      // Empty catch is intentional: decorations are cosmetic; a failure here
+      // must never block the page from loading.
+    }
+  })();
+</script>
 </head>
 <body>
 
@@ -415,6 +435,14 @@
         <div class="setting-row">
           <label>Show tool calls</label>
           <label class="toggle"><input type="checkbox" id="s-tools" checked><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <label>Grid background</label>
+          <label class="toggle"><input type="checkbox" id="s-grid"><span class="toggle-slider"></span></label>
+        </div>
+        <div class="setting-row">
+          <label>Scanlines overlay</label>
+          <label class="toggle"><input type="checkbox" id="s-scanlines"><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
           <label>Daily budget limit ($)</label>

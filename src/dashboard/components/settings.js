@@ -47,6 +47,11 @@ export function applySettings() {
   // Sync theme select to the active theme (set by the FOUC inline script or a prior applyTheme call)
   const themeEl = document.getElementById('s-theme')
   if (themeEl) themeEl.value = getActiveTheme()
+  // Sync decoration toggles to current body attributes (set by the FOUC inline script)
+  const gridEl = document.getElementById('s-grid')
+  if (gridEl) gridEl.checked = document.body.hasAttribute('data-grid')
+  const scanlinesEl = document.getElementById('s-scanlines')
+  if (scanlinesEl) scanlinesEl.checked = document.body.hasAttribute('data-scanlines')
   document.querySelectorAll('.tool-block').forEach(el => {
     el.classList.toggle('hidden-tools', !tools)
   })
@@ -173,6 +178,21 @@ export function initSettings() {
 
   document.getElementById('s-theme')?.addEventListener('change', e => {
     applyTheme(e.target.value)
+  })
+
+  document.getElementById('s-grid')?.addEventListener('change', e => {
+    const on = e.target.checked
+    document.body.toggleAttribute('data-grid', on)
+    // Empty catch is intentional: decorations are cosmetic; localStorage
+    // failures must never break the toggle interaction.
+    try { localStorage.setItem('pilot-grid', on ? '1' : '0') } catch (_) {}
+  })
+
+  document.getElementById('s-scanlines')?.addEventListener('change', e => {
+    const on = e.target.checked
+    document.body.toggleAttribute('data-scanlines', on)
+    // Empty catch is intentional: same reasoning as pilot-grid above.
+    try { localStorage.setItem('pilot-scanlines', on ? '1' : '0') } catch (_) {}
   })
 
   document.getElementById('s-tools')?.addEventListener('change', e => {
