@@ -374,7 +374,7 @@ function _renderSessionsImpl() {
   if (agentFilter) {
     ids = ids.filter(id => sessionAgent(sessions[id]) === agentFilter)
     if (!ids.length) {
-      list.innerHTML = `<div style="padding:16px;color:var(--text-dim);font-size:.82rem;text-align:center;line-height:1.5">No sessions match agent: <b>${esc(agentFilter)}</b><br><a href="#" id="clear-agent-filter" style="color:var(--accent);text-decoration:none">Clear filter</a></div>`
+      list.innerHTML = `<div style="padding:16px;color:var(--fg-muted);font-size:.82rem;text-align:center;line-height:1.5">No sessions match agent: <b>${esc(agentFilter)}</b><br><a href="#" id="clear-agent-filter" style="color:var(--accent);text-decoration:none">Clear filter</a></div>`
       const clear = document.getElementById('clear-agent-filter')
       if (clear) {
         clear.addEventListener('click', (e) => {

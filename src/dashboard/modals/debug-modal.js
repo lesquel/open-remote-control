@@ -104,15 +104,15 @@ function ensureModal() {
   el.className = 'modal-overlay'
   el.innerHTML = `
     <div class="modal-box modal-box--wide" style="max-width:680px;max-height:80vh;display:flex;flex-direction:column">
-      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border)">
-        <span style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted)">Debug Info</span>
+      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line)">
+        <span style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-dim)">Debug Info</span>
         <div style="display:flex;gap:8px">
           <button id="debug-copy-btn" class="btn btn--secondary" style="font-size:11px;padding:4px 10px">Copy JSON</button>
           <button id="debug-close-btn" class="btn btn--ghost" style="font-size:11px;padding:4px 10px">Close</button>
         </div>
       </div>
       <div id="debug-modal-body" style="flex:1;overflow:auto;padding:12px 16px">
-        <pre style="font-size:10px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:var(--text);margin:0" id="debug-json-output">Loading…</pre>
+        <pre style="font-size:10px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:var(--fg);margin:0" id="debug-json-output">Loading…</pre>
       </div>
     </div>
   `

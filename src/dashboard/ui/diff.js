@@ -20,7 +20,7 @@ export function fileAnchorKey(filePath) {
  */
 export function renderDiff(diffText) {
   if (!diffText || !diffText.trim()) {
-    return '<div class="diff-empty-state" style="color:var(--text-dim);padding:16px;text-align:center;font-size:12px">No changes in this session.</div>'
+    return '<div class="diff-empty-state" style="color:var(--fg-muted);padding:16px;text-align:center;font-size:12px">No changes in this session.</div>'
   }
 
   // Split into per-file sections using "diff --git" or "--- " boundaries.
@@ -56,7 +56,7 @@ export function renderDiff(diffText) {
   }
 
   if (!sections.length) {
-    return '<div class="diff-empty-state" style="color:var(--text-dim);padding:16px;text-align:center;font-size:12px">No changes in this session.</div>'
+    return '<div class="diff-empty-state" style="color:var(--fg-muted);padding:16px;text-align:center;font-size:12px">No changes in this session.</div>'
   }
 
   const html = sections.map(section => {
@@ -88,7 +88,7 @@ export function renderDiff(diffText) {
 export async function loadDiff(sessionId) {
   const panel = document.getElementById('diff-panel')
   if (!panel) return
-  panel.innerHTML = '<div style="color:var(--text-muted);font-size:11px;padding:10px">Loading diff…</div>'
+  panel.innerHTML = '<div style="color:var(--fg-dim);font-size:11px;padding:10px">Loading diff…</div>'
   try {
     const data = await fetchDiff(sessionId)
     const diffText = typeof data === 'string'
@@ -105,7 +105,7 @@ export async function loadDiff(sessionId) {
       document.getElementById('diff-retry')?.addEventListener('click', () => loadDiff(sessionId))
     }
   } catch (_) {
-    panel.innerHTML = '<div style="color:var(--text-muted);padding:10px;font-size:11px">No diff available for this session.</div>'
+    panel.innerHTML = '<div style="color:var(--fg-dim);padding:10px;font-size:11px">No diff available for this session.</div>'
   }
 }
 

@@ -8,17 +8,17 @@ const WELCOME_CSS = `
   position: relative;
   margin: 8px 8px 0;
   padding: 12px 14px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  color: var(--text-dim);
+  color: var(--fg-muted);
   font-size: 12px;
   line-height: 1.6;
 }
 .welcome-card h3 {
   margin: 0 0 6px;
   font-size: 13px;
-  color: var(--text);
+  color: var(--fg);
 }
 .welcome-card ol {
   margin: 0 0 8px;
@@ -41,14 +41,14 @@ const WELCOME_CSS = `
   right: 8px;
   background: none;
   border: none;
-  color: var(--text-dim);
+  color: var(--fg-muted);
   font-size: 16px;
   cursor: pointer;
   padding: 0 4px;
   line-height: 1;
 }
 .welcome-close:hover {
-  color: var(--text);
+  color: var(--fg);
 }
 .welcome-card.fade-out {
   opacity: 0;
