@@ -7,6 +7,7 @@ import { getAgents, getProviders, getConnectedProviders } from './references.js'
 import { sendPromptWithOpts, fetchProjects, updateSessionTitle } from '../api/api.js'
 import { openDebugModal } from '../modals/debug-modal.js'
 import { openModal } from '../modals/modal-helper.js'
+import { cycleTheme, applyTheme, THEMES, THEME_LABELS } from '../ui/theme.js'
 
 // ── Palette listener registry (unified cleanup) ────────────────────────────
 let paletteListeners = []
@@ -165,7 +166,8 @@ function buildItems(query) {
     { label: 'Switch Folder',        icon: '▤', kbd: 'alt+f', action: () => { closePalette(); openFolderPicker() } },
     { label: 'Collapse All Folders', icon: '▸', kbd: 'alt+[', action: () => { closePalette(); import('./sessions.js').then(m => m.setAllFoldersCollapsed('collapse')) } },
     { label: 'Expand All Folders',   icon: '▾', kbd: 'alt+]', action: () => { closePalette(); import('./sessions.js').then(m => m.setAllFoldersCollapsed('expand')) } },
-    { label: 'Toggle Theme',         icon: '◑', kbd: 'alt+t', action: () => { closePalette(); toggleTheme() } },
+    { label: 'Cycle Theme',           icon: '◑', kbd: 'alt+t', action: () => { closePalette(); toggleTheme() } },
+    ...THEMES.map(t => ({ label: `Theme: ${THEME_LABELS[t] ?? t}`, icon: '◑', action: () => { closePalette(); applyTheme(t); const el = document.getElementById('s-theme'); if (el) el.value = t } })),
     { label: 'Toggle Sound',         icon: '♪', action: () => { closePalette(); toggleSound() } },
     { label: 'Toggle Hide Tools',    icon: '⊟', action: () => { closePalette(); toggleTools() } },
     { label: 'Open Settings',        icon: '⚙', action: () => { closePalette(); openSettings() } },
@@ -902,18 +904,12 @@ function copyTuiCommand() {
 }
 
 function toggleTheme() {
-  const { settings } = getState()
-  const next = { ...settings, theme: !settings.theme }
-  setState({ settings: next })
-  document.body.classList.toggle('theme-light', next.theme)
-  try {
-    const saved = JSON.parse(sessionStorage.getItem('pilot_settings') || '{}')
-    sessionStorage.setItem('pilot_settings', JSON.stringify({ ...saved, theme: next.theme }))
-  } catch (_) {}
-  // Sync with settings checkboxes
+  const next = cycleTheme()
+  const label = THEME_LABELS[next] ?? next
+  toast(`Theme: ${label}`)
+  // Sync the settings select if it's open
   const el = document.getElementById('s-theme')
-  if (el) el.checked = next.theme
-  toast(next.theme ? 'Light theme on' : 'Dark theme on')
+  if (el) el.value = next
 }
 
 function toggleSound() {

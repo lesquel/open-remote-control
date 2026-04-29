@@ -77,6 +77,41 @@
   }
 })();
 </script>
+
+<script>
+  // Inlined to prevent flash-of-unthemed-content. Sets the [data-theme]
+  // attribute synchronously before the first paint.
+  (function() {
+    try {
+      var saved = localStorage.getItem('pilot-theme');
+      // Migration: dashboards before v1.20 stored theme as a boolean
+      // inside pilot_settings. true → light mode → mono-light.
+      if (!saved) {
+        var legacy = localStorage.getItem('pilot_settings');
+        if (legacy) {
+          try {
+            var parsed = JSON.parse(legacy);
+            if (parsed && parsed.theme === true) saved = 'mono-light';
+          } catch (_) { /* malformed JSON — ignore */ }
+        }
+      }
+      var THEMES = ['terminal-green','amber','violet','mono-light'];
+      var t = THEMES.indexOf(saved) >= 0 ? saved : 'terminal-green';
+      document.documentElement.setAttribute('data-theme', t);
+      if (saved !== t) {
+        // Normalise invalid or missing value to the default.
+        // Empty catch is intentional: this is pre-init fallback code that must
+        // never block the page from loading. A write failure here is irrelevant
+        // because the attribute is already applied for this paint.
+        try { localStorage.setItem('pilot-theme', t); } catch (_) {}
+      }
+    } catch (_) {
+      // localStorage unavailable (e.g. private mode) — apply safe default.
+      // Empty catch is intentional: same reasoning as above.
+      document.documentElement.setAttribute('data-theme', 'terminal-green');
+    }
+  })();
+</script>
 </head>
 <body>
 
@@ -357,8 +392,13 @@
       <!-- ── Preferences ──────────────────────────────────────────────────── -->
       <section id="settings-pane-prefs" role="tabpanel" aria-labelledby="settings-tab-prefs" class="settings-pane" data-pane="prefs">
         <div class="setting-row">
-          <label>Light theme</label>
-          <label class="toggle"><input type="checkbox" id="s-theme"><span class="toggle-slider"></span></label>
+          <label for="s-theme">Theme</label>
+          <select id="s-theme" class="setting-select">
+            <option value="terminal-green">Terminal green</option>
+            <option value="amber">Amber</option>
+            <option value="violet">Violet</option>
+            <option value="mono-light">Light (mono)</option>
+          </select>
         </div>
         <div class="setting-row">
           <label>Sound notifications</label>

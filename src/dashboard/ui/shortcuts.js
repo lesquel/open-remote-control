@@ -19,6 +19,7 @@ import { createSession, selectSession, statusClass } from '../components/session
 import { addToMultiview } from '../components/multi-view.js'
 import { openPalette, closePalette } from '../components/command-palette.js'
 import { toast } from './toast.js'
+import { cycleTheme, THEME_LABELS, getActiveTheme } from './theme.js'
 
 // ── Combo helper ───────────────────────────────────────────────────────────
 /**
@@ -236,14 +237,10 @@ export function initShortcuts() {
 }
 
 function toggleThemeShortcut() {
-  const { settings } = getState()
-  const next = { ...settings, theme: !settings.theme }
-  setState({ settings: next })
-  document.body.classList.toggle('theme-light', next.theme)
-  try {
-    const saved = JSON.parse(sessionStorage.getItem('pilot_settings') || '{}')
-    sessionStorage.setItem('pilot_settings', JSON.stringify({ ...saved, theme: next.theme }))
-  } catch (_) {}
+  const next = cycleTheme()
+  const label = THEME_LABELS[next] ?? next
+  toast(`Theme: ${label}`)
+  // Sync the settings select if it's present in the DOM
   const el = document.getElementById('s-theme')
-  if (el) el.checked = next.theme
+  if (el) el.value = next
 }
