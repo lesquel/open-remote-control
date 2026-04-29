@@ -212,6 +212,7 @@
         <!-- Tabs -->
         <div class="tabs" id="session-tabs" style="display:none">
           <div class="tab active" data-tab="messages-tab">Messages</div>
+          <div class="tab" data-tab="diff-tab">Diff</div>
         </div>
 
         <!-- Messages tab -->
@@ -224,6 +225,13 @@
               <p>Pick a session from the sidebar or press <kbd>alt+p</kbd> to open the command palette.</p>
               <button class="btn btn-primary" id="no-session-new-btn" style="margin-top:8px">+ New Session</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Diff tab -->
+        <div id="diff-tab" class="tab-panel">
+          <div id="diff-panel">
+            <div style="color:var(--text-muted);font-size:11px;padding:10px">Select a session to view diff.</div>
           </div>
         </div>
 

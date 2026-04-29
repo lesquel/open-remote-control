@@ -34,6 +34,7 @@ const PRECACHE = [
   "./components/multi-view.js",
   "./components/permissions.js",
   "./components/settings.js",
+  "./ui/diff.js",
   "./ui/shortcuts.js",
   "./ui/toast.js",
   "./auth/connect.js",
