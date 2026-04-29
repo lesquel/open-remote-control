@@ -218,7 +218,7 @@ describe("PATCH /settings handler", () => {
     expect(res.status).toBe(400)
   })
 
-  test("validates tunnel enum", async () => {
+  test("validates tunnel enum — rejects 'frp' with 400", async () => {
     const deps = makeDeps({ configPath: join(dir, "config.json") })
     const req = new Request("http://test/settings", {
       method: "PATCH",
@@ -226,6 +226,59 @@ describe("PATCH /settings handler", () => {
     })
     const res = await patchSettings(makeCtx(deps, req))
     expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error.code).toBe("VALIDATION_FAILED")
+  })
+
+  test("accepts tunnel 'cloudflared' and persists it", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ tunnel: "cloudflared" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+    expect(deps.settingsStore.load().tunnel).toBe("cloudflared")
+  })
+
+  test("accepts tunnel 'ngrok' and persists it", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ tunnel: "ngrok" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+    expect(deps.settingsStore.load().tunnel).toBe("ngrok")
+  })
+
+  test("accepts tunnel 'off' and persists it", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ tunnel: "off" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+    expect(deps.settingsStore.load().tunnel).toBe("off")
+  })
+
+  test("rejects tunnel when PILOT_TUNNEL is shell-env-pinned", async () => {
+    const deps = makeDeps({
+      configPath: join(dir, "config.json"),
+      shellEnv: { PILOT_TUNNEL: "cloudflared" },
+    })
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ tunnel: "off" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.error.code).toBe("SHELL_ENV_PINNED")
   })
 })
 

@@ -9,6 +9,7 @@ import {
 } from '../api/api.js'
 import { toast } from '../ui/toast.js'
 import { openModal } from '../modals/modal-helper.js'
+import { invalidateConnectInfoCache } from '../modals/connect-modal.js'
 
 const STORAGE_KEY = 'pilot_settings'
 
@@ -206,13 +207,15 @@ export function initSettings() {
 // loaded on demand when the modal opens (see click handler above).
 
 /**
- * Map of settings field → { input element id, type }.
+ * Map of settings field → { input element id, type, envKey? }.
  * The order here also drives iteration for source-badge updates.
+ * envKey — when present, used to show the specific env var name in the
+ * "pinned by shell-env" badge tooltip instead of the generic message.
  */
 const FIELD_MAP = {
   port:                { id: 'pcf-port',            kind: 'int' },
   host:                { id: 'pcf-host',            kind: 'string' },
-  tunnel:              { id: 'pcf-tunnel',          kind: 'string' },
+  tunnel:              { id: 'pcf-tunnel',          kind: 'string', envKey: 'PILOT_TUNNEL' },
   telegramToken:       { id: 'pcf-telegram-token',  kind: 'string' },
   telegramChatId:      { id: 'pcf-telegram-chat',   kind: 'string' },
   vapidPublicKey:      { id: 'pcf-vapid-public',    kind: 'string' },
@@ -368,7 +371,9 @@ function applySnapshotToInputs(snap) {
       badge.setAttribute('data-source', source)
       badge.title =
         source === 'shell-env'
-          ? 'Set via shell environment — unset the env var to edit here'
+          ? spec.envKey
+            ? `Pinned by ${spec.envKey} env var. Unset the env var and restart to edit from here.`
+            : 'Set via shell environment — unset the env var to edit here'
           : source === 'settings-store'
             ? 'Saved in ' + configFilePath
             : source === 'env-file'
@@ -438,6 +443,11 @@ async function onSave() {
     _lastLoadedSnapshot = updated
     applySnapshotToInputs(updated)
     updateRestartNote(updated)
+
+    // If tunnel provider was in the patch, invalidate the connect-info cache
+    // so the next open of the Connect modal shows fresh tunnel state rather
+    // than a stale snapshot from before the save.
+    if ('tunnel' in patch) invalidateConnectInfoCache()
 
     // Compute actual changes. Compare against the previous snapshot, not the
     // patch payload (the patch is the user's intent; the updated snapshot is
