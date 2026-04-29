@@ -9,3 +9,8 @@ pilot-state.json
 pilot-audit.log
 pilot-banner.txt
 .opencode/pilot-*
+
+# Claude Code agent worktrees + JSONL transcripts (created by sub-agent runs).
+# Sub-agents in worktree-isolation mode write here; transcripts are large and
+# get re-created on every run, so they should never enter the repo.
+.claude/
