@@ -10,33 +10,43 @@ import {
 import { toast } from '../ui/toast.js'
 import { openModal } from '../modals/modal-helper.js'
 import { invalidateConnectInfoCache } from '../modals/connect-modal.js'
+import { applyTheme, getActiveTheme, THEMES, THEME_LABELS } from '../ui/theme.js'
 
 const STORAGE_KEY = 'pilot_settings'
 
 export function loadSettings() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
-    const settings = { ...getState().settings, ...saved }
+    // Strip the legacy boolean `theme` field — theme is now managed separately
+    // via the 'pilot-theme' localStorage key and the [data-theme] attribute.
+    const { theme: _legacy, ...rest } = saved
+    const settings = { ...getState().settings, ...rest }
     setState({ settings })
   } catch (_) {}
   applySettings()
 }
 
 export function saveSettings() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(getState().settings))
+  // Do NOT write `theme` into pilot_settings — theme is owned by 'pilot-theme'.
+  const { theme: _drop, ...rest } = getState().settings
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rest))
 }
 
 export function applySettings() {
-  const { sound, notif, theme, tools, showReasoning, dailyBudget } = getState().settings
-  document.getElementById('s-sound').checked = sound
-  document.getElementById('s-notif').checked = notif
-  document.getElementById('s-theme').checked = theme
-  document.getElementById('s-tools').checked = tools
+  const { sound, notif, tools, showReasoning, dailyBudget } = getState().settings
+  const soundEl = document.getElementById('s-sound')
+  const notifEl = document.getElementById('s-notif')
+  const toolsEl = document.getElementById('s-tools')
+  if (soundEl) soundEl.checked = sound
+  if (notifEl) notifEl.checked = notif
+  if (toolsEl) toolsEl.checked = tools
   const reasoningEl = document.getElementById('s-reasoning')
   if (reasoningEl) reasoningEl.checked = showReasoning ?? false
   const budgetEl = document.getElementById('s-daily-budget')
   if (budgetEl) budgetEl.value = dailyBudget != null && dailyBudget > 0 ? String(dailyBudget) : ''
-  document.body.classList.toggle('theme-light', theme)
+  // Sync theme select to the active theme (set by the FOUC inline script or a prior applyTheme call)
+  const themeEl = document.getElementById('s-theme')
+  if (themeEl) themeEl.value = getActiveTheme()
   document.querySelectorAll('.tool-block').forEach(el => {
     el.classList.toggle('hidden-tools', !tools)
   })
@@ -162,10 +172,7 @@ export function initSettings() {
   })
 
   document.getElementById('s-theme')?.addEventListener('change', e => {
-    const settings = { ...getState().settings, theme: e.target.checked }
-    setState({ settings })
-    saveSettings()
-    applySettings()
+    applyTheme(e.target.value)
   })
 
   document.getElementById('s-tools')?.addEventListener('change', e => {
