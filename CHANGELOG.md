@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.19.0] - 2026-04-29
+
+### Added
+
+- **Session diff view (#22).** Restores the Diff tab next to Messages — removed in v1.18.3 (#20) once the per-file UX gap was identified — and ships the missing wiring. Clicking a file row in the Files Changed panel now activates the Diff tab, scrolls to that file's section, and briefly highlights it. Per-file anchors are emitted by `renderDiff` (`data-file="<path>"`) using the same path normalization the Files Changed parser uses, so click targets always match. Empty state ("No changes in this session.") is rendered inline when an active session has no diff. New regression suite `src/dashboard/__tests__/diff-anchor.test.ts` (+13 tests) locks the anchor contract.
+
+- **Tunnel provider tooltip names the env var when pinned (#23).** Users running with `PILOT_TUNNEL=cloudflared` previously saw the Settings select pinned to a generic "Set via shell environment" hint and could not tell WHICH env var to unset — this is what made @L50E02O conclude there was no tunnel toggle in the UI. The shell-env badge tooltip is now specific: "Pinned by PILOT_TUNNEL env var. Unset the env var and restart to edit from here." Generalized via an optional `envKey` per `FIELD_MAP` entry, so the same mechanism can name future env-var-pinned fields without bespoke code paths.
+
+### Changed
+
+- **Connect modal cache invalidates on tunnel-related saves (#23).** If the Connect modal was open while the user changed the tunnel provider in Settings, the modal kept showing stale tunnel state until the next 10 s poll tick. `connect-modal.js` now exports `invalidateConnectInfoCache()` which `settings.js::onSave()` calls when the PATCH includes a `tunnel` field. Closes the last gap from the cloudflared audit (#11): the audit verified the protocol path end-to-end, the gap that remained was UI freshness on settings change.
+
+### Internal
+
+- **Test count: 438 → 461 (+23).** 13 new tests for the Diff anchor contract (#22), 6 validator tests + 5 handler tests for the tunnel provider on `PATCH /settings` (#23, locks the contract that only `off | cloudflared | ngrok` is accepted, that other values return 400 `VALIDATION_FAILED`, and that `PILOT_TUNNEL` env-pinning returns 409 `SHELL_ENV_PINNED`).
+
 ## [1.18.3] - 2026-04-27
 
 ### Fixed
