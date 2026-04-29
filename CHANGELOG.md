@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.21.0] - 2026-04-29
+
+### Added — Image rendering in the messages pane (#21)
+
+The dashboard now renders image attachments returned by OpenCode sessions, both in the message body (`Part` discriminated union, `type: "file"`) and inside tool results (`ToolStateCompleted.attachments`, which was previously dropped on the floor entirely).
+
+- **New proxy endpoint** `GET /sessions/:sessionId/attachments/:partId?messageId=<m>&token=<t>`. The `?token=` query mirrors `/events`, so `<img>` tags can carry auth without a JS fetch + blob-URL workaround. Auth is `optional` in the route table — the handler accepts Bearer header OR query token. Required `?messageId=` query so part lookup is O(1) via the SDK's `session.message({ id, messageID })` instead of an O(N) scan.
+  - Status codes: `400` missing `messageId`, `401` bad token, `404` session/message/part not found, `415` mime outside `MIME_SAFELIST`, `413` over `ATTACHMENT_MAX_BYTES`, `502` unrecognized URL scheme, `504` upstream fetch timeout, `200` streams the bytes.
+  - Response headers on success: `Content-Type` from `FilePart.mime`, `Cache-Control: private, max-age=3600`, `X-Content-Type-Options: nosniff`, `Content-Disposition: inline`.
+  - Dispatch by URL scheme: `http(s)://` → server-side fetch with `PILOT_FETCH_TIMEOUT_MS` abort, `file://<path>` or absolute path → `Bun.file()` with traversal rejection, `opencode://` → SDK fallback, anything else → structured 502. The defensive dispatch handles all schemes uniformly without needing to runtime-probe what OpenCode actually emits.
+  - Audit-logged via `deps.audit.log("attachment.served", ...)` like every other server-side operation.
+- **New constants in `src/server/constants.ts`**: `ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024` (matches `READ_MAX_BYTES`), `MIME_SAFELIST = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]`.
+- **Dashboard renderer** (`src/dashboard/components/messages.js`): new `renderFilePart(part)` produces `<img loading="lazy">` with `max-width:100%; max-height:480px;` caps. Wired into both `renderPart` (new `p.type === 'file'` branch) and `renderToolPart` (`ToolStateCompleted.attachments`). Click-to-zoom is intentionally out of scope for v1.
+- **SVG XSS guard.** `image/svg+xml` is rendered exclusively through `<img>` — never `innerHTML`, `<object>`, `<iframe>`, or `<svg>` injection. Browsers sandbox SVG-in-img: any `<script>` inside the SVG cannot execute. The guard is documented inline next to `renderFilePart` so a future agent doesn't "improve" it back into `innerHTML`. Renderer test `src/dashboard/__tests__/file-part.test.ts` asserts the SVG path never produces those four sinks.
+
+### Internal
+
+- **Test count: 490 → 529 (+39).** 18 new handler tests in `src/transport/http/handlers/sessions.test.ts` (404/400/415/413/502/200 paths + happy path verifying response headers) and 22 renderer tests in `src/dashboard/__tests__/file-part.test.ts` (all 5 safelist MIMEs render `<img>`, SVG never reaches `<object>` / `<iframe>` / `<svg>` / `innerHTML`, unknown MIME falls back to a text link, URL construction with `?messageId=` / `?token=` / `?directory=` and component escaping).
+- **Codex bridge — out of scope.** The Codex hook protocol carries no attachment channel today (`session_id`, `turn_id`, `tool_name`, `tool_input`, `tool_response` strings only), so no Codex work was needed. When upstream Codex grows attachments, the dashboard renderer is already wired through `renderPart` and will pick them up if they surface as `FilePart` shapes.
+
 ## [1.20.0] - 2026-04-29
 
 ### Added — Dashboard design system aligned with the marketing landing (#24)
