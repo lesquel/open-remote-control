@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.20.0] - 2026-04-29
+
+### Added — Dashboard design system aligned with the marketing landing (#24)
+
+The dashboard's visual language now derives from the same design tokens as the Astro landing site (`lesquel/remote-control-landing`). Five sequential PRs migrated tokens, vocabulary, palette, themes, and decorations without changing any layout or component structure.
+
+- **Vendored design tokens (PR 1).** `src/dashboard/tokens.css` is now the source of truth for color and typography, vendored from `lesquel/remote-control-landing@6dd3e09c04cb210fe1b15762c8e34cb94239d406` with a SHA-pinned header. New `scripts/sync-design-tokens.ts` (Bun) re-vendors on demand and is extensible — adding `base.css` / `effects.css` / `responsive.css` is one entry in the FILES map. Removed the unreferenced `apps/landing/` git submodule (was never wired into the package).
+
+- **Token vocabulary unified (PR 2).** Mechanical rename of dashboard-specific names to landing's vocabulary — `--surface*` → `--bg-2/3`, `--border*` → `--line/-2`, `--text*` → `--fg/-muted/-dim`. Critically, the `-dim`/`-muted` semantic-tier mapping is reversed between the two systems (dashboard's `-dim` was medium, landing's `-dim` is darkest); the rename preserves visual semantics, not suffix similarity. 509 line replacements across `styles.css` plus 9 inline-style refs in component JS. No visual change in this PR.
+
+- **Palette swap (PR 3).** `tokens.css` wired in via a `<link>` after `styles.css`. The dashboard's `:root` palette block was stripped (tokens come from `tokens.css` now), and orphan tokens reconciled — `--warning` renamed to `--warn`, `--purple` removed (replaced with `--accent`; the hard-coded `rgba(167,139,250,.4)` border that used to match `--purple`'s RGB rewritten to `color-mix(in oklch, var(--accent) 35%, transparent)` so the border tracks any theme), `--success` redefined as `oklch(0.78 0.17 145)` (a green one hue away from the primary accent so it reads as "successful" without colliding), `--danger` value now inherited from `tokens.css`, `.theme-light` deleted (replaced in PR 4). `<meta name="theme-color">` updated to the new dark `#07090a`.
+
+- **Theme switcher unified (PR 4).** New shared module `src/dashboard/ui/theme.js` (factory exports — `THEMES`, `THEME_LABELS`, `applyTheme`, `getActiveTheme`, `cycleTheme`). Four themes now selectable: `terminal-green` (default), `amber`, `violet`, `mono-light`. Theme state persists in `localStorage["pilot-theme"]` — the same key the landing uses, so the two surfaces share theme on the same browser origin. The 3 duplicated toggle sites (Alt+T shortcut, command-palette entry, Settings save handler) collapsed onto the new module. A pre-paint inline `<script>` in `<head>` synchronously sets `[data-theme]` on `<html>` to prevent FOUC, with a one-time legacy migration: pre-1.20 users on the boolean `pilot_settings.theme === true` get auto-migrated to `mono-light`. `<meta theme-color>` now updates dynamically per theme so mobile browser chrome reflects it.
+
+- **Landing decorations + textures ported (PR 5).** Hand-ported the 6 universal visual rules from the landing's `base.css` + `effects.css`: `body[data-grid="true"]::before` (radial-gradient dot grid at 24px with mask gradient), `body[data-scanlines="true"]::after` (CRT-style overlay), `::selection` using accent colors, custom `::-webkit-scrollbar*` (thumb on `--line-2`, accent on hover), `:focus-visible` ring (2px solid accent + offset), `prefers-reduced-motion` global guard. `#tui-header` gains `backdrop-filter: blur(10px)` + softened background for the frosted-glass feel when content scrolls beneath. Two new Settings toggles (Preferences pane) — **Grid background** and **Scanlines overlay** — persist to `localStorage["pilot-grid"]` / `localStorage["pilot-scanlines"]`, **default OFF** so existing users don't get surprised by retro effects. A second pre-paint inline `<script>` (next to the theme bootstrap) applies the body `data-*` attrs synchronously. Geist sans intentionally NOT loaded — external font loading is a separate concern (CDN vs bundle, FOUT handling). System sans-serif fallback remains.
+
+### Internal
+
+- **Test count: 461 → 490 (+29).** 18 new tests for the theme module (`src/dashboard/ui/theme.test.ts`) covering `applyTheme` validation/persistence, `cycleTheme` ordering, `getActiveTheme` fallback chain. 9 new tests for the decorations toggles (`src/dashboard/__tests__/decorations.test.ts`) covering default-off behavior + toggle persistence + DOM reflection. PRs 1–3 didn't add tests (PR 1's sync script is a one-off CLI tool; PRs 2–3 are pure refactors with no behavior delta).
+
+- **Architecture note.** The dashboard now treats `tokens.css` as a vendored upstream — to update the palette in the future, edit it in `lesquel/remote-control-landing` and run `bun scripts/sync-design-tokens.ts` here. The script fails loudly if the landing repo isn't a sibling at `../opencode-landing` (or under `LANDING_DIR` env). Sync is manual and produces a clean commit with the new SHA pinned in the header.
+
 ## [1.19.0] - 2026-04-29
 
 ### Added
