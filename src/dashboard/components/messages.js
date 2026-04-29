@@ -611,13 +611,13 @@ function renderToolPart(p) {
     } catch (_) {
       highlighted = escapeHtml(argsJson)
     }
-    argsHtml = `<div style="margin-bottom:4px;font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em">INPUT</div><pre class="hljs" style="margin:0;border-radius:2px;font-size:10px;border:1px solid var(--border)">${highlighted}</pre>`
+    argsHtml = `<div style="margin-bottom:4px;font-size:10px;color:var(--fg-dim);font-weight:700;text-transform:uppercase;letter-spacing:.06em">INPUT</div><pre class="hljs" style="margin:0;border-radius:2px;font-size:10px;border:1px solid var(--line)">${highlighted}</pre>`
   }
 
   let resultHtml = ''
   if (status === 'completed' && output !== undefined) {
     const raw = typeof output === 'string' ? output : JSON.stringify(output, null, 2)
-    resultHtml = `<div style="margin-top:6px;margin-bottom:4px;font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em">OUTPUT</div><pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:10px;max-height:260px;overflow-y:auto">${escapeHtml(raw)}</pre>`
+    resultHtml = `<div style="margin-top:6px;margin-bottom:4px;font-size:10px;color:var(--fg-dim);font-weight:700;text-transform:uppercase;letter-spacing:.06em">OUTPUT</div><pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:10px;max-height:260px;overflow-y:auto">${escapeHtml(raw)}</pre>`
   } else if (status === 'error' && toolState.error !== undefined) {
     const errMsg = typeof toolState.error === 'string'
       ? toolState.error
@@ -625,7 +625,7 @@ function renderToolPart(p) {
     resultHtml = `<div style="margin-top:6px;margin-bottom:4px;font-size:10px;color:var(--danger);font-weight:700;text-transform:uppercase;letter-spacing:.06em">ERROR</div><pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:10px;color:var(--danger)">${escapeHtml(errMsg)}</pre>`
   } else if (p.result !== undefined && output === undefined) {
     const raw = typeof p.result === 'string' ? p.result : JSON.stringify(p.result, null, 2)
-    resultHtml = `<div style="margin-top:6px;margin-bottom:4px;font-size:10px;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em">RESULT</div><pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:10px;max-height:260px;overflow-y:auto">${escapeHtml(raw)}</pre>`
+    resultHtml = `<div style="margin-top:6px;margin-bottom:4px;font-size:10px;color:var(--fg-dim);font-weight:700;text-transform:uppercase;letter-spacing:.06em">RESULT</div><pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:10px;max-height:260px;overflow-y:auto">${escapeHtml(raw)}</pre>`
   }
 
   const autoOpen = (status === 'running' || status === 'error') ? ' open' : ''
@@ -790,7 +790,7 @@ export function renderMessageIntoPanel(box, msgs, opts = {}) {
   if (!box) return
   const { compact = false, scrollToBottom = true } = opts
   if (!Array.isArray(msgs) || msgs.length === 0) {
-    box.innerHTML = `<div class="mv-empty" style="color:var(--text-dim);font-size:.78rem;text-align:center;padding:12px">No messages yet.</div>`
+    box.innerHTML = `<div class="mv-empty" style="color:var(--fg-muted);font-size:.78rem;text-align:center;padding:12px">No messages yet.</div>`
     return
   }
   try {

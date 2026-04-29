@@ -145,7 +145,7 @@ function createMVPanel(id) {
     </div>
     <div class="mv-strip" id="mv-strip-${id}" style="display:none"></div>
     <div class="mv-messages" id="mv-msgs-${id}">
-      <div class="mv-loading" style="color:var(--text-dim);font-size:.78rem;text-align:center;padding:12px">Loading…</div>
+      <div class="mv-loading" style="color:var(--fg-muted);font-size:.78rem;text-align:center;padding:12px">Loading…</div>
     </div>
     <div class="mv-input-row">
       <input class="mv-input" placeholder="Type a prompt…" id="mv-input-${id}">

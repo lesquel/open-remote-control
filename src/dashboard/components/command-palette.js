@@ -297,7 +297,7 @@ function openFolderPicker() {
         <div class="palette-item${i === selIdx ? ' selected' : ''}" data-folder-idx="${i}">
           <span class="palette-item-icon">▤</span>
           <span class="palette-item-label">${escHtml(f.label)}</span>
-          <span class="palette-item-meta" style="color:var(--text-muted);font-size:10px">${f.count} session${f.count !== 1 ? 's' : ''}</span>
+          <span class="palette-item-meta" style="color:var(--fg-dim);font-size:10px">${f.count} session${f.count !== 1 ? 's' : ''}</span>
         </div>`).join('')}
     </div>`
 
@@ -375,7 +375,7 @@ function openAgentPicker() {
         <div class="palette-item${i === selIdx ? ' selected' : ''}" data-agent-idx="${i}">
           <span class="palette-item-icon">◈</span>
           <span class="palette-item-label">${escHtml(a.name)}</span>
-          ${a.description ? `<span class="palette-item-meta" style="color:var(--text-muted);font-size:10px">${escHtml(a.description.slice(0, 50))}</span>` : ''}
+          ${a.description ? `<span class="palette-item-meta" style="color:var(--fg-dim);font-size:10px">${escHtml(a.description.slice(0, 50))}</span>` : ''}
         </div>`).join('')}
     </div>`
 

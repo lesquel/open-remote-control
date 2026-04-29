@@ -76,7 +76,7 @@ function renderPickerList(query) {
     .slice(0, 12)
 
   if (!ids.length) {
-    list.innerHTML = '<div style="padding:10px 14px;color:var(--text-muted);font-size:11px">No sessions found</div>'
+    list.innerHTML = '<div style="padding:10px 14px;color:var(--fg-dim);font-size:11px">No sessions found</div>'
     return
   }
 
@@ -87,7 +87,7 @@ function renderPickerList(query) {
     return `<div class="picker-item" data-id="${id}">
       <span class="badge badge-${statusClass(status)}">${status}</span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title)}</span>
-      <span style="font-family:var(--mono);font-size:9px;color:var(--text-muted)">${id.slice(0, 8)}</span>
+      <span style="font-family:var(--mono);font-size:9px;color:var(--fg-dim)">${id.slice(0, 8)}</span>
     </div>`
   }).join('')
 
