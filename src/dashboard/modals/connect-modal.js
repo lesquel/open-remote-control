@@ -75,6 +75,19 @@ let _connectInfo = null
 let _refreshTimer = null
 let _modalHandle = null
 
+/**
+ * Invalidate the cached connect-info snapshot.
+ * Call this after a settings save that may affect the tunnel provider so that
+ * the next modal open (or the current poll tick) shows fresh data.
+ * If the modal is already open it will re-fetch within the next 10 s poll;
+ * if it is closed, the stale cache is discarded so the next open gets a fresh
+ * fetch immediately rather than briefly flashing old state.
+ */
+export function invalidateConnectInfoCache() {
+  _connectInfo = null
+  if (_isOpen) _refresh()
+}
+
 // ── Open / Close ──────────────────────────────────────────────────────────
 
 export function openConnectModal() {
