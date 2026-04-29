@@ -44,12 +44,14 @@ body {
   display: flex;
   align-items: center;
   height: var(--header-h);
-  background: var(--bg-2);
+  background: color-mix(in oklch, var(--bg-2) 85%, transparent);
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
   padding: 0 10px;
   gap: 10px;
   user-select: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .tl-dots {
@@ -5020,4 +5022,49 @@ kbd {
   border-top: 1px solid var(--line);
 }
 .settings-status { font-size: 0.85rem; color: var(--fg-muted); flex: 1; min-width: 0; }
+
+/* ── Landing decorations & textures ─────────────────────────────────────────
+   Hand-ported from lesquel/remote-control-landing — base.css + effects.css.
+   Universal visual rules; landing-specific layout selectors intentionally
+   excluded. Body decorations are toggle-driven (data-grid, data-scanlines).
+*/
+
+body[data-grid="true"]::before {
+  content: "";
+  position: fixed; inset: 0;
+  background-image:
+    radial-gradient(circle at 1px 1px,
+      color-mix(in oklch, var(--fg-dim) 40%, transparent) 1px,
+      transparent 0);
+  background-size: 24px 24px;
+  opacity: 0.25;
+  pointer-events: none;
+  z-index: 0;
+  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+}
+body[data-scanlines="true"]::after {
+  content: "";
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0 1px, transparent 1px 3px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+::selection { background: var(--accent); color: var(--bg); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+button:focus-visible, a:focus-visible { outline-offset: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
