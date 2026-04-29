@@ -160,6 +160,7 @@ Editable from the dashboard Settings UI (writes to `~/.opencode-pilot/config.jso
 | GET | /tools | required |
 | GET | /project | required |
 | GET | /sessions/:id/children | required |
+| GET | /sessions/:id/attachments/:partId | optional (Bearer or ?token=) |
 | GET | /connect-info | required |
 | GET | /health | none |
 | POST | /auth/rotate | required |

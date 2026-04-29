@@ -84,6 +84,71 @@ export function renderMsg(rawMsg) {
   }
 }
 
+// ── File part (image attachment) renderer ───────────────────────────────────
+
+/**
+ * Build the proxy URL for a FilePart image.
+ *
+ * Uses the attachment endpoint which mirrors the /events auth pattern:
+ * Bearer header OR ?token= query param. Since <img> tags cannot send
+ * Bearer headers, we always embed the token in the query string.
+ *
+ * The FilePart SDK shape carries sessionID and messageID directly on the part,
+ * so no caller threading is needed — both are read from the part itself.
+ *
+ * @param {object} part  FilePart — { id, sessionID, messageID, mime, ... }
+ * @returns {string}     proxy URL ready for use in src=""
+ */
+function buildAttachmentUrl(part) {
+  const state = getState()
+  const base = state.serverUrl || ''
+  const token = state.token || ''
+  const dir = state.activeDirectory
+  const params = new URLSearchParams({ messageId: part.messageID, token })
+  if (dir) params.set('directory', dir)
+  return `${base}/sessions/${encodeURIComponent(part.sessionID)}/attachments/${encodeURIComponent(part.id)}?${params.toString()}`
+}
+
+/**
+ * MIME types the attachment endpoint will serve (safelist mirrors server-side constant).
+ * Unknown mimes fall back to a text link — defensive for any future SDK extension.
+ */
+const ATTACHMENT_MIME_SAFELIST = new Set([
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
+])
+
+/**
+ * Render a FilePart as an <img> element.
+ *
+ * SVG SECURITY NOTE:
+ *   SVGs are rendered ONLY via <img src="...">, never via innerHTML, <object>,
+ *   or <iframe>. When a browser loads SVG via <img>, it sandboxes the SVG
+ *   context — inline <script> tags, event handlers, and external resource loads
+ *   inside the SVG are all blocked. Rendering SVG via innerHTML would execute
+ *   those scripts in the page context, enabling XSS.
+ *   DO NOT "improve" this to use innerHTML or <object>, even if the SVG
+ *   "looks safe" — the server does not sanitize SVG content.
+ *
+ * @param {object} part  FilePart from the SDK
+ * @returns {string}     HTML string
+ */
+export function renderFilePart(part) {
+  const mime = part.mime ?? ''
+  const filename = part.filename ?? 'attachment'
+
+  if (!ATTACHMENT_MIME_SAFELIST.has(mime)) {
+    // Defensive fallback: unknown or unsupported mime — show a text link.
+    // This path should only fire if the endpoint sends a mime the dashboard
+    // doesn't recognize (e.g., after a server-side safelist expansion).
+    const href = escapeHtml(buildAttachmentUrl(part))
+    return `<div class="file-part file-part--link"><a href="${href}" target="_blank" rel="noopener noreferrer" class="file-part-link">[attachment: ${escapeHtml(filename)}]</a></div>`
+  }
+
+  const src = escapeHtml(buildAttachmentUrl(part))
+  const alt = escapeHtml(filename)
+  return `<div class="file-part file-part--image"><img src="${src}" alt="${alt}" loading="lazy" style="max-width:100%;max-height:480px;display:block;border-radius:var(--radius,2px)" /></div>`
+}
+
 /**
  * Render a single message part to an HTML string.
  * TUI prefix conventions applied here.
@@ -101,6 +166,11 @@ export function renderPart(p) {
     // Wrap in data-message-id span so removeStreamingCursor can find it
     const msgAttr = p.messageID ? ` data-message-id="${escapeHtml(p.messageID)}"` : ''
     return `<div class="message-body md-rendered"${dataAttr}${msgAttr}>${content}${cursorHtml}</div>`
+  }
+
+  // ── File (image) part — rendered via proxy endpoint ─────────────────────
+  if (p.type === 'file') {
+    return renderFilePart(p)
   }
 
   if (p.type === 'tool-invocation' || p.type === 'tool') {
@@ -649,6 +719,22 @@ function renderToolPart(p) {
     todoItemsHtml = `<div class="tw-items">${rows}</div>`
   }
 
+  // ── ToolStateCompleted.attachments — render tool-result images ────────────
+  // The SDK's ToolStateCompleted shape carries an optional `attachments: FilePart[]`
+  // array. Each attachment is a file part returned by the tool (e.g. a screenshot
+  // produced by a browser-automation tool). We iterate them and render each as an
+  // <img> via renderFilePart, which proxies through the attachment endpoint.
+  let attachmentsHtml = ''
+  const attachments = Array.isArray(toolState.attachments) ? toolState.attachments : []
+  if (attachments.length > 0) {
+    attachmentsHtml = attachments.map(att => {
+      try { return renderFilePart(att) } catch (_) { return '' }
+    }).filter(Boolean).join('')
+    if (attachmentsHtml) {
+      attachmentsHtml = `<div class="tool-attachments" style="margin-top:6px">${attachmentsHtml}</div>`
+    }
+  }
+
   const partIdAttr = p.id ? ` data-part-id="${escapeHtml(p.id)}"` : ''
   const msgIdAttr = p.messageID ? ` data-message-id="${escapeHtml(p.messageID)}"` : ''
   return `<div class="tool-block ${hiddenClass}${autoOpen}" id="${id}"${partIdAttr}${msgIdAttr}>
@@ -656,7 +742,7 @@ function renderToolPart(p) {
       ${summaryHtml}
       <span class="tool-chevron">▶</span>
     </div>
-    <div class="tool-body">${todoItemsHtml}${argsHtml}${resultHtml}</div>
+    <div class="tool-body">${todoItemsHtml}${argsHtml}${resultHtml}${attachmentsHtml}</div>
   </div>`
 }
 

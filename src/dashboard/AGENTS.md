@@ -8,6 +8,7 @@
 
 ## Key files
 - `index.html` — SPA entry point; `var GEN = "x.y.z"` must match `PILOT_VERSION` (enforced by `__tests__/asset-sanity.test.ts`)
+- `components/messages.js` — message + part renderer. `renderFilePart(part, sessionId, messageId)` proxies images through `GET /sessions/:id/attachments/:partId`. SVGs MUST go through `<img>` only — never `innerHTML` or `<object>` (XSS guard). The `?token=` query param is required for `<img>` tags which cannot send Bearer headers.
 - `main.js` — bootstraps the app and wires all components
 - `sw.js` — service worker; `__PILOT_CACHE_VERSION__` placeholder is templated by the server on each request
 - `constants.js` — shared browser-side constants
@@ -24,6 +25,7 @@
 - `tokens.css` — **vendored** design tokens from `lesquel/remote-control-landing@<sha>`; DO NOT edit by hand — re-run `scripts/sync-design-tokens.ts` to update. **Authoritative source for palette tokens** (color, typography, radius). Loaded after `styles.css` in `index.html` so its `:root` declarations win via cascade. `styles.css` must NOT redefine `--bg*`, `--line*`, `--fg*`, `--accent`, `--mono`, `--radius`, `--warn`, or `--danger` — those belong to `tokens.css` exclusively. The 4 themes are `terminal-green` (default, `:root`), `amber`, `violet`, and `mono-light` — each as a `[data-theme="..."]` block.
 - `ui/theme.js` — **theme module** (added v1.20): exports `THEMES`, `THEME_LABELS`, `STORAGE_KEY`, `applyTheme`, `getActiveTheme`, `cycleTheme`. All theme changes must go through this module. The active theme is stored in `localStorage['pilot-theme']` — the same key the landing page uses, enabling shared state on the same origin. A FOUC-prevention inline script in `index.html <head>` sets `[data-theme]` synchronously before the first paint; subsequent changes go through `applyTheme()`. Do NOT write a `theme` field into `pilot_settings` — theme is no longer part of the shared settings state. The body decoration toggles (grid background, scanlines overlay) follow the same naming convention: `localStorage['pilot-grid']` and `localStorage['pilot-scanlines']` (`"1"` / `"0"`), applied via `body[data-grid]` and `body[data-scanlines]` attributes that activate the corresponding CSS rules in `styles.css`.
 - `__tests__/cost-pinned.test.ts`, `normalizeMessage.test.ts`, etc. — unit tests for browser-side logic
+- `__tests__/file-part.test.ts` — unit tests for `renderFilePart` (added v1.21): verifies img-only output for safelist mimes, SVG-via-img guard (not innerHTML), text-link fallback for unknown mimes, URL construction with `?messageId=` and `?token=`
 
 ## Conventions specific to this folder
 - Plain `.js` — no TypeScript in the browser bundle (TS migration is a future round).
@@ -33,6 +35,7 @@
 ## DO NOT
 - Import from backend `src/` modules — this code runs in the browser.
 - Hardcode `PILOT_VERSION` directly in any `.js` file — the asset-sanity test will catch it and fail the release gate.
+- Inject SVG content via `innerHTML`, `<object>`, or `<iframe>` — SVGs must always be rendered via `<img>` so the browser sandboxes them and inline scripts cannot execute.
 
 ## See also
 - `docs/ARCHITECTURE.md` — overall architecture

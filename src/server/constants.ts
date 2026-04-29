@@ -43,6 +43,21 @@ export const MAX_REQUEST_BODY_BYTES = 1_048_576 // 1 MiB
  *  `.opencode/` already exists (opt-in via `always`, disable via `off`). */
 export const DEFAULT_PROJECT_STATE_MODE = "auto" as const
 
+/** Maximum response body size when proxying session attachments (2 MiB).
+ *  Matches READ_MAX_BYTES used by readFileAbs in system.ts. */
+export const ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024
+
+/** MIME types allowed through the attachment proxy endpoint.
+ *  SVG is allowed only via <img> (never injected as innerHTML — see dashboard renderer).
+ *  Video, audio, PDF etc. are explicitly excluded for this v1 surface. */
+export const MIME_SAFELIST = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+] as const
+
 /** Maximum safe value for PILOT_CODEX_PERMISSION_TIMEOUT_MS.
  *  Bun's idleTimeout cap is 255s. Any codex permission timeout ≥255s would
  *  cause Bun to close the long-polling connection before a structured deny

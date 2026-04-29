@@ -100,6 +100,7 @@ import {
   getSessionChildren,
   postSessionPrompt,
   abortSession,
+  getSessionAttachment,
 } from "./handlers/sessions"
 import {
   listPermissions,
@@ -158,6 +159,13 @@ export const routes: Route[] = [
     pattern: /^\/sessions\/(?<id>[^/]+)\/messages$/,
     auth: "required",
     handler: getSessionMessages,
+  },
+  {
+    // Auth: optional — accepts Bearer header OR ?token= query param (for <img src="..."> tags)
+    method: "GET",
+    pattern: /^\/sessions\/(?<id>[^/]+)\/attachments\/(?<partId>[^/]+)$/,
+    auth: "optional",
+    handler: getSessionAttachment,
   },
   {
     method: "GET",

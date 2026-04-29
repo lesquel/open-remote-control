@@ -7,6 +7,9 @@ import {
   validatePromptBody,
 } from "../validators/sessions"
 import { extractDirectory } from "./system"
+import { validateToken } from "../middlewares/auth"
+import { ATTACHMENT_MAX_BYTES, MIME_SAFELIST } from "../../../server/constants"
+import type { FilePart } from "@opencode-ai/sdk"
 
 export async function listSessions({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
@@ -254,4 +257,237 @@ export async function abortSession({ url, params, deps }: RouteContext): Promise
   deps.audit.log("session.aborted", { sessionID: params.id })
   const result = await deps.client.session.abort({ path: { id: params.id }, query: { ...dirParam } })
   return json({ ok: true }, result.error ? 500 : 200, CORS_HEADERS)
+}
+
+// ─── Attachment proxy ────────────────────────────────────────────────────────
+
+type StructuredError = { ok: false; error: string; detail: string; httpStatus: number }
+type Bytes = { ok: true; body: Uint8Array }
+
+/**
+ * Dispatch a FilePart URL to the appropriate byte-fetching strategy.
+ * Handles three schemes: http(s), file, and opencode.
+ * Returns a typed result — never throws.
+ */
+async function fetchAttachmentBytes(
+  part: FilePart,
+  deps: RouteContext["deps"],
+): Promise<Bytes | StructuredError> {
+  const url = part.url
+
+  if (url.startsWith("https://") || url.startsWith("http://")) {
+    return fetchHttp(url, deps)
+  }
+
+  if (url.startsWith("file://")) {
+    return readLocalFile(url.slice(7))
+  }
+
+  // Bare absolute path (Unix or Windows)
+  if (url.startsWith("/") || /^[A-Z]:\\/i.test(url)) {
+    return readLocalFile(url)
+  }
+
+  if (url.startsWith("opencode://")) {
+    return resolveViaSdk(part, deps)
+  }
+
+  return {
+    ok: false,
+    error: "UNSUPPORTED_SCHEME",
+    detail: `url scheme not recognized: ${url.slice(0, 48)}`,
+    httpStatus: 502,
+  }
+}
+
+async function fetchHttp(
+  url: string,
+  deps: RouteContext["deps"],
+): Promise<Bytes | StructuredError> {
+  const timeoutMs = deps.config.fetchTimeoutMs ?? 10_000
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    clearTimeout(timer)
+    if (!res.ok) {
+      if (res.status === 404) {
+        return { ok: false, error: "ATTACHMENT_URL_NOT_FOUND", detail: `remote returned 404 for url`, httpStatus: 404 }
+      }
+      return { ok: false, error: "REMOTE_ERROR", detail: `remote returned ${res.status}`, httpStatus: 502 }
+    }
+    // Enforce size limit via Content-Length before buffering
+    const contentLength = res.headers.get("content-length")
+    if (contentLength !== null && parseInt(contentLength, 10) > ATTACHMENT_MAX_BYTES) {
+      return { ok: false, error: "PAYLOAD_TOO_LARGE", detail: "attachment exceeds 2 MiB limit", httpStatus: 413 }
+    }
+    const buffer = await res.arrayBuffer()
+    if (buffer.byteLength > ATTACHMENT_MAX_BYTES) {
+      return { ok: false, error: "PAYLOAD_TOO_LARGE", detail: "attachment exceeds 2 MiB limit", httpStatus: 413 }
+    }
+    return { ok: true, body: new Uint8Array(buffer) }
+  } catch (err) {
+    clearTimeout(timer)
+    if (err instanceof Error && err.name === "AbortError") {
+      return { ok: false, error: "TIMEOUT", detail: "remote fetch timed out", httpStatus: 504 }
+    }
+    const message = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: "FETCH_ERROR", detail: message, httpStatus: 502 }
+  }
+}
+
+async function readLocalFile(path: string): Promise<Bytes | StructuredError> {
+  // Reject path traversal
+  if (path.includes("..")) {
+    return { ok: false, error: "FORBIDDEN", detail: "path traversal rejected", httpStatus: 403 }
+  }
+  try {
+    const file = Bun.file(path)
+    const size = file.size
+    if (size > ATTACHMENT_MAX_BYTES) {
+      return { ok: false, error: "PAYLOAD_TOO_LARGE", detail: "attachment exceeds 2 MiB limit", httpStatus: 413 }
+    }
+    const buffer = await file.arrayBuffer()
+    return { ok: true, body: new Uint8Array(buffer) }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (/enoent|not found|no such/i.test(message)) {
+      return { ok: false, error: "ATTACHMENT_NOT_FOUND", detail: "local file not found", httpStatus: 404 }
+    }
+    return { ok: false, error: "FILE_READ_ERROR", detail: message, httpStatus: 500 }
+  }
+}
+
+async function resolveViaSdk(
+  part: FilePart,
+  deps: RouteContext["deps"],
+): Promise<Bytes | StructuredError> {
+  // Attempt to read via the SDK's file.read endpoint if the client supports it.
+  // The opencode:// scheme is opaque — we try the SDK as a best-effort proxy.
+  try {
+    const result = await (deps.client as unknown as {
+      file?: { read?: (opts: { path: string }) => Promise<{ data?: { content?: string } }> }
+    }).file?.read?.({ path: part.url })
+    const content = result?.data?.content
+    if (typeof content === "string") {
+      const bytes = new TextEncoder().encode(content)
+      if (bytes.byteLength > ATTACHMENT_MAX_BYTES) {
+        return { ok: false, error: "PAYLOAD_TOO_LARGE", detail: "attachment exceeds 2 MiB limit", httpStatus: 413 }
+      }
+      return { ok: true, body: bytes }
+    }
+    return { ok: false, error: "SDK_NO_CONTENT", detail: "SDK file.read returned no content for opencode:// url", httpStatus: 502 }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { ok: false, error: "SDK_ERROR", detail: message, httpStatus: 502 }
+  }
+}
+
+/**
+ * GET /sessions/:id/attachments/:partId?messageId=<id>&directory=<d>&token=<t>
+ *
+ * Auth: Bearer header OR ?token= query param (same pattern as /events).
+ * Proxies the attachment bytes back to the browser with safe headers.
+ * Enforces MIME safelist, 2 MiB size cap, and path-traversal rejection.
+ */
+export async function getSessionAttachment({
+  req,
+  url,
+  params,
+  deps,
+}: RouteContext): Promise<Response> {
+  // Auth: Bearer header OR ?token= query param (mirrors /events pattern)
+  const queryToken = url.searchParams.get("token")
+  const headerValid = validateToken(req, deps.token)
+  const queryValid = queryToken !== null && queryToken === deps.token
+  if (!headerValid && !queryValid) {
+    deps.audit.log("auth.failed", { path: "/sessions/:id/attachments/:partId" })
+    return jsonError("UNAUTHORIZED", "Missing or invalid authorization token", 401, CORS_HEADERS)
+  }
+
+  const dirParam = extractDirectory(url)
+  if (dirParam === null)
+    return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path.", 400, CORS_HEADERS)
+
+  const sessionID = params.id
+  const partId = params.partId
+
+  // messageId is required — the dashboard knows which message it's rendering
+  const messageId = url.searchParams.get("messageId")
+  if (!messageId) {
+    return jsonError("MISSING_MESSAGE_ID", "messageId query param is required", 400, CORS_HEADERS)
+  }
+
+  // Look up the specific message by ID using the SDK's direct endpoint
+  let filePart: FilePart | null = null
+  try {
+    const result = await deps.client.session.message({
+      path: { id: sessionID, messageID: messageId },
+      query: { ...dirParam },
+    })
+    if (result.error) {
+      const errMsg =
+        typeof result.error === "object" && result.error !== null && "message" in result.error
+          ? String((result.error as { message?: unknown }).message ?? "")
+          : String(result.error)
+      if (/404|not.*found/i.test(errMsg)) {
+        return jsonError("SESSION_NOT_FOUND", "Session or message not found", 404, CORS_HEADERS)
+      }
+      return jsonError("SDK_ERROR", "Failed to fetch message", 500, CORS_HEADERS)
+    }
+    const parts = result.data?.parts ?? []
+    for (const p of parts) {
+      if (p.type === "file" && p.id === partId) {
+        filePart = p as FilePart
+        break
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (/404|not.*found/i.test(message)) {
+      return jsonError("SESSION_NOT_FOUND", "Session or message not found", 404, CORS_HEADERS)
+    }
+    deps.logger.error("SDK call failed: session.message", { sessionID, messageId, error: message })
+    return jsonError("SDK_ERROR", "Failed to fetch message from SDK", 500, CORS_HEADERS)
+  }
+
+  if (filePart === null) {
+    return jsonError("ATTACHMENT_NOT_FOUND", "Part not found or is not a file part", 404, CORS_HEADERS)
+  }
+
+  // MIME safelist check
+  const mimeList: ReadonlyArray<string> = MIME_SAFELIST
+  if (!mimeList.includes(filePart.mime)) {
+    return jsonError(
+      "UNSUPPORTED_MIME",
+      `MIME type ${filePart.mime} is not in the attachment safelist`,
+      415,
+      CORS_HEADERS,
+    )
+  }
+
+  // Fetch bytes via scheme-dispatched proxy
+  const result = await fetchAttachmentBytes(filePart, deps)
+  if (!result.ok) {
+    deps.logger.error("attachment fetch failed", {
+      sessionID,
+      partId,
+      error: result.error,
+      detail: result.detail,
+    })
+    return jsonError(result.error, result.detail, result.httpStatus, CORS_HEADERS)
+  }
+
+  deps.audit.log("attachment.served", { sessionID, partId, mime: filePart.mime })
+
+  return new Response(result.body.buffer as ArrayBuffer, {
+    status: 200,
+    headers: {
+      "Content-Type": filePart.mime,
+      "Cache-Control": "private, max-age=3600",
+      "Content-Disposition": "inline",
+      "X-Content-Type-Options": "nosniff",
+      ...CORS_HEADERS,
+    },
+  })
 }
