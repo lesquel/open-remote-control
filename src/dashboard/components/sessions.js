@@ -2,6 +2,7 @@
 import { getState, setState, currentFetchGen, isStaleGen } from '../state/state.js'
 import { fetchSessions, fetchMessages, createSession as apiCreateSession, sendPromptWithOpts, abortSession as apiAbortSession, updateSessionTitle, deleteSession as apiDeleteSession } from '../api/api.js'
 import { loadMessages, normalizeMessage, appendOptimisticUserMessage, removeOptimisticUserMessage, showTypingIndicator } from './messages.js'
+import { loadDiff } from '../ui/diff.js'
 import { toast } from '../ui/toast.js'
 import { loadSubagents } from './subagents.js'
 import { refreshFilesChanged } from './files-changed-bridge.js'
@@ -477,6 +478,10 @@ export async function selectSession(id) {
   // Refresh files changed panel (non-blocking)
   refreshFilesChanged(id)
   input.focus()
+  // Load diff tab if it's currently active
+  if (document.getElementById('diff-tab')?.classList.contains('active')) {
+    loadDiff(id)
+  }
 }
 
 export function updateHeaderSession(title, status) {
@@ -766,6 +771,10 @@ function initTabs() {
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'))
       tab.classList.add('active')
       document.getElementById(tab.dataset.tab)?.classList.add('active')
+      if (tab.dataset.tab === 'diff-tab') {
+        const { activeSession } = getState()
+        if (activeSession) loadDiff(activeSession)
+      }
     })
   })
 }

@@ -1007,6 +1007,47 @@ body {
 }
 .panel-error-retry:hover { background: rgba(255,95,86,.1); }
 
+/* ── Diff Tab ────────────────────────────────────────────────────────────── */
+#diff-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.diff-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+}
+.diff-line { font-family: var(--mono); padding: 1px 8px; font-size: 11px; white-space: pre; }
+.diff-add  { background: rgba(39,201,63,.07);  color: #4ec94a; }
+.diff-del  { background: rgba(255,95,86,.07);  color: #e86b65; }
+.diff-hunk { background: rgba(94,158,255,.07); color: #5e9eff; }
+/* File-section anchor headers in the diff view */
+.diff-file-header {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  background: rgba(94,158,255,.05);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: default;
+  user-select: none;
+}
+/* Highlight pulse when scrolled-to via file-row click */
+@keyframes diff-section-highlight {
+  0%   { background: rgba(94,158,255,.18); }
+  100% { background: transparent; }
+}
+.diff-section--highlight {
+  animation: diff-section-highlight 1.5s ease-out forwards;
+  border-radius: var(--radius-sm);
+}
+
 /* ── Prompt Composer ─────────────────────────────────────────────────────── */
 #input-bar {
   display: flex;
@@ -3323,6 +3364,11 @@ body {
   }
   #messages {
     overflow-y: auto;
+  }
+  /* Diff lines: wrap on mobile */
+  .diff-line {
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 }
 

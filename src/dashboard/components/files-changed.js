@@ -2,6 +2,7 @@
 // Shows per-file +/- line counts derived from the session diff.
 import { fetchDiff } from '../api/api.js'
 import { getState } from '../state/state.js'
+import { navigateToDiffFile } from '../ui/diff.js'
 
 const PANEL_ID  = 'files-changed-panel'
 const COLLAPSED_KEY = 'pilot_files_collapsed'
@@ -95,6 +96,13 @@ function renderPanel(container, files) {
     localStorage.setItem(COLLAPSED_KEY, container.classList.contains('collapsed') ? '1' : '0')
   })
 
+  // Click a file row → switch to the Diff tab and scroll to that file's section
+  container.querySelectorAll('.files-changed-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const filePath = el.dataset.path
+      if (filePath) navigateToDiffFile(filePath).catch(() => {})
+    })
+  })
 }
 
 // ── Debounce helper ────────────────────────────────────────────────────────
