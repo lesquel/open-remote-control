@@ -399,3 +399,52 @@ describe("getSessionAttachment — happy path", () => {
     }
   })
 })
+
+// ─── V2: SSRF guard in HTTP attachment proxy ──────────────────────────────────
+
+describe("getSessionAttachment — SSRF guard (V2)", () => {
+  test("403 when https attachment URL targets localhost", async () => {
+    const localPart = { ...FILE_PART, url: "https://localhost/secret.png" }
+    const deps = makeAttachmentDeps({
+      client: makeMockClient({ partOverride: localPart }),
+    })
+    const ctx = makeAttachmentCtx(deps)
+    const res = await getSessionAttachment(ctx)
+    expect(res.status).toBe(403)
+    const body = await res.json() as { error: { code: string } }
+    expect(body.error.code).toBe("FORBIDDEN")
+  })
+
+  test("403 when https attachment URL targets RFC 1918 address", async () => {
+    const privatePart = { ...FILE_PART, url: "https://192.168.1.1/secret.png" }
+    const deps = makeAttachmentDeps({
+      client: makeMockClient({ partOverride: privatePart }),
+    })
+    const ctx = makeAttachmentCtx(deps)
+    const res = await getSessionAttachment(ctx)
+    expect(res.status).toBe(403)
+    const body = await res.json() as { error: { code: string } }
+    expect(body.error.code).toBe("FORBIDDEN")
+  })
+
+  test("403 when http attachment URL targets localhost (reject non-public host)", async () => {
+    const localHttpPart = { ...FILE_PART, url: "http://localhost/secret.png" }
+    const deps = makeAttachmentDeps({
+      client: makeMockClient({ partOverride: localHttpPart }),
+    })
+    const ctx = makeAttachmentCtx(deps)
+    const res = await getSessionAttachment(ctx)
+    // http:// to localhost: SSRF guard returns { ok: false } → 403
+    expect(res.status).toBe(403)
+  })
+
+  test("403 when http attachment URL targets 127.0.0.1", async () => {
+    const localHttpPart = { ...FILE_PART, url: "http://127.0.0.1/secret.png" }
+    const deps = makeAttachmentDeps({
+      client: makeMockClient({ partOverride: localHttpPart }),
+    })
+    const ctx = makeAttachmentCtx(deps)
+    const res = await getSessionAttachment(ctx)
+    expect(res.status).toBe(403)
+  })
+})

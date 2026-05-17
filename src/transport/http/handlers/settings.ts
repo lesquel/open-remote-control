@@ -226,6 +226,20 @@ export async function patchSettings({ req, deps }: RouteContext): Promise<Respon
     keys: Object.keys(validation.data),
   })
 
+  // Live-update hookToken on the shared deps.config so subsequent requests
+  // (e.g. Codex hook auth) see the new value without restart.
+  // Mirrors the rotateToken mutable-container pattern used for the main token.
+  // Shell-env-pinned fields are already rejected above — this path only runs
+  // for store-sourced values.
+  if ('hookToken' in validation.data) {
+    const newHookToken = validation.data.hookToken
+    // null means "clear" (see validateSettingsPatch: null → empty string sentinel)
+    // The store sanitize() drops empty strings, so an empty string here = cleared.
+    deps.config.hookToken = (newHookToken && newHookToken.length > 0)
+      ? newHookToken
+      : undefined
+  }
+
   return json(sanitizeSettingsResponse(buildSettingsResponse(deps)), 200, CORS_HEADERS)
 }
 

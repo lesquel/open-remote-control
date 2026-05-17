@@ -7,7 +7,8 @@ import {
   validatePromptBody,
 } from "../validators/sessions"
 import { extractDirectory } from "./system"
-import { validateToken } from "../middlewares/auth"
+import { validateToken, safeEqual } from "../middlewares/auth"
+import { validateEndpoint } from "../../../infra/network/ssrf"
 import { ATTACHMENT_MAX_BYTES, MIME_SAFELIST } from "../../../server/constants"
 import type { FilePart } from "@opencode-ai/sdk"
 
@@ -304,6 +305,13 @@ async function fetchHttp(
   url: string,
   deps: RouteContext["deps"],
 ): Promise<Bytes | StructuredError> {
+  // SSRF guard: blocks non-HTTPS schemes and non-public hosts on SDK-supplied
+  // attachment URLs. The attachment proxy intentionally inherits the HTTPS-only
+  // policy from validateEndpoint (http:// attachment URLs are rejected here).
+  const endpointCheck = validateEndpoint(url)
+  if (!endpointCheck.ok) {
+    return { ok: false, error: "FORBIDDEN", detail: "attachment url blocked by ssrf guard", httpStatus: 403 }
+  }
   const timeoutMs = deps.config.fetchTimeoutMs ?? 10_000
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -399,7 +407,8 @@ export async function getSessionAttachment({
   // Auth: Bearer header OR ?token= query param (mirrors /events pattern)
   const queryToken = url.searchParams.get("token")
   const headerValid = validateToken(req, deps.token)
-  const queryValid = queryToken !== null && queryToken === deps.token
+  // Timing-safe compare for ?token= path — mirrors the Bearer path in validateToken
+  const queryValid = queryToken !== null && safeEqual(queryToken, deps.token)
   if (!headerValid && !queryValid) {
     deps.audit.log("auth.failed", { path: "/sessions/:id/attachments/:partId" })
     return jsonError("UNAUTHORIZED", "Missing or invalid authorization token", 401, CORS_HEADERS)
