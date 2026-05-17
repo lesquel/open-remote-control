@@ -129,15 +129,37 @@ export function writeState(
 }
 
 /**
- * Update the token in an existing state file (used by token rotation).
- * If the state file doesn't exist, creates it with the new token and the
- * provided fallback values.
+ * Structured result from {@link updateStateToken}.
+ * `ok: false` means no existing state was found (readState returned null) —
+ * the caller is responsible for logging a visible diagnostic; core/ does not log.
+ * `ok: true` wraps the WriteStateResult from the underlying writeState call.
  */
-export function updateStateToken(directory: string, newToken: string): void {
+export type UpdateTokenResult =
+  | { ok: true; write: WriteStateResult }
+  | { ok: false; reason: "no-existing-state" }
+
+/**
+ * Update the token in an existing state file (used by token rotation).
+ *
+ * - Passes `mode` through to {@link writeState} so the user's PILOT_PROJECT_STATE
+ *   setting is respected (fixes the "mode ignored" bug).
+ * - Returns a structured {@link UpdateTokenResult} instead of `void` so callers
+ *   can surface a visible diagnostic when readState returns null (fixes the
+ *   "silent skip" bug per AGENTS.md §"No silent failures").
+ *
+ * Core/ does NOT log here — logging is the caller's responsibility (transport/).
+ */
+export function updateStateToken(
+  directory: string,
+  newToken: string,
+  mode: ProjectStateMode = "auto",
+): UpdateTokenResult {
   const existing = readState(directory)
-  if (existing) {
-    writeState(directory, { ...existing, token: newToken })
+  if (!existing) {
+    return { ok: false, reason: "no-existing-state" }
   }
+  const write = writeState(directory, { ...existing, token: newToken }, mode)
+  return { ok: true, write }
 }
 
 export function readState(directory: string): PilotState | null {
