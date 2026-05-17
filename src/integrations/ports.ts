@@ -1,9 +1,23 @@
 // ─── Integration port ─────────────────────────────────────────────────────────
-// The contract honored by every external agent integration (OpenCode native
-// hooks, Codex HTTP bridge, and any future integration — Cursor, Aider).
+// `AgentIntegration` models the HTTP-route-bridged CLI integration contract:
+// a `setup(IntegrationDeps)` that registers routes/hooks imperatively and
+// returns an `IntegrationHandle`. It is honored by `codexIntegration`
+// (integrations/codex/index.ts) and by any future integration that exposes an
+// imperative registration API (Cursor, Aider).
 //
-// `AgentIntegration` is one of two explicit ports in the architecture. See
+// It is one of two explicit ports in the architecture. See
 // docs/REFACTOR-2026-04-architecture.md §Ports for design rationale.
+//
+// Intentional outlier — `opencodeIntegration` does NOT implement this port.
+// The OpenCode SDK plugin model has no imperative hook-registration API: the
+// plugin must RETURN a Hooks object, so `opencodeIntegration.setup()` takes a
+// wider `OpenCodeSetupDeps` and returns `OpenCodeIntegrationHandle` (hooks +
+// shutdown) instead of conforming to `AgentIntegration`. This is a native-SDK
+// integration, not an HTTP-bridged one — forcing it behind this port would
+// mean optional deps no other integration uses (a false abstraction). The
+// shared seam is `IntegrationHandle` (the shutdown contract), which
+// `OpenCodeIntegrationHandle` does extend. Full rationale and the SDK
+// injection-shape spike result live in integrations/opencode/index.ts.
 
 import type { PermissionQueue } from '../core/permissions/queue'
 import type { EventBus } from '../core/events/bus'
