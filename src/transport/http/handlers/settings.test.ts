@@ -498,3 +498,52 @@ describe("POST /settings/reset handler", () => {
     expect(raw).not.toContain("hookToken")
   })
 })
+
+// ─── V3: hookToken live-update on PATCH /settings ────────────────────────────
+
+describe("V3 hookToken live-update (mutable container)", () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "pilot-v3-hooktoken-"))
+  })
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  test("PATCH /settings with hookToken updates deps.config.hookToken in-memory", async () => {
+    const configPath = join(dir, "config.json")
+    const deps = makeDeps({ configPath })
+    // Boot state: no hookToken
+    expect(deps.config.hookToken).toBeUndefined()
+
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ hookToken: "live-token-abc" }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+
+    // deps.config.hookToken must be live-updated without restart
+    expect(deps.config.hookToken).toBe("live-token-abc")
+  })
+
+  test("PATCH /settings with hookToken:null clears deps.config.hookToken in-memory", async () => {
+    const configPath = join(dir, "config.json")
+    // Start with a hookToken set in the store
+    writeFileSync(configPath, JSON.stringify({ hookToken: "old-token" }), "utf-8")
+    const config = loadConfig({})
+    config.hookToken = "old-token"
+    const deps = makeDeps({ configPath, config })
+    expect(deps.config.hookToken).toBe("old-token")
+
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ hookToken: null }),
+    })
+    const res = await patchSettings(makeCtx(deps, req))
+    expect(res.status).toBe(200)
+
+    // After clearing, hookToken must be undefined in memory
+    expect(deps.config.hookToken).toBeUndefined()
+  })
+})

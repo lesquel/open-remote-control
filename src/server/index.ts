@@ -260,13 +260,17 @@ export default {
         projectStateMode: config.projectStateMode,
       })
 
+      const tokenPreview =
+        currentToken.length > 10
+          ? `${currentToken.slice(0, 4)}...${currentToken.slice(-4)}`
+          : currentToken.slice(0, 4) + "..."
       await ctx.client.app
         .log({
           body: {
             service: "opencode-pilot",
             level: "info",
             message: `Remote control active on ${config.host}:${config.port}`,
-            extra: { token: currentToken },
+            extra: { tokenPreview },
           },
         })
         .catch(() => {})

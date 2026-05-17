@@ -21,11 +21,14 @@ import { createSubscriptionStore } from './subscriptions'
 import { loadWebPush, generateVapidKeys as generateVapidKeysUtil } from './vapid'
 import type { VapidGenerateResult } from './vapid'
 import type { PushSubscriptionJson, PushPayload } from './types'
+import { validateEndpoint } from '../../../infra/network/ssrf'
 
 // Re-export types so callers that previously imported from service.ts still work
 export type { PushSubscriptionJson, PushPayload }
 export type { PushSubscriptionKeys } from './types'
 export type { VapidGenerateResult } from './vapid'
+// Re-export so existing callers of service.validateEndpoint continue to work
+export { validateEndpoint } from '../../../infra/network/ssrf'
 
 export interface PushService {
   /** The NotificationChannel slice — passed to the notification pipeline. */
@@ -57,47 +60,6 @@ function isValidSubscription(v: unknown): v is PushSubscriptionJson {
   if (!keys || typeof keys !== 'object') return false
   const k = keys as Record<string, unknown>
   return typeof k.p256dh === 'string' && typeof k.auth === 'string'
-}
-
-/**
- * Validate a Web Push endpoint URL against SSRF vectors.
- *
- * Push endpoints MUST use HTTPS and MUST NOT resolve to localhost, link-local,
- * or RFC 1918 private ranges. An attacker registering a subscription with an
- * endpoint pointing at an internal service would turn the server into an SSRF
- * proxy — each broadcast call would make an outgoing POST to that URL.
- */
-export function validateEndpoint(raw: string): { ok: true } | { ok: false; reason: string } {
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return { ok: false, reason: 'invalid URL' }
-  }
-  if (url.protocol !== 'https:') {
-    return { ok: false, reason: 'endpoint must use https:' }
-  }
-  const host = url.hostname.toLowerCase()
-  // Loopback / unspecified
-  if (
-    host === 'localhost' ||
-    host === '0.0.0.0' ||
-    host === '127.0.0.1' ||
-    host === '::1'
-  ) {
-    return { ok: false, reason: 'localhost endpoints are not allowed' }
-  }
-  // RFC 1918 private ranges (IPv4)
-  if (/^10\./.test(host)) return { ok: false, reason: 'private IP range not allowed' }
-  if (/^192\.168\./.test(host)) return { ok: false, reason: 'private IP range not allowed' }
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return { ok: false, reason: 'private IP range not allowed' }
-  // Link-local (IPv4)
-  if (/^169\.254\./.test(host)) return { ok: false, reason: 'link-local address not allowed' }
-  // Unique-local / link-local (IPv6)
-  if (host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:')) {
-    return { ok: false, reason: 'private IPv6 range not allowed' }
-  }
-  return { ok: true }
 }
 
 export interface PushDeps {
