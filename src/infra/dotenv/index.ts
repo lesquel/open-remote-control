@@ -60,7 +60,16 @@ export function loadDotEnv(): DotenvResult {
     let text: string
     try {
       text = readFileSync(path, "utf8")
-    } catch {
+    } catch (readErr) {
+      // The file exists but is unreadable (e.g. permission denied, symlink loop).
+      // Silently continuing here would leave the user's env vars unapplied with
+      // no indication of why — they would see mysterious "config not applied"
+      // behaviour at runtime. We write to stderr (console.error) because this
+      // is infra/ startup code that runs before any logger is available.
+      // "File absent" (existsSync === false) stays fully silent — only an
+      // existing-but-unreadable file emits this warning.
+      const reason = readErr instanceof Error ? readErr.message : String(readErr)
+      console.error(`[opencode-pilot] warn: .env file found but unreadable — env vars NOT applied. path=${path} reason=${reason}`)
       continue
     }
     const parsed = parseEnv(text)

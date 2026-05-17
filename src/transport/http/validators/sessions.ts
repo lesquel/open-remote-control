@@ -87,6 +87,22 @@ export function validatePromptBody(
     }
   }
 
+  // Validate parts elements: each must be a non-null object with a non-empty string `type`.
+  // A malformed element from an untrusted caller could propagate an unusable part
+  // shape to the SDK and produce a cryptic downstream error.
+  if (Array.isArray(b.parts)) {
+    for (let i = 0; i < b.parts.length; i++) {
+      const el = b.parts[i]
+      if (el === null || typeof el !== "object" || Array.isArray(el)) {
+        return { ok: false, error: `parts[${i}]: each part element must be a non-null object` }
+      }
+      const part = el as Record<string, unknown>
+      if (typeof part.type !== "string" || part.type.length === 0) {
+        return { ok: false, error: `parts[${i}]: each part element must have a non-empty string "type"` }
+      }
+    }
+  }
+
   if (b.model !== undefined) {
     if (b.model === null || typeof b.model !== "object" || Array.isArray(b.model)) {
       return { ok: false, error: "model must be an object with providerID and modelID" }
@@ -95,10 +111,28 @@ export function validatePromptBody(
     if (typeof m.providerID !== "string" || typeof m.modelID !== "string") {
       return { ok: false, error: "model.providerID and model.modelID must be strings" }
     }
+    // modelID MUST be non-empty — it's the meaningful routing key for the SDK.
+    // providerID MAY be empty: the dashboard sends '' when no provider override is
+    // selected (sessions.js: opts.providerID = modelPref.providerId ?? ''), so
+    // rejecting empty providerID would silently drop legitimate prompts.
+    if (m.modelID.length === 0) {
+      return { ok: false, error: "model.modelID must not be empty" }
+    }
+    // Length caps prevent oversized strings from propagating to SSE clients / audit.
+    if (m.providerID.length > 200) {
+      return { ok: false, error: "model.providerID must be 200 characters or fewer" }
+    }
+    if (m.modelID.length > 200) {
+      return { ok: false, error: "model.modelID must be 200 characters or fewer" }
+    }
   }
 
   if (b.agent !== undefined && typeof b.agent !== "string") {
     return { ok: false, error: "agent must be a string" }
+  }
+  // Cap agent length for the same SSE/audit overflow reason as model fields.
+  if (typeof b.agent === "string" && b.agent.length > 200) {
+    return { ok: false, error: "agent must be 200 characters or fewer" }
   }
 
   return {

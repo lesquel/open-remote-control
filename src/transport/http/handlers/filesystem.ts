@@ -109,6 +109,20 @@ export async function globFiles({ url, deps }: RouteContext): Promise<Response> 
   const pattern = url.searchParams.get("pattern")
   if (!pattern) return jsonError("MISSING_PATTERN", "pattern is required", 400, CORS_HEADERS)
 
+  // Block directory traversal and absolute patterns.
+  //
+  // `..` rejection: Bun.Glob with a `../`-prefixed pattern and onlyFiles:true
+  // can yield relative paths that escape the scanned cwd, so the absolute path
+  // returned in the response would disclose paths outside the project root.
+  //
+  // Absolute-pattern rejection: Bun.Glob honours absolute globs at the OS level
+  // (e.g. `/etc/*`). Even though the post-glob containment check would skip any
+  // matching entry, the response `path` field would still disclose real filenames
+  // under `/etc`. Reject via isAbsolute (node:path) — POSIX-correct for this
+  // Linux/macOS target; the post-glob containment check is the backstop.
+  if (pattern.includes("..") || isAbsolute(pattern))
+    return jsonError("FORBIDDEN", "Pattern traversal not allowed", 403, CORS_HEADERS)
+
   const cwdParam = url.searchParams.get("cwd")
   const cwd = cwdParam && cwdParam.length > 0 ? cwdParam : deps.directory
   const limit = parseLimit(url.searchParams.get("limit"), GLOB_DEFAULT_LIMIT, GLOB_MAX_LIMIT)
@@ -126,13 +140,26 @@ export async function globFiles({ url, deps }: RouteContext): Promise<Response> 
     const results: Array<{ path: string; absolute: string; mtime: number; size: number }> = []
     for await (const rel of glob.scan({ cwd: cwdSafe.resolved, onlyFiles: true })) {
       const abs = join(cwdSafe.resolved, rel)
+
+      // Belt-and-suspenders: verify the resolved absolute path is still under
+      // cwdSafe.resolved. Bun.Glob with onlyFiles:true should never escape the
+      // scanned cwd (and the `..` pattern check above fires first), but if a
+      // future Bun version or a symlink edge-case yields an out-of-root path we
+      // silently skip it rather than disclose it.
+      if (abs !== cwdSafe.resolved && !abs.startsWith(cwdSafe.resolved + "/")) {
+        continue
+      }
+
       let mtime = 0
       let size = 0
       try {
         const st = statSync(abs)
         mtime = st.mtimeMs
         size = st.size
-      } catch {}
+      } catch {
+        // statSync failing on a globbed path is a transient race (file deleted
+        // between glob scan and stat). Skip the file silently — it's already gone.
+      }
       results.push({ path: rel, absolute: abs, mtime, size })
       if (results.length >= limit) break
     }

@@ -25,14 +25,23 @@ export async function readBoundedText(req: Request, maxBytes: number): Promise<s
       if (done) break
       total += value.byteLength
       if (total > maxBytes) {
-        try { reader.cancel() } catch {}
+        try { reader.cancel() } catch {
+          // Provably irrelevant: cancel() is best-effort stream teardown after
+          // we have already decided to reject the body. Failure here (e.g. the
+          // request stream was already closed by the client) does not affect
+          // the null return or downstream handling.
+        }
         return null
       }
       result += decoder.decode(value, { stream: true })
     }
     result += decoder.decode()
   } finally {
-    try { reader.releaseLock() } catch {}
+    try { reader.releaseLock() } catch {
+      // Provably irrelevant: releaseLock() is finally-block cleanup. Failure
+      // (e.g. lock already released by a prior cancel()) does not affect the
+      // return value or any downstream processing.
+    }
   }
   return result
 }

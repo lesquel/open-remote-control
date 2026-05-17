@@ -69,8 +69,7 @@ describe("writeBanner — projectStateMode", () => {
     // Before the fix, join("", ".opencode", "pilot-banner.txt") resolved to a
     // relative path inside the process cwd. With shouldWriteProjectState the
     // empty-string directory short-circuits to false and nothing is written.
-    await expect(
-      writeBanner({ ...minimalOpts, directory: "", projectStateMode: "auto" }),
-    ).resolves.toBeString()
+    const result = await writeBanner({ ...minimalOpts, directory: "", projectStateMode: "auto" })
+    expect(typeof result.banner).toBe("string")
   })
 })

@@ -252,13 +252,28 @@ export default {
       deps.tunnelUrl = tunnel.publicUrl
 
       const localUrl = `http://${config.host}:${config.port}`
-      await writeBanner({
+      const { globalWriteError } = await writeBanner({
         localUrl,
         publicUrl: tunnel.publicUrl,
         token: currentToken,
         directory: ctx.directory,
         projectStateMode: config.projectStateMode,
       })
+      if (globalWriteError) {
+        // The global banner (the path the TUI reads for the connect URL) failed
+        // to write. The user will not see the URL in the TUI unless it succeeds.
+        // Log a warn so the problem is visible instead of silently swallowed.
+        await ctx.client.app
+          .log({
+            body: {
+              service: "opencode-pilot",
+              level: "warn",
+              message: `[banner] global banner write failed: ${globalWriteError}`,
+              extra: { path: "~/.opencode-pilot/pilot-banner.txt", error: globalWriteError },
+            },
+          })
+          .catch(() => {})
+      }
 
       const tokenPreview =
         currentToken.length > 10
@@ -412,6 +427,12 @@ export default {
         clearInterval(promotionTimer)
         promotionTimer = null
       }
+      // Each shutdown step is best-effort — errors here are provably irrelevant
+      // because (a) we're tearing down, not starting up, so there is no future
+      // operation that depends on these succeeding, and (b) throwing from shutdown
+      // would prevent subsequent steps from running, leaving e.g. the server
+      // socket open after a failed telegram.stop(). AGENTS.md allows empty catch
+      // in shutdown paths provided this comment is present.
       try { telegram.stop() } catch {}
       // Spec order: integrations → http → tunnel → notifications.flush → clearState
       try { await opencode.shutdown() } catch {}

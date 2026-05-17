@@ -261,3 +261,93 @@ describe("validateStop", () => {
     if (result.ok) expect(result.data.last_assistant_message).toBe("done")
   })
 })
+
+// ─── B1: Input length caps ────────────────────────────────────────────────────
+// session_id/turn_id/tool_use_id ≤ 128, tool_name/cwd/model ≤ 512, prompt ≤ 50_000
+
+describe("validateSessionStart — length caps (B1)", () => {
+  const base = {
+    session_id: "sess-1",
+    cwd: "/tmp",
+    model: "gpt-4o",
+    permission_mode: "default",
+  }
+
+  test("rejects session_id > 128 chars", () => {
+    const result = validateSessionStart({ ...base, session_id: "x".repeat(129) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("session_id")
+  })
+
+  test("accepts session_id at limit (128 chars)", () => {
+    const result = validateSessionStart({ ...base, session_id: "x".repeat(128) })
+    expect(result.ok).toBe(true)
+  })
+
+  test("rejects cwd > 512 chars", () => {
+    const result = validateSessionStart({ ...base, cwd: "/".repeat(513) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("cwd")
+  })
+
+  test("rejects model > 512 chars", () => {
+    const result = validateSessionStart({ ...base, model: "m".repeat(513) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("model")
+  })
+
+  test("rejects turn_id > 128 chars when provided", () => {
+    const result = validateSessionStart({ ...base, turn_id: "t".repeat(129) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("turn_id")
+  })
+})
+
+describe("validateUserPromptSubmit — length caps (B1)", () => {
+  const base = { session_id: "sess-1", turn_id: "turn-1", prompt: "hello" }
+
+  test("rejects session_id > 128 chars", () => {
+    const result = validateUserPromptSubmit({ ...base, session_id: "x".repeat(129) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("session_id")
+  })
+
+  test("rejects turn_id > 128 chars", () => {
+    const result = validateUserPromptSubmit({ ...base, turn_id: "t".repeat(129) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("turn_id")
+  })
+
+  test("rejects prompt > 50_000 chars", () => {
+    const result = validateUserPromptSubmit({ ...base, prompt: "p".repeat(50_001) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("prompt")
+  })
+
+  test("accepts prompt at limit (50_000 chars)", () => {
+    const result = validateUserPromptSubmit({ ...base, prompt: "p".repeat(50_000) })
+    expect(result.ok).toBe(true)
+  })
+})
+
+describe("validatePreToolUse — length caps (B1)", () => {
+  const base = {
+    session_id: "sess-1",
+    turn_id: "turn-1",
+    tool_use_id: "tuid-1",
+    tool_name: "bash",
+    tool_input: {},
+  }
+
+  test("rejects tool_use_id > 128 chars", () => {
+    const result = validatePreToolUse({ ...base, tool_use_id: "u".repeat(129) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("tool_use_id")
+  })
+
+  test("rejects tool_name > 512 chars", () => {
+    const result = validatePreToolUse({ ...base, tool_name: "n".repeat(513) })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain("tool_name")
+  })
+})
