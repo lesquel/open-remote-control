@@ -15,6 +15,14 @@ export async function listTools({ url, deps }: RouteContext): Promise<Response> 
   if (dirParam === null)
     return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.tool.ids({ query: { ...dirParam } })
+  if (result.error) {
+    const errMsg =
+      typeof result.error === "object" && result.error !== null && "message" in result.error
+        ? String((result.error as { message?: unknown }).message ?? "")
+        : String(result.error)
+    deps.logger.error("SDK call failed: tool.ids", { error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
 

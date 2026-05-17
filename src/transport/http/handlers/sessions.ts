@@ -12,12 +12,34 @@ import { validateEndpoint } from "../../../infra/network/ssrf"
 import { ATTACHMENT_MAX_BYTES, MIME_SAFELIST } from "../../../infra/http/constants"
 import type { FilePart } from "@opencode-ai/sdk"
 
+// ─── Shared SDK error inspector ───────────────────────────────────────────────
+
+/**
+ * Extract a human-readable message from an SDK error value.
+ * Mirrors the exact pattern used in deleteSession (the established in-repo reference).
+ */
+function sdkErrorMessage(error: unknown): string {
+  return typeof error === "object" && error !== null && "message" in error
+    ? String((error as { message?: unknown }).message ?? "")
+    : String(error)
+}
+
 export async function listSessions({ url, deps }: RouteContext): Promise<Response> {
   const dirParam = extractDirectory(url)
   if (dirParam === null)
     return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.list({ query: { ...dirParam } })
+  if (result.error) {
+    const errMsg = sdkErrorMessage(result.error)
+    deps.logger.error("SDK call failed: session.list", { error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   const statuses = await deps.client.session.status({ query: { ...dirParam } })
+  if (statuses.error) {
+    const errMsg = sdkErrorMessage(statuses.error)
+    deps.logger.error("SDK call failed: session.status", { error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   return json(
     { sessions: result.data ?? [], statuses: statuses.data ?? {} },
     200,
@@ -171,6 +193,14 @@ export async function getSessionMessages({
   if (dirParam === null)
     return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.messages({ path: { id: params.id }, query: { ...dirParam } })
+  if (result.error) {
+    const errMsg = sdkErrorMessage(result.error)
+    if (/404|not.*found/i.test(errMsg)) {
+      return jsonError("NOT_FOUND", "Session not found", 404, CORS_HEADERS)
+    }
+    deps.logger.error("SDK call failed: session.messages", { sessionID: params.id, error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
 
@@ -179,6 +209,14 @@ export async function getSessionDiff({ url, params, deps }: RouteContext): Promi
   if (dirParam === null)
     return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.diff({ path: { id: params.id }, query: { ...dirParam } })
+  if (result.error) {
+    const errMsg = sdkErrorMessage(result.error)
+    if (/404|not.*found/i.test(errMsg)) {
+      return jsonError("NOT_FOUND", "Session not found", 404, CORS_HEADERS)
+    }
+    deps.logger.error("SDK call failed: session.diff", { sessionID: params.id, error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
 
@@ -195,6 +233,14 @@ export async function getSessionChildren({
   if (dirParam === null)
     return jsonError("INVALID_DIRECTORY", "Internal error: the dashboard sent an invalid directory path. Try refreshing the page; if it persists, report at https://github.com/lesquel/open-remote-control/issues.", 400, CORS_HEADERS)
   const result = await deps.client.session.children({ path: { id: params.id }, query: { ...dirParam } })
+  if (result.error) {
+    const errMsg = sdkErrorMessage(result.error)
+    if (/404|not.*found/i.test(errMsg)) {
+      return jsonError("NOT_FOUND", "Session not found", 404, CORS_HEADERS)
+    }
+    deps.logger.error("SDK call failed: session.children", { sessionID: params.id, error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   return json(result.data ?? [], 200, CORS_HEADERS)
 }
 

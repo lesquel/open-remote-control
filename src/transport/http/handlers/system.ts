@@ -35,7 +35,23 @@ export function getIP(req: Request): string {
 
 export async function getStatus({ deps }: RouteContext): Promise<Response> {
   const sessions = await deps.client.session.list()
+  if (sessions.error) {
+    const errMsg =
+      typeof sessions.error === "object" && sessions.error !== null && "message" in sessions.error
+        ? String((sessions.error as { message?: unknown }).message ?? "")
+        : String(sessions.error)
+    deps.logger.error("SDK call failed: session.list", { error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   const statuses = await deps.client.session.status()
+  if (statuses.error) {
+    const errMsg =
+      typeof statuses.error === "object" && statuses.error !== null && "message" in statuses.error
+        ? String((statuses.error as { message?: unknown }).message ?? "")
+        : String(statuses.error)
+    deps.logger.error("SDK call failed: session.status", { error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   return json(
     {
       pilot: { version: deps.pilotVersion, uptime: process.uptime() },
