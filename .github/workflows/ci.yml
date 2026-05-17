@@ -30,6 +30,4 @@ jobs:
 
       - run: bun test
 
-      # lint is optional — oxlint may not be fully configured yet
       - run: bun run lint
-        continue-on-error: true
