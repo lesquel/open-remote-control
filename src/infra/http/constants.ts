@@ -31,3 +31,18 @@ export const DEFAULT_PORT = 4097
  *  LAN (phone, second laptop) without the user needing to set PILOT_HOST.
  *  Every endpoint still requires a Bearer token. */
 export const DEFAULT_HOST = "0.0.0.0"
+
+/** Maximum response body size when proxying session attachments (2 MiB).
+ *  Matches READ_MAX_BYTES used by readFileAbs in system.ts. */
+export const ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024
+
+/** MIME types allowed through the attachment proxy endpoint.
+ *  SVG is allowed only via <img> (never injected as innerHTML — see dashboard renderer).
+ *  Video, audio, PDF etc. are explicitly excluded for this v1 surface. */
+export const MIME_SAFELIST = [
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+] as const

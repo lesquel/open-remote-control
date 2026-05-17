@@ -9,7 +9,7 @@ import {
 import { extractDirectory } from "./system"
 import { validateToken, safeEqual } from "../middlewares/auth"
 import { validateEndpoint } from "../../../infra/network/ssrf"
-import { ATTACHMENT_MAX_BYTES, MIME_SAFELIST } from "../../../server/constants"
+import { ATTACHMENT_MAX_BYTES, MIME_SAFELIST } from "../../../infra/http/constants"
 import type { FilePart } from "@opencode-ai/sdk"
 
 export async function listSessions({ url, deps }: RouteContext): Promise<Response> {

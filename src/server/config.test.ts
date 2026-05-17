@@ -7,7 +7,8 @@ import {
   resolveSources,
   RESTART_REQUIRED_FIELDS,
 } from "./config"
-import { DEFAULT_HOST, DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, MAX_CODEX_PERMISSION_TIMEOUT_MS } from "./constants"
+import { DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_PERMISSION_TIMEOUT_MS, MAX_CODEX_PERMISSION_TIMEOUT_MS } from "./constants"
+import { DEFAULT_HOST, DEFAULT_PORT } from "../infra/http/constants"
 
 describe("loadConfig", () => {
   test("returns defaults when env is empty", () => {
