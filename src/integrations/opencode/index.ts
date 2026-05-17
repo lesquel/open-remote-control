@@ -63,6 +63,8 @@ export type OpenCodeSetupDeps = {
   audit: AuditLog
 }
 
+// Intentional outlier: this does NOT implement the `AgentIntegration` port
+// (../ports.ts) — native-SDK shape, see the SDK injection-shape note above.
 export const opencodeIntegration = {
   name: 'opencode' as const,
 
