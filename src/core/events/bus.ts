@@ -29,7 +29,11 @@ export function createEventBus(): EventBus {
     if (process.env.PILOT_DEBUG_BUS === "1") {
       try {
         console.error(`[pilot:bus-emit] ${event.type} clients=${clients.size}`)
-      } catch (_) {}
+      } catch (_) {
+        // Provably irrelevant: console.error() is a debug-trace-only call gated
+        // behind PILOT_DEBUG_BUS=1. A failure here (e.g. closed stderr fd in
+        // an exotic test harness) must not prevent the actual SSE emit below.
+      }
     }
 
     const data = `data: ${JSON.stringify(event)}\n\n`

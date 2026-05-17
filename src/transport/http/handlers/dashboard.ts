@@ -102,10 +102,28 @@ function loadAssetsIntoMemory(): void {
         })
       } catch {
         // Skip unreadable files — they just return 404 at request time.
+        // Critical assets are checked after the full walk (see below).
       }
     }
   }
   walk(DASHBOARD_DIR, "")
+
+  // Post-load assertion: verify that critical assets are in the cache.
+  // A corrupted or missing critical file (e.g. main.js, styles.css, sw.js)
+  // would silently produce 404s at request time, leaving the dashboard
+  // visually broken with no indication of why.
+  // We do NOT crash here — the server can still run and might serve partial
+  // content — but we log a clear warning so the problem is visible immediately
+  // at startup rather than only when a user opens the dashboard.
+  const CRITICAL_ASSETS = ["main.js", "styles.css", "sw.js"]
+  const missing = CRITICAL_ASSETS.filter((name) => !assetCache.has(name))
+  if (missing.length > 0) {
+    console.error(
+      `[opencode-pilot] warn: dashboard asset cache is missing critical files after load: [${missing.join(", ")}]. ` +
+      `These will return 404 at runtime and leave the dashboard broken. ` +
+      `Check that the package is installed correctly (try: bunx @lesquel/opencode-pilot@latest init).`,
+    )
+  }
 }
 
 // Lazy-load on first dashboard request so import order doesn't matter.
