@@ -14,7 +14,8 @@
 // in process.env, so config resolution passes the original shell snapshot
 // separately (`shellEnv`) to distinguish the two.
 
-import { DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_HOST, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PORT, DEFAULT_PROJECT_STATE_MODE, MAX_CODEX_PERMISSION_TIMEOUT_MS, VAPID_DEFAULT_SUBJECT } from "./constants"
+import { DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PROJECT_STATE_MODE, MAX_CODEX_PERMISSION_TIMEOUT_MS } from "./constants"
+import { DEFAULT_HOST, DEFAULT_PORT, VAPID_DEFAULT_SUBJECT } from "../infra/http/constants"
 import type { PilotSettings } from "../core/settings/store"
 
 // Re-export types from their canonical locations in core/ and infra/.
