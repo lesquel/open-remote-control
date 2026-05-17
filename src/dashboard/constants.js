@@ -31,9 +31,14 @@ export const EVENTS = Object.freeze({
   // This is what drives the typewriter effect; MESSAGE_PART_UPDATED only
   // carries snapshots (pending → running → completed) without the delta.
   MESSAGE_PART_DELTA:   'message.part.delta',
-  // Permissions
+  // Permissions — native OpenCode SDK events
   PERMISSION_REQUESTED: 'permission.requested',
   PERMISSION_RESOLVED:  'permission.resolved',
+  // Permissions — Codex bridge events (alias: same handler, different type string)
+  // Codex emits these types; renaming the emit would break Telegram/push consumers,
+  // so the dashboard aliases them here instead.
+  PERMISSION_PENDING_PILOT:   'pilot.permission.pending',
+  PERMISSION_RESOLVED_PILOT:  'pilot.permission.resolved',
   // Status / tool
   STATUS_CHANGED:       'status.changed',
   TOOL_COMPLETED:       'tool.completed',

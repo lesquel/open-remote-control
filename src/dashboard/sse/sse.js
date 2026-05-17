@@ -17,6 +17,7 @@ import { isFileEditingToolEvent } from '../components/files-changed.js'
 import { debouncedRefreshFilesChanged } from '../components/files-changed-bridge.js'
 import { buildApiUrl } from '../api/api.js'
 import { EVENTS, LIMITS } from '../constants.js'
+import { normalizePermissionPending, normalizePermissionResolved } from './permission-normalize.js'
 import { playNotifySound } from '../ui/notif-sound.js'
 
 let eventSource = null
@@ -77,6 +78,12 @@ const SSE_EVENTS = [
   EVENTS.MESSAGE_PART_DELTA,
   EVENTS.PERMISSION_REQUESTED,
   EVENTS.PERMISSION_RESOLVED,
+  // Codex bridge alias events — same handler paths, different type strings.
+  // The server does not send named `event:` SSE lines today (all events arrive
+  // as unnamed `data:` messages handled by onmessage), but the list must stay
+  // complete so named-event subscriptions are correct if the server ever does.
+  EVENTS.PERMISSION_PENDING_PILOT,
+  EVENTS.PERMISSION_RESOLVED_PILOT,
   EVENTS.STATUS_CHANGED,
   EVENTS.TODO_UPDATED,
 ]
@@ -458,32 +465,21 @@ async function handleEvent(ev) {
     }
   }
 
-  if (t === EVENTS.PERMISSION_REQUESTED) {
-    // Pilot events carry payload under .properties (see notifications.ts).
-    // Normalize to a stable shape for handlers that don't know about .properties.
-    const props = ev.properties ?? d ?? {}
-    const normalized = {
-      id: props.permissionID ?? props.id,
-      permissionID: props.permissionID ?? props.id,
-      description: props.title ?? props.description,
-      title: props.title,
-      sessionID: props.sessionID,
-      type: props.permissionType ?? props.type,
-      pattern: props.pattern,
-      metadata: props.metadata,
-    }
+  // Handle both native OpenCode permission events and Codex bridge aliases.
+  // Codex emits `pilot.permission.pending` / `pilot.permission.resolved` — renaming
+  // those would break Telegram/push consumers, so we alias here instead.
+  if (t === EVENTS.PERMISSION_REQUESTED || t === EVENTS.PERMISSION_PENDING_PILOT) {
+    // Payload may be under .properties (pilot events) or .data (named-event path).
+    // normalizePermissionPending handles both shapes identically.
+    const normalized = normalizePermissionPending(ev)
     handlePermissionRequested(normalized)
     // Dispatch for push-notifications module
     window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: normalized }))
   }
 
-  if (t === EVENTS.PERMISSION_RESOLVED) {
-    // pilot.permission.resolved also carries payload under .properties.
-    const resolvedProps = ev.properties ?? d ?? {}
-    const resolvedNormalized = {
-      id: resolvedProps.permissionID ?? resolvedProps.id,
-      permissionID: resolvedProps.permissionID ?? resolvedProps.id,
-    }
+  if (t === EVENTS.PERMISSION_RESOLVED || t === EVENTS.PERMISSION_RESOLVED_PILOT) {
+    // Payload may be under .properties (pilot events) or .data (named-event path).
+    const resolvedNormalized = normalizePermissionResolved(ev)
     handlePermissionResolved(resolvedNormalized)
   }
 
