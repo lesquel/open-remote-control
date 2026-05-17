@@ -8,7 +8,7 @@
 //    activatePrimary can surface silent FS errors to ctx.client.app.log.
 
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from "fs"
+import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from "fs"
 import { tmpdir, homedir } from "os"
 import { join } from "path"
 import { writeState, readState, readGlobalState, clearState, globalStatePath } from "./store"
@@ -288,5 +288,153 @@ describe("writeState WriteStateResult — failure isolation (1.13.13)", () => {
     // drift breaks cross-module contract without a type error.
     expect(globalStatePath().startsWith(homedir())).toBe(true)
     expect(globalStatePath().endsWith(join(".opencode-pilot", "pilot-state.json"))).toBe(true)
+  })
+})
+
+// ── Batch 6: updateStateToken — mode forwarding + structured result ───────────
+// TDD: these tests are written BEFORE the implementation is changed.
+// They describe the two bugs being fixed:
+//   Bug 1: mode ignored — updateStateToken always passed mode="auto" to writeState.
+//   Bug 2: silent skip — when readState returns null, updateStateToken was a void
+//          no-op with no structured result the caller could inspect.
+
+import { updateStateToken } from "./store"
+import type { UpdateTokenResult } from "./store"
+
+describe("updateStateToken — mode forwarding (bug 1)", () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = tempDir()
+  })
+
+  afterEach(() => {
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  })
+
+  test("mode=off + .opencode/ exists: no project file written after token update", () => {
+    // Seed a state so readState returns a result (not null).
+    const opencodedir = join(dir, ".opencode")
+    mkdirSync(opencodedir, { recursive: true })
+    const seedState: PilotState = { token: "old", port: 4097, host: "127.0.0.1", startedAt: 1, pid: process.pid }
+    writeState(dir, seedState, "always")
+
+    // Now rotate token with mode=off. Even though .opencode/ exists, the project
+    // file must NOT be touched (or created) when mode=off.
+    const result = updateStateToken(dir, "new-token", "off")
+
+    // Must return ok:true (existing state was found).
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      // Global must have been updated with new token.
+      expect(result.write.global.ok).toBe(true)
+      // Project must be null (skipped by mode=off) — not ok:false.
+      expect(result.write.project).toBeNull()
+    }
+    // The project file must NOT reflect the new token if it was re-written.
+    // (mode=off should have passed through to writeState which skips project writes)
+    const projectFilePath = join(dir, ".opencode", "pilot-state.json")
+    if (existsSync(projectFilePath)) {
+      const content = JSON.parse(readFileSync(projectFilePath, "utf-8")) as PilotState
+      // If the file exists (from seed), it must NOT have been updated with the new token
+      // because mode=off suppresses project writes.
+      // NOTE: The seed wrote with mode=always so the file exists. After updateStateToken
+      // with mode=off, the token in the project file must remain "old".
+      expect(content.token).not.toBe("new-token")
+    }
+  })
+
+  test("mode=auto + .opencode/ exists: project file IS updated", () => {
+    const opencodedir = join(dir, ".opencode")
+    mkdirSync(opencodedir, { recursive: true })
+    const seedState: PilotState = { token: "old", port: 4097, host: "127.0.0.1", startedAt: 1, pid: process.pid }
+    writeState(dir, seedState, "auto")
+
+    const result = updateStateToken(dir, "rotated", "auto")
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.write.global.ok).toBe(true)
+      expect(result.write.project).not.toBeNull()
+      expect(result.write.project!.ok).toBe(true)
+    }
+    const projectFilePath = join(dir, ".opencode", "pilot-state.json")
+    const content = JSON.parse(readFileSync(projectFilePath, "utf-8")) as PilotState
+    expect(content.token).toBe("rotated")
+  })
+
+  test("mode=always: project file written even without pre-existing .opencode/", () => {
+    // Seed state only in the global file (no .opencode/ dir).
+    const seedState: PilotState = { token: "seed", port: 4097, host: "127.0.0.1", startedAt: 1, pid: process.pid }
+    // Write global-only by skipping project (mode=off), then verify auto-create via always.
+    writeState(dir, seedState, "off")
+
+    const result = updateStateToken(dir, "always-token", "always")
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.write.project).not.toBeNull()
+      expect(result.write.project!.ok).toBe(true)
+    }
+    const projectFilePath = join(dir, ".opencode", "pilot-state.json")
+    expect(existsSync(projectFilePath)).toBe(true)
+    const content = JSON.parse(readFileSync(projectFilePath, "utf-8")) as PilotState
+    expect(content.token).toBe("always-token")
+  })
+})
+
+describe("updateStateToken — null readState path (bug 2)", () => {
+  let dir: string
+  // XDG isolation: save and restore XDG_STATE_HOME so the global state path
+  // points at an empty temp dir — this forces readState to return null
+  // deterministically regardless of any real ~/.opencode-pilot/pilot-state.json.
+  let xdgDir: string
+  let prevXdg: string | undefined
+
+  beforeEach(() => {
+    dir = tempDir()
+    // globalStatePath() → stateFile() → getPluginStateDir() → XDG_STATE_HOME
+    xdgDir = mkdtempSync(join(tmpdir(), "pilot-xdg-state-"))
+    prevXdg = process.env.XDG_STATE_HOME
+    process.env.XDG_STATE_HOME = xdgDir
+  })
+
+  afterEach(() => {
+    if (prevXdg === undefined) {
+      delete process.env.XDG_STATE_HOME
+    } else {
+      process.env.XDG_STATE_HOME = prevXdg
+    }
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+    try { rmSync(xdgDir, { recursive: true, force: true }) } catch {}
+  })
+
+  test("readState null → returns { ok: false, reason: 'no-existing-state' }", () => {
+    // dir is a fresh empty tempdir with no .opencode/ subdirectory.
+    // XDG_STATE_HOME points at a fresh empty tempdir so globalStatePath()
+    // resolves to a file that does not exist.
+    // Both safeRead calls inside readState() return null → updateStateToken
+    // must return { ok: false, reason: "no-existing-state" }.
+    const result = updateStateToken(dir, "new-token", "auto")
+    expect(result).toEqual({ ok: false, reason: "no-existing-state" })
+  })
+
+  test("UpdateTokenResult type contract: ok:false shape has reason field", () => {
+    // This is a compile-time + runtime shape test.
+    const notOk: UpdateTokenResult = { ok: false, reason: "no-existing-state" }
+    expect(notOk.ok).toBe(false)
+    expect(notOk.reason).toBe("no-existing-state")
+  })
+
+  test("UpdateTokenResult type contract: ok:true shape has write.global", () => {
+    // Seed via writeState so readState finds it through the global fallback.
+    const seedState: PilotState = { token: "tok", port: 4097, host: "127.0.0.1", startedAt: 1, pid: process.pid }
+    writeState(dir, seedState, "off") // writes global only (into xdgDir via XDG_STATE_HOME)
+    // readState(dir) will fall back to global → returns a state
+    const result = updateStateToken(dir, "updated", "off")
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.write.global.ok).toBe(true)
+    }
   })
 })

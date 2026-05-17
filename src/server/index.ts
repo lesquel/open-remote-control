@@ -18,6 +18,7 @@ import { opencodeIntegration } from "../integrations/opencode/index"
 import { codexIntegration } from "../integrations/codex/index"
 import { createLogger } from "../infra/logger/index"
 import { PILOT_VERSION, TOAST_DURATION_MS, TOAST_PROMOTION_DURATION_MS, PROMOTION_POLL_INTERVAL_MS } from "./constants"
+import { installGlobalErrorHandlersOnce, createShutdownGuard } from "./lifecycle"
 
 export default {
   id: "opencode-pilot",
@@ -395,26 +396,15 @@ export default {
     // ─── R2: Global error traps ──────────────────────────────────────────
     // Never write to stdout/stderr — the OpenCode TUI renders those as red
     // noise. Write to audit log + logger only.
-    process.on("uncaughtException", (err: Error) => {
-      audit.log("process.uncaughtException", { error: err.message, stack: err.stack })
-      logger.error("Uncaught exception", { error: err.message })
-      eventBus.emit({
-        type: "pilot.error",
-        properties: { kind: "uncaughtException", message: err.message, timestamp: Date.now() },
-      })
-      // Do NOT exit — let the process continue
-    })
-
-    process.on("unhandledRejection", (reason: unknown) => {
-      const message = reason instanceof Error ? reason.message : String(reason)
-      audit.log("process.unhandledRejection", { error: message })
-      logger.error("Unhandled rejection", { error: message })
-      eventBus.emit({
-        type: "pilot.error",
-        properties: { kind: "unhandledRejection", message, timestamp: Date.now() },
-      })
-      // Do NOT exit
-    })
+    //
+    // D1 fix: install EXACTLY ONCE per process regardless of how many
+    // plugin-factory invocations occur in this Bun/Node process. Previously
+    // process.on() was called on every invocation, accumulating N duplicate
+    // handlers → N audit writes per error, MaxListenersExceededWarning, and
+    // a feedback loop where the warning itself got logged as an error.
+    // installGlobalErrorHandlersOnce() uses a module-scoped guard in
+    // lifecycle.ts and is a no-op on every invocation after the first.
+    installGlobalErrorHandlersOnce({ eventBus, audit, logger })
 
     // ─── Graceful shutdown ───────────────────────────────────────────────
     // Shutdown reads `role` at the moment it runs, not at boot — so a
@@ -422,27 +412,29 @@ export default {
     // tunnel, and state it started. clearState only runs when we're the
     // primary at shutdown; deleting the global state file from a passive
     // instance would blind every other window.
-    async function shutdown(): Promise<void> {
-      if (promotionTimer) {
-        clearInterval(promotionTimer)
-        promotionTimer = null
-      }
-      // Each shutdown step is best-effort — errors here are provably irrelevant
-      // because (a) we're tearing down, not starting up, so there is no future
-      // operation that depends on these succeeding, and (b) throwing from shutdown
-      // would prevent subsequent steps from running, leaving e.g. the server
-      // socket open after a failed telegram.stop(). AGENTS.md allows empty catch
-      // in shutdown paths provided this comment is present.
-      try { telegram.stop() } catch {}
-      // Spec order: integrations → http → tunnel → notifications.flush → clearState
-      try { await opencode.shutdown() } catch {}
-      try { await codexHandle.shutdown() } catch {}
-      if (role === "primary") {
-        try { server.stop() } catch {}
-        try { tunnel.stop() } catch {}
-        try { await notifications.flush() } catch {}
-        try { clearState(ctx.directory) } catch {}
-      }
+    //
+    // D3 fix: createShutdownGuard() wraps cleanup with a re-entrant guard
+    // (SIGINT then SIGTERM, or double SIGINT, won't double-run cleanup).
+    // D2 fix: the guard also calls eventBus.closeAll() before the body runs
+    // so SSE ping setIntervals don't keep firing after server.stop().
+    const { shutdown } = createShutdownGuard({ eventBus })
+    async function runShutdown(): Promise<void> {
+      return shutdown(async () => {
+        if (promotionTimer) {
+          clearInterval(promotionTimer)
+          promotionTimer = null
+        }
+        try { telegram.stop() } catch {}
+        // Spec order: integrations → http → tunnel → notifications.flush → clearState
+        try { await opencode.shutdown() } catch {}
+        try { await codexHandle.shutdown() } catch {}
+        if (role === "primary") {
+          try { server.stop() } catch {}
+          try { tunnel.stop() } catch {}
+          try { await notifications.flush() } catch {}
+          try { clearState(ctx.directory) } catch {}
+        }
+      })
     }
 
     // ─── Integrations ────────────────────────────────────────────────────
@@ -485,9 +477,19 @@ export default {
     // above. Registering handlers here ensures the closure never captures
     // a variable in the temporal dead zone, even if a SIGINT arrives during
     // the rare window between plugin boot and this line.
-    process.once("SIGINT", () => void shutdown())
-    process.once("SIGTERM", () => void shutdown())
-    process.once("exit", () => void shutdown())
+    //
+    // D4 fix: process.once("exit", ...) was removed. The "exit" event fires
+    // while the event loop is already draining — any awaits inside shutdown()
+    // (opencode.shutdown(), notifications.flush(), etc.) silently never run;
+    // the `void` only suppressed the TS error without fixing anything.
+    // SIGINT and SIGTERM fire BEFORE drain and are sufficient for graceful
+    // shutdown. Note (out-of-scope follow-up): in the multi-instance model,
+    // SIGINT/SIGTERM use process.once, so only the first plugin-factory
+    // invocation's runShutdown() runs on a signal. The second invocation's
+    // cleanup depends on the primary tearing down shared resources. This
+    // design tension is pre-existing and not addressed in this PR.
+    process.once("SIGINT", () => void runShutdown())
+    process.once("SIGTERM", () => void runShutdown())
 
     return {
       event: roleAwareHooks.event,

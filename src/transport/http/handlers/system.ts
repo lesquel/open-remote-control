@@ -35,7 +35,23 @@ export function getIP(req: Request): string {
 
 export async function getStatus({ deps }: RouteContext): Promise<Response> {
   const sessions = await deps.client.session.list()
+  if (sessions.error) {
+    const errMsg =
+      typeof sessions.error === "object" && sessions.error !== null && "message" in sessions.error
+        ? String((sessions.error as { message?: unknown }).message ?? "")
+        : String(sessions.error)
+    deps.logger.error("SDK call failed: session.list", { error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   const statuses = await deps.client.session.status()
+  if (statuses.error) {
+    const errMsg =
+      typeof statuses.error === "object" && statuses.error !== null && "message" in statuses.error
+        ? String((statuses.error as { message?: unknown }).message ?? "")
+        : String(statuses.error)
+    deps.logger.error("SDK call failed: session.status", { error: errMsg })
+    return jsonError("SDK_ERROR", "SDK call failed", 500, CORS_HEADERS)
+  }
   return json(
     {
       pilot: { version: deps.pilotVersion, uptime: process.uptime() },
@@ -195,7 +211,36 @@ export async function rotateAuthToken({ deps }: RouteContext): Promise<Response>
   deps.rotateToken(newToken)
 
   // Persist to state file so the TUI slash command still works after rotation.
-  updateStateToken(deps.directory, newToken)
+  // Pass projectStateMode so PILOT_PROJECT_STATE=off is respected (bug 1: mode
+  // was previously hardcoded to "auto").
+  const persistResult = updateStateToken(deps.directory, newToken, deps.config.projectStateMode)
+
+  // Observe persist failures — per AGENTS.md §"No silent failures".
+  // HTTP 200 is still returned: in-memory rotation + SSE broadcast are the
+  // primary success path; persistence is best-effort but MUST be visible.
+  if (!persistResult.ok) {
+    // Bug 2: previously a silent no-op when readState returned null.
+    const reason = persistResult.reason
+    deps.logger.warn(
+      `[opencode-pilot] rotateAuthToken: state not persisted — ${reason}. ` +
+        "TUI /remote command may use the old token until the server restarts.",
+    )
+    deps.audit.log("auth.token.rotated.persist_failed", { reason })
+  } else {
+    // Even on ok:true, surface individual write failures (global is critical).
+    const { write } = persistResult
+    if (!write.global.ok) {
+      deps.logger.warn(
+        `[opencode-pilot] rotateAuthToken: global state write failed — ` +
+          `${write.global.error}. TUI /remote command may use the old token.`,
+      )
+      deps.audit.log("auth.token.rotated.persist_failed", {
+        reason: "global-write-failed",
+        error: write.global.error,
+        path: write.global.path,
+      })
+    }
+  }
 
   deps.audit.log("auth.token.rotated", {})
 

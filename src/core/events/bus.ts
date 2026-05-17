@@ -11,6 +11,11 @@ export interface EventBus {
 interface SSEClient {
   controller: ReadableStreamDefaultController
   connectedAt: number
+  // Stored so closeAll() can clear the keepalive deterministically instead of
+  // relying on controller.close() propagating to the stream's cancel()
+  // callback (a Bun ReadableStream implementation detail, not a WhatWG
+  // guarantee).
+  pingInterval?: ReturnType<typeof setInterval> | null
 }
 
 export function createEventBus(): EventBus {
@@ -90,6 +95,7 @@ export function createEventBus(): EventBus {
             }
           }
         }, 3_000)
+        if (client) client.pingInterval = pingInterval
       },
       cancel() {
         if (pingInterval) clearInterval(pingInterval)
@@ -118,7 +124,10 @@ export function createEventBus(): EventBus {
 
   function closeAll(): void {
     for (const c of clients) {
-      try { c.controller.close() } catch { /* ignore */ }
+      // Clear the keepalive explicitly — don't depend on close() triggering
+      // the stream's cancel() callback (Bun impl detail).
+      if (c.pingInterval) clearInterval(c.pingInterval)
+      try { c.controller.close() } catch { /* already-closed controller — safe to ignore during shutdown */ }
     }
     clients.clear()
   }

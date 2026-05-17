@@ -105,7 +105,7 @@ describe("session.status busy→idle under 10s threshold", () => {
     expect(notifications.calls.filter(c => c.kind === "idle")).toHaveLength(0)
   })
 
-  test("sessionBusyStart entry is deleted when under threshold", async () => {
+  test("sessionBusyStart entry is deleted even when under threshold (no leak)", async () => {
     const sessionBusyStart = new Map<string, number>()
     const notifications = makeNotifications()
     const hook = createEventHook(notifications, sessionBusyStart, makeClient(), makeAudit())
@@ -115,11 +115,9 @@ describe("session.status busy→idle under 10s threshold", () => {
 
     await hook(makeStatusEvent(sessionID, "idle"))
 
-    // The entry must be cleaned up regardless of threshold outcome
-    // ACTUAL behavior: the entry is NOT deleted when under threshold (the code
-    // only deletes inside the `if (started && Date.now() - started > 10_000)` block)
-    // This is a characterization test for the real behavior:
-    expect(sessionBusyStart.has(sessionID)).toBe(true) // NOT cleaned up when under threshold
+    // The entry must ALWAYS be cleaned up on idle, regardless of whether the
+    // notification threshold was crossed (threshold only gates notification, not cleanup).
+    expect(sessionBusyStart.has(sessionID)).toBe(false) // cleaned up regardless of threshold
   })
 })
 
@@ -215,10 +213,7 @@ describe("session.error behavior", () => {
     expect(errorCalls[0]!.error).toBe("flat string error")
   })
 
-  // ─── LATENT BUG CHARACTERIZATION TEST ─────────────────────────────────────
-  // The audit flagged that sessionBusyStart is NOT cleaned up on session.error.
-  // This test asserts the ACTUAL current behavior (NOT fixed here — see final summary).
-  test("CHARACTERIZATION: sessionBusyStart is NOT cleaned up on session.error", async () => {
+  test("sessionBusyStart is cleaned up on session.error (errored session no longer busy)", async () => {
     const sessionBusyStart = new Map<string, number>()
     const notifications = makeNotifications()
     const hook = createEventHook(notifications, sessionBusyStart, makeClient(), makeAudit())
@@ -229,11 +224,35 @@ describe("session.error behavior", () => {
     await hook(makeStatusEvent(sessionID, "busy"))
     expect(sessionBusyStart.has(sessionID)).toBe(true) // sanity check
 
-    // Now fire session.error — the code at event.ts:39-45 does NOT touch sessionBusyStart
+    // Now fire session.error — the errored session is no longer busy; entry must be removed
     await hook(makeErrorEvent(sessionID, "crashed"))
 
-    // ACTUAL behavior: entry remains in the map (possible memory leak)
-    expect(sessionBusyStart.has(sessionID)).toBe(true)
+    // FIXED behavior: entry is removed on error to prevent stale-ID misfire on reuse
+    expect(sessionBusyStart.has(sessionID)).toBe(false)
+  })
+
+  test("busy→error→idle (reused ID) does NOT misfire notifySessionIdle", async () => {
+    // Regression: without the error-cleanup fix, a session that errors and then
+    // idles (e.g. after a restart with the same ID) could see a stale busy-start
+    // from before the error and fire a spurious idle notification >10s later.
+    const sessionBusyStart = new Map<string, number>()
+    const notifications = makeNotifications()
+    const hook = createEventHook(notifications, sessionBusyStart, makeClient(), makeAudit())
+
+    const sessionID = "sess-reuse"
+
+    // Mark busy far in the past (would trip the >10s threshold)
+    sessionBusyStart.set(sessionID, Date.now() - 30_000)
+
+    // Session errors — must clean the entry
+    await hook(makeErrorEvent(sessionID, "crashed"))
+    expect(sessionBusyStart.has(sessionID)).toBe(false)
+
+    // Same ID goes idle — should NOT fire idle notification (no busy start present)
+    await hook(makeStatusEvent(sessionID, "idle"))
+
+    const idleCalls = notifications.calls.filter(c => c.kind === "idle")
+    expect(idleCalls).toHaveLength(0) // no spurious notification
   })
 })
 
