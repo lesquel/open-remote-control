@@ -1,6 +1,7 @@
 // Tests for createNotificationService (pipeline fan-out)
 // Covers: notifyPermissionPending return value, SSE-reachability gating,
-// fire-and-forget channel dispatch, flush no-op, emit/emitPilot wiring.
+// fire-and-forget channel dispatch, in-flight tracking + flush drain/timeout,
+// emit/emitPilot wiring.
 import { describe, expect, test } from "bun:test"
 import { createNotificationService } from "./pipeline"
 import type { NotificationServiceDeps } from "./pipeline"
@@ -331,11 +332,98 @@ describe("emit and emitPilot", () => {
 // ─── flush ────────────────────────────────────────────────────────────────────
 
 describe("flush", () => {
-  test("flush resolves without error (currently a no-op)", async () => {
+  test("flush resolves immediately with nothing in flight", async () => {
     const deps = makeDeps()
     const svc = createNotificationService(deps)
 
+    // Fast path: no tracked promises, should resolve without delay
     await expect(svc.flush()).resolves.toBeUndefined()
+  })
+
+  test("flush awaits an in-flight slow channel dispatch from notifyPermissionPending", async () => {
+    // A slow channel that resolves after a short delay
+    let resolveDispatch!: () => void
+    const dispatchSettled = new Promise<void>(r => { resolveDispatch = r })
+    const slowChannel: NotificationChannel = {
+      name: "slow",
+      enabled: () => true,
+      send: async (): Promise<NotificationResult> => {
+        await new Promise<void>(r => setTimeout(r, 30))
+        resolveDispatch()
+        return { ok: true }
+      },
+    }
+    const deps = makeDeps({ channels: [slowChannel] })
+    const svc = createNotificationService(deps)
+
+    // Fire permission pending — starts the slow dispatch in the background
+    await svc.notifyPermissionPending("p-slow", "title", "sess", "execute")
+    // The dispatch is still running (30ms). flush() should wait for it.
+    const flushDone = svc.flush()
+    await flushDone
+    // By the time flush() resolves, the dispatch must have settled
+    const settled = await Promise.race([
+      dispatchSettled.then(() => true),
+      new Promise<boolean>(r => setTimeout(() => r(false), 5)),
+    ])
+    expect(settled).toBe(true)
+  })
+
+  test("flush awaits an in-flight slow channel dispatch from notifySessionIdle", async () => {
+    let resolveDispatch!: () => void
+    const dispatchSettled = new Promise<void>(r => { resolveDispatch = r })
+    const slowChannel: NotificationChannel = {
+      name: "slow-idle",
+      enabled: () => true,
+      send: async (): Promise<NotificationResult> => {
+        await new Promise<void>(r => setTimeout(r, 30))
+        resolveDispatch()
+        return { ok: true }
+      },
+    }
+    const deps = makeDeps({ channels: [slowChannel] })
+    const svc = createNotificationService(deps)
+
+    const fakeClient = {
+      session: { get: async () => ({ data: { title: "S" } }) },
+    } as unknown as Parameters<typeof svc.notifySessionIdle>[0]
+
+    await svc.notifySessionIdle(fakeClient, "s-idle")
+    await svc.flush()
+
+    const settled = await Promise.race([
+      dispatchSettled.then(() => true),
+      new Promise<boolean>(r => setTimeout(() => r(false), 5)),
+    ])
+    expect(settled).toBe(true)
+  })
+
+  test("flush resolves within bound and audits notifications.flush_timeout when a dispatch hangs", async () => {
+    // A channel whose send() never resolves — simulates a wedged channel
+    const hangingChannel: NotificationChannel = {
+      name: "hanging",
+      enabled: () => true,
+      send: (): Promise<NotificationResult> => new Promise(() => {}), // never resolves
+    }
+    const auditEntries: AuditEntry[] = []
+    const audit = makeAudit(auditEntries)
+    const deps = makeDeps({ channels: [hangingChannel], audit })
+    // Use a very short flush timeout so the test doesn't take 5 seconds
+    const svc = createNotificationService(deps, { flushTimeoutMs: 50 })
+
+    await svc.notifyPermissionPending("p-hang", "title", "sess", "execute")
+
+    // flush() must resolve within the short bound (well under 200ms)
+    const start = Date.now()
+    await svc.flush()
+    const elapsed = Date.now() - start
+    expect(elapsed).toBeLessThan(200)
+
+    // The drop must be observable via audit (AGENTS.md §3 "No silent failures")
+    const timeoutEntry = auditEntries.find(e => e.action === "notifications.flush_timeout")
+    expect(timeoutEntry).toBeDefined()
+    expect(typeof timeoutEntry?.details.pending).toBe("number")
+    expect((timeoutEntry?.details.pending as number)).toBeGreaterThan(0)
   })
 })
 
