@@ -47,11 +47,23 @@ interface InlineKeyboardButton {
   callback_data: string
 }
 
+/** @internal — test-only injection points; do not use in production code. */
+export interface TelegramChannelTestOverrides {
+  /** Override BACKOFF_STEPS to avoid real waits in tests. */
+  backoffStepsMs?: number[]
+  /** Inject a pre-wired circuit breaker (e.g. with tiny resetMs). */
+  circuitBreaker?: import('../../../infra/circuit-breaker/index').CircuitBreaker
+  /** Called when the pollLoop promise settles (resolves or rejects). Lets tests detect loop exit. */
+  onLoopSettled?: () => void
+}
+
 export function createTelegramChannel(
   config: TelegramConfig | null,
   permissionQueue: PermissionQueue,
   codexPermissionQueue: PermissionQueue,
   logger?: Logger,
+  /** @internal — inject test overrides (backoff steps, circuit breaker). */
+  _testOverrides?: TelegramChannelTestOverrides,
 ): TelegramChannel {
   if (!config || !config.token || !config.chatId) {
     return {
@@ -74,7 +86,8 @@ export function createTelegramChannel(
   let offset = 0
 
   // Circuit breaker: open after 5 consecutive failures, retry after 60s
-  const breaker = createCircuitBreaker({ maxFailures: 5, resetMs: 60_000 })
+  // _testOverrides.circuitBreaker allows tests to inject a pre-configured breaker
+  const breaker = _testOverrides?.circuitBreaker ?? createCircuitBreaker({ maxFailures: 5, resetMs: 60_000 })
 
   async function rawFetch<T = unknown>(
     method: string,
@@ -100,14 +113,34 @@ export function createTelegramChannel(
     }
   }
 
+  // D3 — track Telegram reachability to log only on state transitions (not every call)
+  let telegramDown = false
+
   async function api<T = unknown>(
     method: string,
     body: Record<string, unknown>,
   ): Promise<T | null> {
     try {
-      return await breaker.run(() => rawFetch<T>(method, body))
-    } catch {
-      // Circuit open or fetch error — silent fail, caller decides
+      const result = await breaker.run(() => rawFetch<T>(method, body))
+      // Recovered from a previous outage — log once
+      if (telegramDown) {
+        telegramDown = false
+        if (logger) {
+          logger.warn("Telegram recovered — outage resolved")
+        }
+      }
+      return result
+    } catch (err) {
+      // Log once on the first failure (down transition), not on every subsequent call
+      if (!telegramDown) {
+        telegramDown = true
+        if (logger) {
+          logger.warn("Telegram is down — requests will be silently dropped until it recovers", {
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+      // Circuit open or fetch error — caller contract: return null
       return null
     }
   }
@@ -173,37 +206,81 @@ export function createTelegramChannel(
   }
 
   // Exponential backoff: 5s → 10s → 30s → 60s (max), resets on success.
-  const BACKOFF_STEPS = [5_000, 10_000, 30_000, 60_000]
+  // _testOverrides.backoffStepsMs overrides the steps in unit tests to avoid long waits.
+  const BACKOFF_STEPS = _testOverrides?.backoffStepsMs ?? [5_000, 10_000, 30_000, 60_000]
   let backoffIdx = 0
+
+  // D2 — abortable sleep controller: stop() signals this to wake any in-flight sleep
+  let sleepAbortController = new AbortController()
+
+  /**
+   * D2 — abortable sleep for the poll loop.
+   * Resolves immediately when sleepAbortController is aborted.
+   * Clears the setTimeout on abort to prevent timer leaks.
+   */
+  function interruptibleSleep(ms: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms)
+      sleepAbortController.signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer)
+          resolve()
+        },
+        { once: true },
+      )
+    })
+  }
 
   async function pollLoop(): Promise<void> {
     while (polling) {
+      // D1 — outer guard: an unexpected throw that escapes the inner try/catch
+      // (e.g. from update-processing logic outside the fetch call) must not
+      // silently kill the loop. Log it, back off, and continue while polling.
       try {
-        const updates = await rawFetch<Array<Record<string, unknown>>>("getUpdates", {
-          offset,
-          timeout: 30,
-          allowed_updates: ["callback_query"],
-        })
+        try {
+          const updates = await rawFetch<Array<Record<string, unknown>>>("getUpdates", {
+            offset,
+            timeout: 30,
+            allowed_updates: ["callback_query"],
+          })
 
-        // Success — reset backoff
-        backoffIdx = 0
+          // Success — reset backoff
+          backoffIdx = 0
 
-        for (const update of updates) {
-          offset = (update.update_id as number) + 1
-          if (update.callback_query) {
-            await handleCallbackQuery(update.callback_query as Record<string, unknown>)
+          for (const update of updates) {
+            offset = (update.update_id as number) + 1
+            if (update.callback_query) {
+              await handleCallbackQuery(update.callback_query as Record<string, unknown>)
+            }
           }
+        } catch (err) {
+          const delay = BACKOFF_STEPS[Math.min(backoffIdx, BACKOFF_STEPS.length - 1)]!
+          if (logger) {
+            logger.warn("Telegram polling failed", {
+              error: err instanceof Error ? err.message : String(err),
+              retryInMs: delay,
+            })
+          }
+          backoffIdx = Math.min(backoffIdx + 1, BACKOFF_STEPS.length - 1)
+          // D2 — abortable sleep so stop() wakes us immediately; skip entirely
+          // if stop() already flipped polling (symmetry with the outer catch —
+          // closes the narrow race where stop() fires before this sleep starts).
+          if (polling) await interruptibleSleep(delay)
         }
-      } catch (err) {
-        const delay = BACKOFF_STEPS[Math.min(backoffIdx, BACKOFF_STEPS.length - 1)]!
+      } catch (outerErr) {
+        // D1 — outer guard: something unexpected escaped the inner try/catch.
+        // Log at error level and back off rather than crashing the loop silently.
         if (logger) {
-          logger.warn("Telegram polling failed", {
-            error: err instanceof Error ? err.message : String(err),
-            retryInMs: delay,
+          logger.error("Telegram poll loop crashed", {
+            error: outerErr instanceof Error ? outerErr.message : String(outerErr),
           })
         }
-        backoffIdx = Math.min(backoffIdx + 1, BACKOFF_STEPS.length - 1)
-        await sleep(delay)
+        if (polling) {
+          const delay = BACKOFF_STEPS[Math.min(backoffIdx, BACKOFF_STEPS.length - 1)]!
+          backoffIdx = Math.min(backoffIdx + 1, BACKOFF_STEPS.length - 1)
+          await interruptibleSleep(delay)
+        }
       }
     }
   }
@@ -275,10 +352,6 @@ export function createTelegramChannel(
     )
   }
 
-  function sleep(ms: number): Promise<void> {
-    return new Promise((r) => setTimeout(r, ms))
-  }
-
   async function testConnection(): Promise<{ ok: boolean; error?: string }> {
     try {
       await rawFetch("getMe", {})
@@ -303,8 +376,20 @@ export function createTelegramChannel(
     })
     .catch(() => {})
 
-  // Start polling (fire and forget)
+  // Start polling — D1: attach .catch so a truly fatal exit surfaces via logger
+  // rather than becoming an unhandled rejection that vanishes silently.
   pollLoop()
+    .catch((err: unknown) => {
+      if (logger) {
+        logger.error("Telegram poll loop terminated unexpectedly", {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    })
+    .finally(() => {
+      // @internal — notify test hooks when loop settles (used by D2 timing test)
+      _testOverrides?.onLoopSettled?.()
+    })
 
   async function send(event: import('../../ports').NotificationEvent): Promise<NotificationResult> {
     try {
@@ -351,6 +436,10 @@ export function createTelegramChannel(
     testConnection,
     stop: () => {
       polling = false
+      // D2 — wake the abortable sleep immediately so the loop exits without delay
+      sleepAbortController.abort()
+      // Refresh the controller so a restarted loop (if ever re-started) gets a clean signal
+      sleepAbortController = new AbortController()
     },
   }
 }
