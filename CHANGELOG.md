@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.21.1] - 2026-05-17
+
+A hardening + correctness release: two systematic audit passes of `main` plus the latent bugs their characterization tests surfaced. No new endpoints, no slash commands, no change to the `opencode.json` plugin spec / `PilotState` shape / HTTP route table — hence a patch. Tracked in #25 and #33.
+
+### Security
+
+- **Remote-control surface hardening** (private advisory `GHSA-3px3-jr37-xcw7`). Constant-time comparison is now used on the `?token=` auth paths (`/events`, the attachment proxy), matching the `Authorization: Bearer` path. The attachment proxy validates outbound URLs through a shared SSRF guard (`infra/network/ssrf.ts`, also used by Web Push) before fetching — loopback / RFC 1918 / link-local / IPv6-private are blocked and HTTPS is required. The Codex hook token now resolves live so a `PATCH /settings` change (set or clear) takes effect without a restart. The raw auth token is no longer emitted in the structured boot log (preview only). `/fs/glob` rejects `..` and absolute patterns and containment-checks every result. Per `SECURITY.md`, exploit detail stays in the advisory until users have had a reasonable chance to upgrade to this release.
+
+### Changed
+
+- **SDK error responses are now propagated instead of silently returning `200` with an empty body.** `listSessions`, `getSessionMessages`, `getSessionDiff`, `getSessionChildren`, `listTools`, and `GET /status` now return `404` (not-found) or `500 SDK_ERROR` (with a server log) when the OpenCode SDK call fails, mirroring the existing `deleteSession`/`postSessionPrompt` behavior. Clients that previously saw a misleading empty list on a transient SDK failure will now see the correct error. Success/empty responses are byte-identical to before.
+- **Input validators tightened.** Codex hook fields and `POST /sessions/:id/prompt` body have length caps (a single field can no longer consume the 1 MiB body and fan out to every SSE client); `parts` elements and a non-empty `model.modelID` are validated. Empty `model.providerID` is still accepted (the dashboard sends it for "no provider override").
+- **`bun run lint` now works and gates CI.** `oxlint` is a dev-dependency and the CI step no longer swallows its result with `continue-on-error` — linting was previously never actually enforced.
+
+### Fixed
+
+- **`sessionBusyStart` map no longer leaks.** The entry is now cleaned on idle regardless of the 10s threshold (the threshold gates only the notification) and on `session.error` (an errored session is no longer busy). Prevents unbounded growth and a stale-entry idle misfire on a reused session id.
+- **`pipeline.flush()` actually drains in-flight notifications.** Fire-and-forget telegram/push/channel dispatches are tracked and awaited (bounded by a 5s timeout that audits `notifications.flush_timeout`) on shutdown, instead of being silently dropped.
+- **Process error handlers are installed once per process** instead of once per workspace invocation (which accumulated duplicate handlers and a feedback loop). `shutdown()` is now re-entrant-guarded, closes SSE clients (so per-client keepalive intervals stop), and the `process.once("exit")` listener — whose async cleanup was always dropped during event-loop drain — was removed (SIGINT/SIGTERM remain).
+- **Token rotation now honors `PILOT_PROJECT_STATE`** (no longer writes a project state file when set to `off`) and no longer silently no-ops when the state file is missing — the persistence gap is audited (`auth.token.rotated.persist_failed`) so a stale-token TUI URL is observable.
+- **Codex permission requests appear in the dashboard.** They were emitted as `pilot.permission.pending`/`resolved`, which the dashboard never listened for (native permissions arrive via SDK passthrough as `permission.requested`); the dashboard now handles both, sharing one byte-equivalent normalization helper.
+- **Telegram channel resilience.** The poll loop can no longer silently die (outer guard + observable rejection), `stop()` is prompt (interruptible sleep — no up-to-60s lag), and a tripped circuit breaker is logged once on the down transition and once on recovery instead of silently dropping every send.
+- **Silent-failure hygiene** per `AGENTS.md` §"No silent failures": audit disk-write failure, the global banner write, an unreadable `.env`, audit-log rotation rename failures, and missing critical dashboard assets are now observable rather than swallowed.
+
+### Internal
+
+- Architecture/hygiene from #25: transport constants relocated out of `server/` (dependency-rule inversion fixed), ~11 duplicate/orphan constants removed, the 742-line `system.ts` god file split into `dashboard.ts` / `sdk-proxy.ts` / `filesystem.ts` (behavior-preserving), and the `AgentIntegration` port doc now describes reality (the OpenCode integration is a documented native-SDK outlier).
+- Test coverage substantially expanded across native OpenCode hooks, the notification pipeline, SDK-error paths, validators, and lifecycle. Every change shipped with strict-TDD implementation and an independent fresh-context adversarial review.
+
 ## [1.21.0] - 2026-04-29
 
 ### Added — Image rendering in the messages pane (#21)
