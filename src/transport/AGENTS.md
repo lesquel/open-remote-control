@@ -26,7 +26,10 @@
 - `http/handlers/permissions.ts` — `/permissions*` endpoints
 - `http/handlers/events.ts` — `/events` SSE endpoint
 - `http/handlers/settings.ts` — `/settings*` + `/settings/vapid/generate` + push endpoints
-- `http/handlers/system.ts` — `/`, `/dashboard/*`, `/status`, `/health`, `/connect-info`, `/auth/rotate`
+- `http/handlers/system.ts` — thin barrel + core system handlers: `getStatus`, `getHealth`, `getConnectInfo`, `rotateAuthToken`, `extractDirectory`, `getIP`; re-exports all symbols from `dashboard.ts`, `sdk-proxy.ts`, and `filesystem.ts` so importers need no changes
+- `http/handlers/dashboard.ts` — `/`, `/dashboard/*` static asset serving + in-memory asset cache
+- `http/handlers/sdk-proxy.ts` — SDK proxy endpoints: `/tools`, `/project`, `/agents`, `/providers`, `/mcp/status`, `/lsp/status`
+- `http/handlers/filesystem.ts` — file-browser endpoints: `/file/list`, `/file/content`, `/fs/glob`, `/fs/read`
 - `http/handlers/projects.ts` — `/projects`, `/project/current`
 - `http/middlewares/auth.ts` — re-exports `validateToken`, `getIP`, `safeEqual` from `infra/http/auth`
 - `http/middlewares/cors.ts` — re-exports CORS helpers from `infra/http/cors`
@@ -35,7 +38,8 @@
 
 ## Conventions specific to this folder
 - Codex routes are NOT in `routes.ts`. The codex integration self-registers via `server.registerRoute()` in `codexIntegration.setup()`.
-- Each handler file owns one domain (sessions, permissions, events, settings, system, projects).
+- Each handler file owns one domain (sessions, permissions, events, settings, system/dashboard/sdk-proxy/filesystem, projects).
+- `system.ts` is a thin barrel; new sibling files may import `extractDirectory` from `./system` (intra-handlers sibling import, not a cross-layer violation).
 
 ## DO NOT
 - Import from `integrations/` or `notifications/` directly — use dependency injection via `RouteDeps`.
