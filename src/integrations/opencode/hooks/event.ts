@@ -29,14 +29,17 @@ export function createEventHook(
         sessionBusyStart.set(sessionID, Date.now())
       } else if (sessionID && status?.type === "idle") {
         const started = sessionBusyStart.get(sessionID)
-        if (started && Date.now() - started > 10_000) {
-          sessionBusyStart.delete(sessionID)
-          await notifications.notifySessionIdle(client, sessionID)
+        if (started !== undefined) {
+          sessionBusyStart.delete(sessionID) // always clean on idle; threshold only gates notification
+          if (Date.now() - started > 10_000) {
+            await notifications.notifySessionIdle(client, sessionID)
+          }
         }
       }
     }
 
     if (event.type === "session.error" && sessionID) {
+      sessionBusyStart.delete(sessionID) // errored session is no longer busy; prevent stale-ID misfire
       const errorObj = props?.error as Record<string, unknown> | undefined
       const error =
         (errorObj?.data as Record<string, unknown>)?.message as string ||
