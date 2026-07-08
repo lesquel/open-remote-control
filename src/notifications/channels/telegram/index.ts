@@ -7,12 +7,18 @@ import type { NotificationChannel, NotificationResult } from "../../ports"
 
 /** Default fetch timeout for all Telegram API calls. */
 const DEFAULT_FETCH_TIMEOUT_MS = 10_000
+const TELEGRAM_POLL_CONFLICT_FRAGMENT = "terminated by other getUpdates request"
 
 function getTelegramFetchTimeoutMs(): number {
   const raw = process.env.PILOT_FETCH_TIMEOUT_MS
   if (!raw) return DEFAULT_FETCH_TIMEOUT_MS
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_FETCH_TIMEOUT_MS
+}
+
+function isTelegramPollConflict(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return msg.includes(TELEGRAM_POLL_CONFLICT_FRAGMENT)
 }
 
 /**
@@ -255,6 +261,14 @@ export function createTelegramChannel(
             }
           }
         } catch (err) {
+          if (isTelegramPollConflict(err)) {
+            polling = false
+            if (logger) {
+              logger.info("Telegram polling stopped — another poller is already active")
+            }
+            return
+          }
+
           const delay = BACKOFF_STEPS[Math.min(backoffIdx, BACKOFF_STEPS.length - 1)]!
           if (logger) {
             logger.warn("Telegram polling failed", {
@@ -443,4 +457,3 @@ export function createTelegramChannel(
     },
   }
 }
-

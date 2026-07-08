@@ -63,5 +63,12 @@ describe("createUrlExtractor", () => {
         "https://abc-def.ngrok-free.app",
       )
     })
+
+    test("extracts ngrok-free dev URLs", () => {
+      const extractor = createUrlExtractor(TUNNEL_URL_PATTERNS.ngrok)
+      expect(
+        extractor.feed("Forwarding https://abc-def.ngrok-free.dev -> http://localhost:3000\n"),
+      ).toBe("https://abc-def.ngrok-free.dev")
+    })
   })
 })

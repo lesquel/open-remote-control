@@ -159,6 +159,56 @@ describe("D2 — abortable sleep on stop()", () => {
   beforeEach(() => { originalFetch = globalThis.fetch })
   afterEach(() => { globalThis.fetch = originalFetch })
 
+  test("stops polling instead of retrying when another getUpdates poller is active", async () => {
+    const logger = makeLogger()
+    const q = createPermissionQueue(5_000)
+    let getUpdatesCalls = 0
+    let loopSettled = false
+
+    globalThis.fetch = mock(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (!url.includes("/getUpdates")) {
+        return new Response(JSON.stringify({ ok: true, result: true }), {
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      getUpdatesCalls++
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          description: "Conflict: terminated by other getUpdates request",
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const bot = createTelegramChannel(
+      { token: "fake-token", chatId: "12345" },
+      q,
+      q,
+      logger,
+      {
+        backoffStepsMs: [10],
+        onLoopSettled: () => { loopSettled = true },
+      },
+    )
+
+    try {
+      await new Promise<void>((r) => setTimeout(r, 80))
+      expect(loopSettled).toBe(true)
+      expect(getUpdatesCalls).toBe(1)
+
+      const infoLogs = logger.calls.info ?? []
+      const stoppedLog = infoLogs.some((args) =>
+        args.some((a) => String(a).toLowerCase().includes("another poller")),
+      )
+      expect(stoppedLog).toBe(true)
+    } finally {
+      bot.stop()
+    }
+  }, 5_000)
+
   test("stop() aborts backoff sleep — loop settles within abort window, not after full sleep duration", async () => {
     // D2 observable: loop must SETTLE (pollLoop promise resolves) promptly after stop().
     // We inject a 500ms backoff. Without the fix: loop settles at t≈500ms.
