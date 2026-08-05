@@ -11,5 +11,5 @@ export const TUNNEL_KILL_GRACE_MS = 400
 /** Regex patterns for extracting the public URL from tunnel process output. */
 export const TUNNEL_URL_PATTERNS = {
   cloudflared: /https:\/\/[a-z0-9-]+\.trycloudflare\.com/,
-  ngrok: /https:\/\/[a-z0-9-]+\.ngrok(-free)?\.app/,
+  ngrok: /https:\/\/[a-z0-9-]+\.ngrok(-free)?\.(?:app|dev)/,
 } as const
