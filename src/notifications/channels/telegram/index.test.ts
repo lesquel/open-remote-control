@@ -151,6 +151,69 @@ describe("D1 — pollLoop outer crash recovery", () => {
 })
 
 // ──────────────────────────────────────────────────────────────────────────────
+// D4 — getUpdates long-poll must outlive the generic fetch timeout
+// ──────────────────────────────────────────────────────────────────────────────
+describe("D4 — long-poll fetch timeout", () => {
+  let originalFetch: typeof globalThis.fetch
+  let originalTimeoutEnv: string | undefined
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch
+    originalTimeoutEnv = process.env.PILOT_FETCH_TIMEOUT_MS
+  })
+  afterEach(() => {
+    globalThis.fetch = originalFetch
+    if (originalTimeoutEnv === undefined) delete process.env.PILOT_FETCH_TIMEOUT_MS
+    else process.env.PILOT_FETCH_TIMEOUT_MS = originalTimeoutEnv
+  })
+
+  test("getUpdates is not aborted by PILOT_FETCH_TIMEOUT_MS while the long poll is still open", async () => {
+    // PILOT_FETCH_TIMEOUT_MS governs ordinary Telegram API calls. getUpdates asks
+    // Telegram to hold the connection open for POLL_LONG_POLL_SECONDS, so aborting
+    // it at the generic timeout turns every idle poll into a "failure" that grows
+    // the backoff and delays inline permission approvals.
+    process.env.PILOT_FETCH_TIMEOUT_MS = "60"
+
+    const logger = makeLogger()
+    const q = createPermissionQueue(5_000)
+    const pollSignals: AbortSignal[] = []
+
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (!url.includes("/getUpdates")) {
+        return new Response(JSON.stringify({ ok: true, result: true }), {
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+
+      if (init?.signal) pollSignals.push(init.signal)
+      // Simulate an idle long poll: Telegram holds the connection, then answers empty.
+      await new Promise<void>((r) => setTimeout(r, 150))
+      return new Response(JSON.stringify({ ok: true, result: [] }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const bot = createTelegramChannel(
+      { token: "fake-token", chatId: "12345" },
+      q,
+      q,
+      logger,
+      { backoffStepsMs: [10] },
+    )
+
+    try {
+      await new Promise<void>((r) => setTimeout(r, 250))
+      expect(pollSignals.length).toBeGreaterThan(0)
+      expect(pollSignals.some((s) => s.aborted)).toBe(false)
+      expect(logger.calls.warn ?? []).toEqual([])
+    } finally {
+      bot.stop()
+    }
+  }, 5_000)
+})
+
+// ──────────────────────────────────────────────────────────────────────────────
 // D2 — stop() wakes abortable sleep immediately
 // ──────────────────────────────────────────────────────────────────────────────
 describe("D2 — abortable sleep on stop()", () => {

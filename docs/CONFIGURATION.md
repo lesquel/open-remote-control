@@ -175,7 +175,7 @@ This setting is editable from the dashboard Settings UI (no restart required). I
 | Variable | Default | What it does |
 |----------|---------|--------------|
 | `PILOT_DEV` | `false` | When `true`, the dashboard HTML is re-read from disk on every request. Use during development to see CSS/JS changes without restarting OpenCode. |
-| `PILOT_FETCH_TIMEOUT_MS` | `10000` | Timeout for outbound HTTP calls (Telegram API, push send). 10s default. |
+| `PILOT_FETCH_TIMEOUT_MS` | `10000` | Timeout for outbound HTTP calls (Telegram API, push send). 10s default. The Telegram `getUpdates` long poll is exempt — it uses at least 35s so an idle poll is never aborted mid-flight. |
 
 ## Sample `.env` for common scenarios
 
