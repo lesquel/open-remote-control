@@ -9,11 +9,30 @@ import type { NotificationChannel, NotificationResult } from "../../ports"
 const DEFAULT_FETCH_TIMEOUT_MS = 10_000
 const TELEGRAM_POLL_CONFLICT_FRAGMENT = "terminated by other getUpdates request"
 
+/** Long-poll window (seconds) requested from Telegram on each getUpdates call. */
+const POLL_LONG_POLL_SECONDS = 30
+/** Headroom over the long-poll window before the request is aborted locally. */
+const POLL_TIMEOUT_MARGIN_MS = 5_000
+
 function getTelegramFetchTimeoutMs(): number {
   const raw = process.env.PILOT_FETCH_TIMEOUT_MS
   if (!raw) return DEFAULT_FETCH_TIMEOUT_MS
   const n = parseInt(raw, 10)
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_FETCH_TIMEOUT_MS
+}
+
+/**
+ * Timeout for the getUpdates long poll. PILOT_FETCH_TIMEOUT_MS is sized for
+ * ordinary request/response calls; getUpdates deliberately keeps the connection
+ * open for POLL_LONG_POLL_SECONDS, so aborting it at the generic timeout would
+ * turn every idle poll into a failure that grows the backoff and delays inline
+ * permission approvals. A larger configured timeout still wins.
+ */
+function getTelegramPollTimeoutMs(): number {
+  return Math.max(
+    getTelegramFetchTimeoutMs(),
+    POLL_LONG_POLL_SECONDS * 1_000 + POLL_TIMEOUT_MARGIN_MS,
+  )
 }
 
 function isTelegramPollConflict(err: unknown): boolean {
@@ -98,11 +117,12 @@ export function createTelegramChannel(
   async function rawFetch<T = unknown>(
     method: string,
     body: Record<string, unknown>,
+    timeoutMs?: number,
   ): Promise<T> {
     const controller = new AbortController()
     const timer = setTimeout(
       () => controller.abort(),
-      getTelegramFetchTimeoutMs(),
+      timeoutMs ?? getTelegramFetchTimeoutMs(),
     )
     try {
       const res = await fetch(`${base}/${method}`, {
@@ -245,11 +265,15 @@ export function createTelegramChannel(
       // silently kill the loop. Log it, back off, and continue while polling.
       try {
         try {
-          const updates = await rawFetch<Array<Record<string, unknown>>>("getUpdates", {
-            offset,
-            timeout: 30,
-            allowed_updates: ["callback_query"],
-          })
+          const updates = await rawFetch<Array<Record<string, unknown>>>(
+            "getUpdates",
+            {
+              offset,
+              timeout: POLL_LONG_POLL_SECONDS,
+              allowed_updates: ["callback_query"],
+            },
+            getTelegramPollTimeoutMs(),
+          )
 
           // Success — reset backoff
           backoffIdx = 0
