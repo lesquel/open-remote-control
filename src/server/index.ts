@@ -19,7 +19,7 @@ import { opencodeIntegration } from "../integrations/opencode/index"
 import { codexIntegration } from "../integrations/codex/index"
 import { createLogger } from "../infra/logger/index"
 import { PILOT_VERSION, TOAST_DURATION_MS, TOAST_PROMOTION_DURATION_MS, PROMOTION_POLL_INTERVAL_MS } from "./constants"
-import { installGlobalErrorHandlersOnce, createShutdownGuard } from "./lifecycle"
+import { installGlobalErrorHandlersOnce, createShutdownGuard, registerProcessShutdown } from "./lifecycle"
 
 export default {
   id: "opencode-pilot",
@@ -486,13 +486,18 @@ export default {
     // (opencode.shutdown(), notifications.flush(), etc.) silently never run;
     // the `void` only suppressed the TS error without fixing anything.
     // SIGINT and SIGTERM fire BEFORE drain and are sufficient for graceful
-    // shutdown. Note (out-of-scope follow-up): in the multi-instance model,
-    // SIGINT/SIGTERM use process.once, so only the first plugin-factory
-    // invocation's runShutdown() runs on a signal. The second invocation's
-    // cleanup depends on the primary tearing down shared resources. This
-    // design tension is pre-existing and not addressed in this PR.
-    process.once("SIGINT", () => void runShutdown())
-    process.once("SIGTERM", () => void runShutdown())
+    // shutdown. The process-wide coordinator owns one listener per signal and
+    // fans out to every plugin instance, avoiding listener accumulation while
+    // preserving per-instance cleanup.
+    registerProcessShutdown(async () => {
+      try {
+        await runShutdown()
+      } catch (error) {
+        logger.error("Plugin shutdown failed", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    })
 
     return {
       event: roleAwareHooks.event,
