@@ -576,14 +576,14 @@
 </div>
 
 <!-- Command Palette (Ctrl+P) -->
-<div id="command-palette">
+<div id="command-palette" aria-label="Command palette">
   <div class="palette-box">
     <div class="palette-search">
       <span class="palette-search-icon">▶</span>
-      <input id="palette-input" placeholder="Search sessions and commands…" autocomplete="off" spellcheck="false">
+      <input id="palette-input" role="combobox" aria-label="Search commands and sessions" aria-controls="palette-list" aria-autocomplete="list" aria-expanded="false" placeholder="Search sessions and commands…" autocomplete="off" spellcheck="false">
       <span class="palette-hint"><kbd>↑↓</kbd> navigate &nbsp;<kbd>↵</kbd> select &nbsp;<kbd>esc</kbd> close</span>
     </div>
-    <div id="palette-list"></div>
+    <div id="palette-list" role="listbox" aria-label="Commands and sessions"></div>
   </div>
 </div>
 

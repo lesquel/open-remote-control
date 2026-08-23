@@ -3348,7 +3348,7 @@ body {
     padding: 10px 14px;
   }
   /* Allow / Deny buttons: 44px min touch target */
-  .btn-allow, .btn-deny {
+  #btn-allow, #btn-deny {
     min-height: 44px;
     font-size: 13px;
   }

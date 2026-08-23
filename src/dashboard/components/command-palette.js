@@ -24,6 +24,23 @@ function cleanupPaletteListeners() {
   paletteListeners = []
 }
 
+function bindPaletteInputListeners() {
+  if (paletteListeners.length > 0) return
+  const input = document.getElementById('palette-input')
+  if (!input) return
+
+  registerPaletteListener(input, 'input', e => {
+    selectedIndex = 0
+    renderPaletteList(e.target.value)
+  })
+  registerPaletteListener(input, 'keydown', e => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); updateSelection(1); return }
+    if (e.key === 'ArrowUp')   { e.preventDefault(); updateSelection(-1); return }
+    if (e.key === 'Enter')     { e.preventDefault(); confirmSelection(); return }
+    if (e.key === 'Escape')    { e.preventDefault(); closePalette(); return }
+  })
+}
+
 // Per-session agent preference (client-side only, resets on reload)
 const _sessionAgentPrefs = new Map()
 
@@ -98,7 +115,9 @@ export function openPalette() {
   isOpen = true
   selectedIndex = 0
   const input = document.getElementById('palette-input')
+  bindPaletteInputListeners()
   input.value = ''
+  input.setAttribute('aria-expanded', 'true')
   renderPaletteList('')
   // openModal handles: Esc, backdrop click, focus trap (Tab only), focus restore.
   // Up/Down/Enter navigation lives on the input keydown handler — unaffected.
@@ -114,6 +133,7 @@ export function closePalette() {
   const el = document.getElementById('command-palette')
   if (!el) return
   el.classList.remove('open')
+  document.getElementById('palette-input')?.setAttribute('aria-expanded', 'false')
   isOpen = false
   _paletteHandle = null
   cleanupPaletteListeners()
@@ -973,6 +993,7 @@ function renderPaletteList(query) {
   if (!allItems.length) {
     listEl.innerHTML = `<div class="palette-empty">No results for "${escHtml(query)}"</div>`
     selectedIndex = 0
+    document.getElementById('palette-input')?.removeAttribute('aria-activedescendant')
     return
   }
 
@@ -1005,7 +1026,7 @@ function renderPaletteList(query) {
         ? `<span class="palette-item-meta ${item.metaClass ?? ''}">${escHtml(item.meta)}</span>`
         : ''
       const variantClass = item.variant === 'danger' ? ' palette-item--danger' : ''
-      html += `<div class="palette-item${sel}${variantClass}" data-idx="${globalIdx}">
+      html += `<div id="palette-option-${globalIdx}" class="palette-item${sel}${variantClass}" data-idx="${globalIdx}" role="option" aria-selected="${globalIdx === selectedIndex}">
         <span class="palette-item-icon">${escHtml(item.icon ?? '○')}</span>
         <span class="palette-item-label">${item.labelHtml}</span>
         ${metaHtml}${kbdHtml}
@@ -1016,6 +1037,7 @@ function renderPaletteList(query) {
   }
 
   listEl.innerHTML = html
+  document.getElementById('palette-input')?.setAttribute('aria-activedescendant', `palette-option-${selectedIndex}`)
 
   // Wire click handlers
   listEl.querySelectorAll('.palette-item').forEach(el => {
@@ -1035,7 +1057,9 @@ function updateSelection(delta) {
   if (!listEl) return
   listEl.querySelectorAll('.palette-item').forEach((el, i) => {
     el.classList.toggle('selected', i === selectedIndex)
+    el.setAttribute('aria-selected', String(i === selectedIndex))
   })
+  document.getElementById('palette-input')?.setAttribute('aria-activedescendant', `palette-option-${selectedIndex}`)
   // Scroll into view
   const selected = listEl.querySelector('.palette-item.selected')
   selected?.scrollIntoView({ block: 'nearest' })
@@ -1053,21 +1077,9 @@ export function initCommandPalette() {
   const overlay = document.getElementById('command-palette')
   if (!overlay) return
 
-  const input = document.getElementById('palette-input')
-
-  input?.addEventListener('input', e => {
-    selectedIndex = 0
-    renderPaletteList(e.target.value)
-  })
-
-  // TODO: per-picker keyHandlers in openAgentPicker / openModelPicker / openFolderPicker /
-  // openProjectPicker also need registerPaletteListener to be covered by cleanupPaletteListeners.
-  if (input) registerPaletteListener(input, 'keydown', e => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); updateSelection(1); return }
-    if (e.key === 'ArrowUp')   { e.preventDefault(); updateSelection(-1); return }
-    if (e.key === 'Enter')     { e.preventDefault(); confirmSelection(); return }
-    if (e.key === 'Escape')    { e.preventDefault(); closePalette(); return }
-  })
+  // closePalette removes modal-scoped listeners. openPalette calls this again,
+  // so keyboard navigation survives every close/reopen cycle without duplicates.
+  bindPaletteInputListeners()
 
   // Backdrop click and Esc are handled by openModal (called inside openPalette).
 
