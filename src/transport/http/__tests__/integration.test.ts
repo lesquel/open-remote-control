@@ -225,6 +225,17 @@ describe("integration: critical flows", () => {
     expect(res.status).toBe(200)
   })
 
+  it("assigns a correlation ID to every response", async () => {
+    const first = await fetch(`${base}/health`)
+    const second = await fetch(`${base}/health`)
+    const firstId = first.headers.get("x-request-id")
+    const secondId = second.headers.get("x-request-id")
+
+    expect(firstId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(secondId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(secondId).not.toBe(firstId)
+  })
+
   // ─── auth ─────────────────────────────────────────────────────────────────
 
   it("endpoints reject requests without Bearer token", async () => {
@@ -238,9 +249,18 @@ describe("integration: critical flows", () => {
     for (const { method, path } of endpoints) {
       const res = await fetch(`${base}${path}`, { method })
       expect(res.status).toBe(401)
-      const body = (await res.json()) as { error: { code: string } }
+      const body = (await res.json()) as { error: { code: string; requestId?: string } }
       expect(body.error.code).toBe("UNAUTHORIZED")
+      expect(body.error.requestId).toBe(res.headers.get("x-request-id") ?? undefined)
     }
+  })
+
+  it("returns the correlation ID in server-generated error bodies", async () => {
+    const res = await fetch(`${base}/does-not-exist`)
+    const body = (await res.json()) as { error: { code: string; requestId?: string } }
+
+    expect(res.status).toBe(404)
+    expect(body.error.requestId).toBe(res.headers.get("x-request-id") ?? undefined)
   })
 
   it("endpoints accept requests with valid Bearer token", async () => {

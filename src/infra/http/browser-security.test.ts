@@ -91,6 +91,7 @@ describe("applyBrowserResponseHeaders", () => {
       "https://pilot.example.test",
     )
     expect(response.headers.get("access-control-allow-origin")).toBe("https://pilot.example.test")
+    expect(response.headers.get("access-control-expose-headers")).toBe("X-Request-ID")
     expect(response.headers.get("vary")).toContain("Origin")
   })
 })

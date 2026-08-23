@@ -12,7 +12,7 @@
 - `main.js` — bootstraps the app and wires all components
 - `sw.js` — service worker; `__PILOT_CACHE_VERSION__` placeholder is templated by the server on each request
 - `constants.js` — shared browser-side constants
-- `api/api.js` — REST client against the pilot HTTP server
+- `api/api.js` — REST client against the pilot HTTP server; preserves response request IDs on surfaced errors
 - `api/api-fetch.js` — fetch wrapper with auth headers
 - `state/state.js` — reactive client-side state
 - `sse/sse.js` — reconnecting `/events` client; forwards the last event ID, deduplicates bounded replay, detects host generations/offline state, applies jittered backoff, and reconciles canonical snapshots

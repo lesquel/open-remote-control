@@ -15,12 +15,12 @@
 - `validateToken / validateHookToken / getIP / safeEqual` — (`http/auth.ts`) request auth helpers
 - `CORS_HEADERS / corsPreflightResponse` — (`http/cors.ts`)
 - `validateBrowserBoundary / applyBrowserResponseHeaders` — (`http/browser-security.ts`) DNS-rebinding, Origin, CORS, and browser-header boundary
-- `json / jsonError` — (`http/json.ts`) typed JSON response helpers
+- `json / jsonError` — (`http/json.ts`) typed JSON response helpers with optional diagnostic request IDs
 - `readBoundedText()` — (`http/text.ts`) bounded body reader
 - `readBoundedBytes()` — (`http/text.ts`) streaming byte cap for request middleware
 - `writePrivateFile()` — (`fs/private-file.ts`) atomic owner-private credential file replacement
 - `resolveContainedFile()` — (`fs/contained-file.ts`) canonical project-boundary proof for local files
-- `RouteContext<TDeps> / Route<TDeps> / AuthRequirement / RouteParams` — (`http/types.ts`) generic HTTP types
+- `RouteContext<TDeps> / Route<TDeps> / AuthRequirement / RouteParams` — (`http/types.ts`) generic HTTP types, including the server-assigned request ID
 - `createLogger(): Logger` — (`logger/index.ts`) wraps `ctx.client.app.log` and recursively redacts messages/structured extras
 - `logging/redact.ts` — bounded, cycle-safe secret and URL redaction shared by logs and audit persistence
 - `getLocalIP(): string` — (`network/ip.ts`)

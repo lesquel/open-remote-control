@@ -21,6 +21,8 @@ export interface RouteContext<TDeps = unknown> {
   url: URL
   params: RouteParams
   deps: TDeps
+  /** Present for requests dispatched by the HTTP server; optional for direct adapter tests. */
+  requestId?: string
 }
 
 /** Generic route definition. TDeps narrows the handler's context. */

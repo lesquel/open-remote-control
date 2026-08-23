@@ -232,6 +232,7 @@ flowchart LR
 - **Bearer scheme** — every `auth: "required"` route checks `Authorization: Bearer <token>`. `/events` also accepts `?token=` because `EventSource` cannot set custom headers.
 - **Localhost by default** — `PILOT_HOST=127.0.0.1`. Exposed to LAN/internet only when `PILOT_TUNNEL` is set.
 - **Audit log** — every authed request, every permission decision, every SSE connection appended as JSON Lines to `.opencode/pilot-audit.log`.
+- **Request correlation** — every HTTP response carries a fresh `X-Request-ID`; server-generated error bodies and local structured logs use the same ID for diagnosis without exposing secrets.
 - **Path traversal guard** — static dashboard handler rejects paths containing `..`.
 - **Primary/passive promotion** — if port 4097 is taken (multiple OpenCode windows), the second instance runs passive (no HTTP, no tunnel) and auto-promotes when the primary exits.
 

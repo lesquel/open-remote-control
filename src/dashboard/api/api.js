@@ -109,8 +109,11 @@ async function request(method, path, body, opts = {}) {
     // 503: server temporarily unavailable — NOT a token problem. Don't clear
     // the token; the server will come back and the stored token is still valid.
     // Other 4xx/5xx: throw with status so callers can decide.
-    const err = new Error(`${r.status}`)
+    const requestId = r.headers.get('x-request-id')
+    const suffix = requestId ? ` · Error ID: ${requestId}` : ''
+    const err = new Error(`${r.status}${suffix}`)
     err.status = r.status
+    err.requestId = requestId
     throw err
   }
   // Log shape summary for debugging (array length or top-level keys)

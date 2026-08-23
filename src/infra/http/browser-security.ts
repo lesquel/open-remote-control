@@ -144,10 +144,12 @@ export function applyBrowserResponseHeaders(response: Response, origin: string |
 
   if (origin !== null) {
     headers.set("Access-Control-Allow-Origin", origin)
+    headers.set("Access-Control-Expose-Headers", "X-Request-ID")
     const vary = headers.get("Vary")
     headers.set("Vary", vary ? `${vary}, Origin` : "Origin")
   } else {
     headers.delete("Access-Control-Allow-Origin")
+    headers.delete("Access-Control-Expose-Headers")
   }
 
   return new Response(response.body, {
