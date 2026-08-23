@@ -3,6 +3,7 @@ import { getState, setState } from '../state/state.js'
 import { fetchPermissions, respondPermission } from '../api/api.js'
 import { playNotifySound } from '../ui/notif-sound.js'
 import { toast } from '../ui/toast.js'
+import { createPermissionResponder } from './permission-response.js'
 
 export async function loadPermissions() {
   try {
@@ -111,17 +112,24 @@ export function showNextPerm() {
   }
 }
 
-async function respondPerm(action) {
-  const { pendingPerms } = getState()
-  if (!pendingPerms.length) return
-  const p = pendingPerms[0]
-  const remaining = pendingPerms.slice(1)
-  setState({ pendingPerms: remaining })
-  try {
-    await respondPermission(p.id ?? p.permissionID, action)
-  } catch (_) {}
-  showNextPerm()
+function setPermissionBusy(busy) {
+  for (const id of ['btn-allow', 'btn-deny']) {
+    const button = document.getElementById(id)
+    if (button) button.disabled = busy
+  }
+  const banner = document.getElementById('perm-banner')
+  if (banner) banner.setAttribute('aria-busy', String(busy))
 }
+
+const respondPerm = createPermissionResponder({
+  getPending: () => getState().pendingPerms,
+  setPending: (pendingPerms) => setState({ pendingPerms }),
+  send: respondPermission,
+  refresh: loadPermissions,
+  render: showNextPerm,
+  setBusy: setPermissionBusy,
+  onError: () => toast("Couldn't resolve permission. The queue was refreshed."),
+})
 
 export function initPermissions() {
   document.getElementById('btn-allow').addEventListener('click', () => respondPerm('allow'))
