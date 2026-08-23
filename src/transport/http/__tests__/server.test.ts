@@ -13,6 +13,8 @@ import type { Logger } from "../../../infra/logger/index"
 import type { RouteDeps } from "../routes"
 import { createRemoteServer, type RemoteServer } from "../server"
 import { createDeviceStore, type DeviceStore } from "../../../core/devices/store"
+import { opencodeIntegration } from "../../../integrations/opencode"
+import { codexIntegration } from "../../../integrations/codex"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -174,6 +176,7 @@ function buildDeps(port: number, deviceStore?: DeviceStore): RouteDeps {
     config,
     token: TOKEN,
     deviceStore,
+    integrations: [opencodeIntegration, codexIntegration],
     rotateToken(newToken: string) {
       deps.token = newToken
     },
@@ -308,6 +311,24 @@ describe("HTTP server integration", () => {
     const serialized = JSON.stringify(body)
     expect(serialized).not.toContain(TOKEN)
     expect(serialized).not.toContain(readOnlyCredential)
+  })
+
+  test("protected integrations endpoint exposes provider capability metadata", async () => {
+    const response = await fetch(`${baseUrl}/integrations`, {
+      headers: { Authorization: `Bearer ${readOnlyCredential}` },
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as {
+      protocolVersion: number
+      integrations: Array<{ id: string; capabilities: Record<string, boolean> }>
+    }
+    expect(body.protocolVersion).toBe(1)
+    expect(body.integrations.map((integration) => integration.id)).toEqual(["opencode", "codex"])
+    expect(body.integrations.find((integration) => integration.id === "codex")?.capabilities).toMatchObject({
+      permissions: true,
+      sessions: false,
+      streaming: false,
+    })
   })
 
   test("interactive devices can create sessions but cannot approve permissions", async () => {

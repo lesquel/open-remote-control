@@ -42,6 +42,9 @@ export type {
 
 export { PilotError } from "./errors"
 
+export { createAgentDescriptor } from "./types/agent-integration"
+export type { AgentDescriptor, AgentCapabilities } from "./types/agent-integration"
+
 export { createDeviceStore, capabilitiesForRole } from "./devices/store"
 export type {
   DeviceStore,

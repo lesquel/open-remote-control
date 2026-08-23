@@ -9,6 +9,7 @@ import type { Logger } from "../../infra/logger/index"
 import type { AuthRequirement, RouteParams } from "../../infra/http/types"
 import type { DeviceCapability, DeviceStore } from "../../core/devices/store"
 import type { RoutePrincipal } from "./authentication"
+import type { AgentDescriptor } from "../../core/types/agent-integration"
 
 // Re-export infra types so consumers that currently import from routes.ts
 // continue to work without changes.
@@ -26,6 +27,8 @@ export interface RouteDeps {
   deviceStore?: DeviceStore
   /** Injected by the composition root so transport/ never imports from server/. */
   pilotVersion: string
+  /** Loaded agent metadata. Optional for backwards-compatible embedders and focused tests. */
+  integrations?: readonly AgentDescriptor[]
   /**
    * Replace the active token. Called by POST /auth/rotate.
    * The server validates future requests against whatever deps.token holds
@@ -136,6 +139,7 @@ import {
   redeemPairing,
 } from "./handlers/devices"
 import { getDiagnostics } from "./handlers/diagnostics"
+import { listIntegrations } from "./handlers/integrations"
 
 /**
  * Central route table. Order matters only when patterns could overlap —
@@ -168,6 +172,7 @@ export const routes: Route[] = [
   },
   { method: "GET", pattern: /^\/status$/, auth: "required", requiredCapabilities: ["status.read"], handler: getStatus },
   { method: "GET", pattern: /^\/diagnostics$/, auth: "required", requiredCapabilities: ["status.read"], handler: getDiagnostics },
+  { method: "GET", pattern: /^\/integrations$/, auth: "required", requiredCapabilities: ["status.read"], handler: listIntegrations },
   { method: "GET", pattern: /^\/sessions$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listSessions },
   { method: "POST", pattern: /^\/sessions$/, auth: "required", requiredCapabilities: ["sessions.write"], handler: createSession },
   {

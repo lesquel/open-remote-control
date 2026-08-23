@@ -34,6 +34,7 @@
 - `http/handlers/projects.ts` — `/projects`, `/project/current`
 - `http/handlers/devices.ts` — `/devices*` management plus short-lived one-time `/pairing*` exchange
 - `http/handlers/diagnostics.ts` — protected, secret-free local runtime/config/integration diagnostics snapshot
+- `http/handlers/integrations.ts` — versioned loaded-agent descriptor and capability catalog
 - `http/middlewares/auth.ts` — re-exports `validateToken`, `getIP`, `safeEqual` from `infra/http/auth`
 - `http/middlewares/cors.ts` — re-exports CORS helpers from `infra/http/cors`
 - `http/middlewares/json.ts` — re-exports `json`, `jsonError` from `infra/http/json`

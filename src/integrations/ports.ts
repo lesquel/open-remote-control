@@ -23,41 +23,14 @@ import type { PermissionQueue } from '../core/permissions/queue'
 import type { EventBus } from '../core/events/bus'
 import type { AuditLog } from '../core/audit/log'
 import type { Route } from '../infra/http/types'
+import { createAgentDescriptor } from '../core/types/agent-integration'
+import type { AgentDescriptor } from '../core/types/agent-integration'
 
-export type AgentCapabilities = Readonly<{
-  sessions: boolean
-  streaming: boolean
-  permissions: boolean
-  tools: boolean
-  cost: boolean
-  todos: boolean
-  files: boolean
-  models: boolean
-  agents: boolean
-}>
-
-export interface AgentDescriptor {
-  /** Stable protocol identifier. Never derive this from the display label. */
-  readonly id: string
-  readonly displayName: string
-  readonly capabilities: AgentCapabilities
-}
+export { createAgentDescriptor }
+export type { AgentDescriptor, AgentCapabilities } from '../core/types/agent-integration'
 
 export interface AgentIntegration extends AgentDescriptor {
   readonly setup: (deps: IntegrationDeps) => IntegrationHandle
-}
-
-export function createAgentDescriptor(descriptor: AgentDescriptor): AgentDescriptor {
-  if (!/^[a-z][a-z0-9-]{0,63}$/.test(descriptor.id)) {
-    throw new Error(`Invalid agent integration id: ${descriptor.id}`)
-  }
-  if (!descriptor.displayName.trim()) {
-    throw new Error("Agent integration displayName must not be empty")
-  }
-  return Object.freeze({
-    ...descriptor,
-    capabilities: Object.freeze({ ...descriptor.capabilities }),
-  })
 }
 
 export function createAgentIntegration(

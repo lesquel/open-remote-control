@@ -59,7 +59,7 @@ export async function getDiagnostics({ deps, principal }: RouteContext): Promise
       sseClients: deps.eventBus.clientCount(),
       pendingPermissions: deps.permissionQueue.pending().length + deps.codexPermissionQueue.pending().length,
       sessions: { total: sessionTotal, active: activeSessions },
-      integrations: ["opencode", "codex"],
+      integrations: (deps.integrations ?? []).map((integration) => integration.id),
       notifications: {
         telegram: deps.telegram.enabled(),
         push: deps.push.isEnabled(),

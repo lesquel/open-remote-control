@@ -17,6 +17,7 @@
 - `PilotError` — base error class for the whole project
 - `interface NotificationService` — (`types/notification-service.ts`) consumed by integrations
 - `type PilotEvent / BusEvent` — discriminated union of all pilot events
+- `AgentDescriptor / AgentCapabilities` — provider-neutral agent metadata consumed by integrations and transport
 
 All of the above re-exported from `core/index.ts`.
 
@@ -35,6 +36,7 @@ All of the above re-exported from `core/index.ts`.
 - `types/config.ts` — `Config`, `TelegramConfig`, `VapidConfig`, `SettingsSnapshot`, `SettingsLoaderHelper`, `ConfigSources`, `ConfigSource` (canonical location — re-exported by `server/config`)
 - `types/notification-service.ts` — `NotificationService` interface (consumed by integrations)
 - `types/notification-channels.ts` — `TelegramChannel`, `PushService`, `PushSubscriptionJson`
+- `types/agent-integration.ts` — validated agent identity and capability metadata
 
 ## Conventions specific to this folder
 - Factory functions only (`create*`). No classes.

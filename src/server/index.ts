@@ -118,6 +118,7 @@ export default {
       shellEnv,
       envFileApplied: dotenv.applied,
       pilotVersion: PILOT_VERSION,
+      integrations: [opencodeIntegration, codexIntegration],
       settingsLoader: {
         loadEffective(stored: import("../core/settings/store").PilotSettings) {
           const effectiveEnv = mergeStoredSettings(process.env, shellEnv, stored)
