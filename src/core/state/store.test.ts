@@ -8,9 +8,9 @@
 //    activatePrimary can surface silent FS errors to ctx.client.app.log.
 
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
-import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync } from "fs"
+import { chmodSync, mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync, statSync } from "fs"
 import { tmpdir, homedir } from "os"
-import { join } from "path"
+import { dirname, join } from "path"
 import { writeState, readState, readGlobalState, clearState, globalStatePath } from "./store"
 import type { PilotState, ProjectStateMode } from "./store"
 
@@ -87,12 +87,17 @@ const sampleStateBatch3: PilotState = {
 
 describe("writeState — mode param", () => {
   let dir: string
+  let previousXdgStateHome: string | undefined
 
   beforeEach(() => {
     dir = tempDir()
+    previousXdgStateHome = process.env.XDG_STATE_HOME
+    process.env.XDG_STATE_HOME = join(dir, "xdg-state")
   })
 
   afterEach(() => {
+    if (previousXdgStateHome === undefined) delete process.env.XDG_STATE_HOME
+    else process.env.XDG_STATE_HOME = previousXdgStateHome
     try { rmSync(dir, { recursive: true, force: true }) } catch {}
   })
 
@@ -131,6 +136,28 @@ describe("writeState — mode param", () => {
     expect(result.project).not.toBeNull()
     expect(result.project!.ok).toBe(true)
     expect(existsSync(join(dir, ".opencode", "pilot-state.json"))).toBe(true)
+  })
+
+  test("mode=always writes private project state and tightens an existing file", () => {
+    const opencodeDir = join(dir, ".opencode")
+    const projectFile = join(opencodeDir, "pilot-state.json")
+    mkdirSync(opencodeDir, { mode: 0o755 })
+    writeFileSync(projectFile, "old", { mode: 0o644 })
+    if (process.platform !== "win32") {
+      chmodSync(opencodeDir, 0o755)
+      chmodSync(projectFile, 0o644)
+    }
+
+    const result = writeState(dir, sampleStateBatch3, "always")
+
+    expect(result.project?.ok).toBe(true)
+    expect(JSON.parse(readFileSync(projectFile, "utf8"))).toEqual(sampleStateBatch3)
+    if (process.platform !== "win32") {
+      expect(statSync(opencodeDir).mode & 0o777).toBe(0o700)
+      expect(statSync(projectFile).mode & 0o777).toBe(0o600)
+      expect(statSync(dirname(result.global.path)).mode & 0o777).toBe(0o700)
+      expect(statSync(result.global.path).mode & 0o777).toBe(0o600)
+    }
   })
 
   test("clearState does not throw after writeState with mode=off (regression guard)", () => {

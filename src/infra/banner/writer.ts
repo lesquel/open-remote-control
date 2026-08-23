@@ -1,5 +1,5 @@
-import { mkdirSync, writeFileSync } from "fs"
-import { dirname, join } from "path"
+import { join } from "path"
+import { writePrivateFile } from "../fs/private-file"
 import { generateQR } from "../qr/index"
 import { stateFile } from "../paths/index"
 import { shouldWriteProjectState, type ProjectStateMode } from "../paths/index"
@@ -17,8 +17,7 @@ export function globalBannerPath(): string {
  */
 function safeWrite(path: string, content: string): string | null {
   try {
-    mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, content)
+    writePrivateFile(path, content)
     return null
   } catch (err) {
     // Per-project banner write is best-effort: the project may not have an

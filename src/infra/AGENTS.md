@@ -15,6 +15,7 @@
 - `CORS_HEADERS / corsPreflightResponse` — (`http/cors.ts`)
 - `json / jsonError` — (`http/json.ts`) typed JSON response helpers
 - `readBoundedText()` — (`http/text.ts`) bounded body reader
+- `writePrivateFile()` — (`fs/private-file.ts`) atomic owner-private credential file replacement
 - `RouteContext<TDeps> / Route<TDeps> / AuthRequirement / RouteParams` — (`http/types.ts`) generic HTTP types
 - `createLogger(): Logger` — (`logger/index.ts`) wraps `ctx.client.app.log`
 - `getLocalIP(): string` — (`network/ip.ts`)
@@ -28,6 +29,7 @@
 ## Key files
 - `http/types.ts` — `RouteContext<TDeps>`, `Route<TDeps>` — the generic HTTP contract shared by `transport/` and `integrations/`
 - `http/auth.ts` — token validation + IP extraction
+- `fs/private-file.ts` — same-directory atomic writes with private POSIX file/directory modes
 - `paths/index.ts` — XDG-aware path resolution for config and state files
 - `tunnel/index.ts` — cloudflared / ngrok process management
 - `tunnel/types.ts` — `TunnelProvider` type (canonical location, re-exported by `server/config`)
