@@ -27,6 +27,16 @@ Spin up OpenCode locally, get a web dashboard you can open on your laptop or pho
 
 All from one keyboard shortcut (`?` opens the command palette).
 
+### Pilot or OpenCode's built-in web UI?
+
+OpenCode already ships an excellent full browser client through `opencode web`.
+Use it when you want the complete OpenCode experience in a browser. Pilot is a
+local-first **operations companion** that loads alongside your normal TUI: it is
+optimized for quick phone control, permission approvals, attention and
+notifications, multi-project monitoring, and a shared command center for
+OpenCode plus Codex CLI. Both can be useful, and Pilot does not replace or
+disable the built-in UI.
+
 ---
 
 ## Install once, use everywhere
@@ -83,6 +93,22 @@ bun add @lesquel/opencode-pilot@latest @opencode-ai/plugin@latest
 OpenCode runs **two separate plugin loaders**: the server loader reads `opencode.json::plugin` (for `server()` exports like the dashboard), and the TUI loader reads `tui.json::plugin` (for `tui()` exports like slash commands). A spec in only one of them gets you half the plugin. Do **not** add wrappers in `<config>/plugins/` — they conflict with the server loader's strict validation.
 
 Run `opencode` from any project directory. Banner prints with URL + token + QR.
+
+### Uninstall
+
+Fully quit OpenCode, then run:
+
+```bash
+npx @lesquel/opencode-pilot uninstall
+# or: bunx @lesquel/opencode-pilot uninstall
+```
+
+The uninstaller removes only Pilot's plugin registrations, installed package,
+cache entries, legacy wrappers, and local runtime state. Add `--keep-config` to
+preserve `~/.opencode-pilot/config.json` for a future reinstall. It never edits
+your source projects. Browser-local tokens and the PWA service worker must be
+cleared separately from the browser's site-data settings; the command prints
+those final steps.
 
 ---
 
