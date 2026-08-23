@@ -20,6 +20,7 @@
 - `components/` — domain UI components (sessions, permissions, settings, etc.)
 - `components/permission-response.js` — exactly-once client gate that prevents permission double-taps and stale queue removal
 - `modals/device-manager.js` — admin device list, role/name editing, current-device marker, and individual revocation UI
+- `modals/debug-modal.js` — accessible diagnostics panel backed by the protected, secret-free `/diagnostics` snapshot
 - `components/latest-request.js` — generation gate used to prevent stale asynchronous responses from committing UI state
 - `modals/` — overlay dialogs (connect, debug, help)
 - `ui/` — low-level UI utilities (diff, push notifications, shortcuts, toast, sound)

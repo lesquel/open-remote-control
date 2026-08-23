@@ -179,7 +179,7 @@ function buildItems(query) {
     { label: 'Open Project',         icon: '▤', action: () => { closePalette(); openProjectPicker() } },
     { label: 'Show Agent Context',   icon: '◉', action: () => { closePalette(); window.__agentPanel?.open?.() } },
     { label: 'Refresh References',   icon: '⟳', action: () => { closePalette(); window.__refreshReferences?.().then(() => toast('References refreshed')) } },
-    { label: 'Show Debug Info',      icon: '⚑', action: () => { closePalette(); openDebugModal() } },
+    { label: 'Open Diagnostics',     icon: '⚑', action: () => { closePalette(); openDebugModal() } },
     { label: 'Help — Keyboard shortcuts', icon: '?', kbd: '?', action: () => { closePalette(); window.__openHelpModal?.() } },
     { label: 'Clear Prompt History', icon: '⌫', action: () => {
       closePalette()

@@ -46,6 +46,7 @@ function authHeaders() {
 // Endpoints that are global (never get ?directory= appended)
 const DIRECTORY_EXEMPT = [
   '/health',
+  '/diagnostics',
   '/auth/rotate',
   '/status',
   '/projects',
@@ -209,6 +210,10 @@ export async function fetchHealth() {
   const r = await apiFetch(baseUrl() + '/health')
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json()
+}
+
+export async function fetchDiagnostics() {
+  return request('GET', '/diagnostics', undefined, { directory: null })
 }
 
 // ── Dynamic config fetchers (Deliverable 8) ───────────────────────────────
