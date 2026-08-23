@@ -12,7 +12,8 @@
 - The binary is referenced in `package.json` under `bin` as `opencode-pilot`.
 
 ## Key files
-- `init.ts` — the entire install logic: locates OpenCode config dir, installs the npm package, adds the plugin spec, removes stale wrappers from older installs, invalidates OpenCode's package cache
+- `init.ts` — command routing and install/uninstall/doctor logic
+- `diagnostics.ts` — dependency-free sanitized support report builder and owner-private atomic writer
 - `init.test.ts` — unit tests for the init logic
 
 ## Conventions specific to this folder

@@ -2,13 +2,27 @@
 
 Install-time problems are covered in [`INSTALL.md`](./INSTALL.md). This document is about the plugin **after** it's installed: you ran `bunx init`, restarted OpenCode, and something isn't working right.
 
-If your exact symptom isn't here, open an issue at <https://github.com/lesquel/open-remote-control/issues> — include the version (`bunx @lesquel/opencode-pilot --version`), the OpenCode log lines prefixed with `opencode-pilot`, and what you expected vs. what you saw.
+If your exact symptom isn't here, open an issue at <https://github.com/lesquel/open-remote-control/issues> — include a sanitized diagnostics report, the relevant OpenCode log lines prefixed with `opencode-pilot`, and what you expected vs. what you saw.
 
 ---
 
 ## Diagnostic quick-start (run these first, always)
 
-Before following any of the specific scenarios below, run these three commands. 90% of reports can be narrowed down from their output alone.
+Start with the built-in doctor. It checks installation, plugin registration, the local server, and state without changing anything:
+
+```bash
+bunx @lesquel/opencode-pilot doctor
+```
+
+If you need to attach machine-readable diagnostics to an issue, generate the sanitized report:
+
+```bash
+bunx @lesquel/opencode-pilot diagnostics --output opencode-pilot-diagnostics.json
+```
+
+The command refuses to overwrite an existing file and writes owner-only permissions on POSIX systems. It excludes credentials, device IDs, environment values, prompts, source code, filesystem paths, and raw error messages. Review the JSON before sharing it.
+
+Use the manual checks below only when `doctor` does not identify the problem.
 
 ### 1. Is the plugin actually running?
 
@@ -36,8 +50,10 @@ curl -s http://127.0.0.1:4097/health | head -c 400
 
 ```bash
 ls -la ~/.opencode-pilot/pilot-state.json
-cat  ~/.opencode-pilot/pilot-state.json 2>/dev/null | jq .
+jq '{host, port, pid, version}' ~/.opencode-pilot/pilot-state.json
 ```
+
+Never print or attach the raw state file: it contains an authentication token.
 
 - **File exists, valid JSON with `token`, `port`, `host`, `pid`** → state is fine. The slash commands should be working; if they aren't, restart OpenCode once more.
 - **File missing** → this is the issue #1 symptom family. Root cause depends on steps 1 and 2 above.
@@ -259,28 +275,10 @@ As of 1.13.12, `/remote` encodes your current working directory as a `#dir=` has
 
 ## Still stuck
 
-Before opening an issue, collect:
+Before opening an issue, generate the safe support report:
 
 ```bash
-# 1. Exact installed version:
-bunx @lesquel/opencode-pilot --version
-
-# 2. Config snapshot (redact tokens before sharing):
-cat ~/.config/opencode/opencode.json
-cat ~/.config/opencode/tui.json
-cat ~/.opencode-pilot/config.json
-
-# 3. Last 100 lines of OpenCode logs matching our plugin:
-opencode logs 2>&1 | grep -i opencode-pilot | tail -100
-
-# 4. Port + state file state:
-ss -tulpn | grep :4097
-ls -la ~/.opencode-pilot/
-curl -s http://127.0.0.1:4097/health
-
-# 5. OS + OpenCode versions:
-uname -a
-opencode --version
+bunx @lesquel/opencode-pilot diagnostics --output opencode-pilot-diagnostics.json
 ```
 
-Post that (with tokens redacted) in your issue report. We'll usually triage within 24h.
+Attach that reviewed file and describe the expected and actual behavior. Do **not** attach `pilot-state.json`, `config.json`, full environment dumps, or unreviewed logs: those can contain credentials or private paths.
