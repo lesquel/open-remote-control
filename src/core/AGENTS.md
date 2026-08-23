@@ -18,6 +18,7 @@
 - `interface NotificationService` — (`types/notification-service.ts`) consumed by integrations
 - `type PilotEvent / BusEvent` — discriminated union of all pilot events
 - `AgentDescriptor / AgentCapabilities` — provider-neutral agent metadata consumed by integrations and transport
+- `AgentAttentionService` — provider-neutral native permission and structured-question operations injected into transport
 - `HTTP_API_PROTOCOL_VERSION / SSE_PROTOCOL_VERSION` — compatibility versions independent of package releases
 
 All of the above re-exported from `core/index.ts`.
@@ -39,6 +40,7 @@ All of the above re-exported from `core/index.ts`.
 - `types/notification-service.ts` — `NotificationService` interface (consumed by integrations)
 - `types/notification-channels.ts` — `TelegramChannel`, `PushService`, `PushSubscriptionJson`
 - `types/agent-integration.ts` — validated agent identity and capability metadata
+- `types/agent-attention.ts` — native agent attention requests (permissions and structured questions)
 
 ## Conventions specific to this folder
 - Factory functions only (`create*`). No classes.

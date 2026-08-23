@@ -16,6 +16,8 @@ import { writeBanner } from "../infra/banner/writer"
 import { createNotificationService } from "../notifications/pipeline"
 import { createRemoteServer } from "../transport/http/server"
 import { opencodeIntegration } from "../integrations/opencode/index"
+import { createOpenCodeAttentionService } from "../integrations/opencode/attention"
+import { createOpencodeClient as createOpencodeV2Client } from "@opencode-ai/sdk/v2"
 import { codexIntegration } from "../integrations/codex/index"
 import { createLogger } from "../infra/logger/index"
 import { PILOT_VERSION, TOAST_DURATION_MS, TOAST_PROMOTION_DURATION_MS, PROMOTION_POLL_INTERVAL_MS } from "./constants"
@@ -88,6 +90,9 @@ export default {
     const telegram = createTelegramChannel(config.telegram, permissionQueue, codexPermissionQueue, logger)
     const push = createPushService({ config, audit, logger })
     const deviceStore = createDeviceStore({ logger })
+    const attentionService = createOpenCodeAttentionService(
+      createOpencodeV2Client({ baseUrl: ctx.serverUrl.toString() }),
+    )
 
     const notifications = createNotificationService({
       eventBus,
@@ -117,6 +122,7 @@ export default {
       eventBus,
       permissionQueue,
       codexPermissionQueue,
+      attentionService,
       telegram,
       push,
       logger,

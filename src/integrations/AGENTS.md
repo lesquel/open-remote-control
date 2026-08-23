@@ -21,6 +21,7 @@
 - `opencode/index.ts` — `opencodeIntegration`; wires SDK hooks via `registerHook`
 - `opencode/hooks/event.ts` — maps OpenCode events to `PilotEvent` bus
 - `opencode/hooks/permission.ask.ts` — bridges OpenCode permission requests to `PermissionQueue`
+- `opencode/attention.ts` — adapts OpenCode v2 native permission and question APIs to `AgentAttentionService`
 - `opencode/hooks/tool.ts` — tool started/completed events + notification trigger
 - `codex/index.ts` — `codexIntegration`; self-registers `POST /codex/hooks/:event`
 - `codex/handlers.ts` — dispatch table for hook event types (session, tool, permission)
