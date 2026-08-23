@@ -18,8 +18,23 @@ interface SSEClient {
   pingInterval?: ReturnType<typeof setInterval> | null
 }
 
+const SSE_MAX_PENDING_CHUNKS = 32
+
 export function createEventBus(): EventBus {
   const clients = new Set<SSEClient>()
+
+  function removeClient(client: SSEClient, close: boolean): void {
+    clients.delete(client)
+    if (client.pingInterval) {
+      clearInterval(client.pingInterval)
+      client.pingInterval = null
+    }
+    if (close) {
+      try { client.controller.close() } catch {
+        // The stream may already be closed by the browser; cleanup is complete.
+      }
+    }
+  }
 
   function emit(event: BusEvent): void {
     // Opt-in server-side trace. Set PILOT_DEBUG_BUS=1 in the environment to
@@ -41,6 +56,10 @@ export function createEventBus(): EventBus {
 
     for (const client of clients) {
       try {
+        if (client.controller.desiredSize !== null && client.controller.desiredSize <= 0) {
+          dead.push(client)
+          continue
+        }
         client.controller.enqueue(new TextEncoder().encode(data))
       } catch {
         dead.push(client)
@@ -48,7 +67,7 @@ export function createEventBus(): EventBus {
     }
 
     for (const client of dead) {
-      clients.delete(client)
+      removeClient(client, true)
     }
   }
 
@@ -88,9 +107,8 @@ export function createEventBus(): EventBus {
           try {
             controller.enqueue(encoder.encode(`: ping\n\n`))
           } catch {
-            if (pingInterval) clearInterval(pingInterval)
             if (client) {
-              clients.delete(client)
+              removeClient(client, false)
               client = null
             }
           }
@@ -98,13 +116,12 @@ export function createEventBus(): EventBus {
         if (client) client.pingInterval = pingInterval
       },
       cancel() {
-        if (pingInterval) clearInterval(pingInterval)
         if (client) {
-          clients.delete(client)
+          removeClient(client, false)
           client = null
         }
       },
-    })
+    }, { highWaterMark: SSE_MAX_PENDING_CHUNKS, size: () => 1 })
 
     return new Response(stream, {
       headers: {
@@ -124,12 +141,8 @@ export function createEventBus(): EventBus {
 
   function closeAll(): void {
     for (const c of clients) {
-      // Clear the keepalive explicitly — don't depend on close() triggering
-      // the stream's cancel() callback (Bun impl detail).
-      if (c.pingInterval) clearInterval(c.pingInterval)
-      try { c.controller.close() } catch { /* already-closed controller — safe to ignore during shutdown */ }
+      removeClient(c, true)
     }
-    clients.clear()
   }
 
   return {
