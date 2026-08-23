@@ -36,6 +36,7 @@ const state = {
   multiviewActive: false,
   mvPanels: new Set(), // sessionIds open in multi-view
   pendingPerms: [],
+  pendingQuestions: [],
   todos: [],         // Array<{ id, content, status: 'pending'|'in_progress'|'completed' }>
   settings: {
     sound: false,
@@ -112,6 +113,31 @@ export function addProjectTab(directory, label) {
     loaded:        false, // becomes true once sessions have been fetched at least once
   }
   state.projectTabs = [...state.projectTabs, tab]
+  notifyAll()
+  return tab
+}
+
+/**
+ * Migrate a persisted legacy null-directory tab to the concrete worktree that
+ * owns the running OpenCode instance. If that worktree is already open, the
+ * legacy tab is removed and the existing concrete tab becomes active.
+ */
+export function rebindProjectTab(id, directory, label) {
+  const tab = state.projectTabs.find(t => t.id === id)
+  if (!tab || typeof directory !== 'string' || !directory.trim()) return null
+  const normalizedDirectory = directory.trim()
+  const existing = state.projectTabs.find(t => t.id !== id && t.directory === normalizedDirectory)
+  if (existing) {
+    const wasActive = state.activeProjectId === id
+    state.projectTabs = state.projectTabs.filter(t => t.id !== id)
+    if (wasActive) switchProjectTab(existing.id)
+    else notifyAll()
+    return existing
+  }
+
+  tab.directory = normalizedDirectory
+  if (typeof label === 'string' && label.trim()) tab.label = label.trim()
+  if (state.activeProjectId === id) state.activeDirectory = normalizedDirectory
   notifyAll()
   return tab
 }

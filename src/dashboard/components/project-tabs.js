@@ -10,10 +10,12 @@ import {
   findProjectTabByDirectory,
   syncActiveTabToState,
   syncStateToActiveTab,
+  rebindProjectTab,
   subscribe,
 } from '../state/state.js'
 import { STORAGE_KEYS } from '../constants.js'
 import { toast } from '../ui/toast.js'
+import { currentProjectDirectory, projectLabel } from '../state/project-context.js'
 
 const LS_TABS       = STORAGE_KEYS.PROJECT_TABS
 const LS_ACTIVE_TAB = STORAGE_KEYS.ACTIVE_PROJECT_ID
@@ -106,6 +108,36 @@ export function restoreTabsFromStorage() {
   return restoredActive
 }
 
+/**
+ * Ensure the running OpenCode project's real worktree is represented by a tab.
+ * Migrates the legacy null-directory "default" tab in place so it can no
+ * longer query or display sessions from unrelated projects.
+ */
+export function ensureCurrentProjectTab(project) {
+  const directory = currentProjectDirectory(project)
+  if (!directory) return getActiveProjectTab()
+  const label = projectLabel(project, directory)
+  const legacy = findProjectTabByDirectory(null)
+  if (legacy) {
+    const tab = rebindProjectTab(legacy.id, directory, label)
+    persistTabs()
+    return tab
+  }
+
+  const existing = findProjectTabByDirectory(directory)
+  if (existing) {
+    if (!getActiveProjectTab()) stateSwitchTab(existing.id)
+    persistTabs()
+    return existing
+  }
+
+  if (getActiveProjectTab()) return getActiveProjectTab()
+  const tab = stateAddTab(directory, label)
+  stateSwitchTab(tab.id)
+  persistTabs()
+  return tab
+}
+
 // ── High-level tab operations ────────────────────────────────────────────
 
 /**
@@ -143,18 +175,26 @@ export async function switchProjectTab(id) {
 
   persistTabs()
 
-  // Refresh panels that depend on activeDirectory.
-  try { window.__refreshRightPanel?.() } catch (_) {}
-  try { window.__refreshLabelStrip?.() } catch (_) {}
-  // Fix #18: reset the file browser so it loads the new project's files, not
-  // the previous tab's cached tree. refresh() clears childrenCache + expandedDirs
-  // and triggers a fresh fetchFileList call for the new activeDirectory.
-  try { window.__fileBrowser?.refresh() } catch (_) {}
-
   // Re-fetch references for the new directory (agents, providers, MCP, …).
   // This is cheap-ish (one-shot load per session) and necessary so the label
   // strip / right panel reflect the new project's config.
   try { await window.__refreshReferences?.() } catch (_) {}
+
+  // Refresh every project-scoped surface only AFTER the new references are in
+  // place. The previous order painted the old project's model, agent, MCP, LSP,
+  // and path into the newly selected tab until another event happened.
+  try { await window.__refreshLabelStrip?.() } catch (_) {}
+  try { await window.__refreshRightPanel?.() } catch (_) {}
+  try { window.__refreshUsageIndicator?.() } catch (_) {}
+  try { window.__agentPanel?.refresh?.() } catch (_) {}
+  // Reset the file browser so it loads the new project's files, not the
+  // previous tab's cached tree.
+  try { window.__fileBrowser?.refresh() } catch (_) {}
+  // Attention queues are directory-scoped. A tab switch must replace the old
+  // project's requests rather than leaving permission/question controls bound
+  // to the previous worktree.
+  try { await window.__loadPermissions?.() } catch (_) {}
+  try { await window.__loadQuestions?.() } catch (_) {}
 
   // Session load strategy (fix #9):
   // - Unloaded tab: call ensureSessionsLoaded to fetch fresh data.
