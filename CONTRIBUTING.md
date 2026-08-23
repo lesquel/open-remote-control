@@ -97,9 +97,10 @@ bun install
 ```bash
 bun run typecheck
 bun test
+bun run test:e2e
 ```
 
-Both must pass. The repo's `prepublishOnly` hook enforces this before a release goes to npm — if you break either, the release cannot ship.
+All three must pass. Install the Chromium test browser once with `bunx playwright install chromium`. The repo's `prepublishOnly` hook enforces typechecking and Bun tests before a release goes to npm, while CI also runs the browser journey against a real local Pilot server.
 
 ### Commit style
 

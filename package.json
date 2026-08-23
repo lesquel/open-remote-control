@@ -35,6 +35,7 @@
     "lint": "oxlint .",
     "format": "prettier --write 'src/**/*.ts'",
     "test": "bun test",
+    "test:e2e": "playwright test",
     "load:sse": "bun scripts/load-sse.ts",
     "prepublishOnly": "bun scripts/prepublish-guard.ts && tsc --noEmit && bun test"
   },
@@ -90,6 +91,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/bun": "latest",
     "@types/web-push": "^3.6.4",
     "oxlint": "^1.65.0",
