@@ -227,6 +227,7 @@ describe("HTTP server integration", () => {
   let interactiveCredential: string
   let operatorCredential: string
   let adminCredential: string
+  let adminDeviceId: string
 
   beforeAll(() => {
     const port = findFreePort()
@@ -238,7 +239,9 @@ describe("HTTP server integration", () => {
     readOnlyCredential = deviceStore.issue({ name: "Read only", role: "read-only" }).credential
     interactiveCredential = deviceStore.issue({ name: "Interactive", role: "interactive" }).credential
     operatorCredential = deviceStore.issue({ name: "Operator", role: "operator" }).credential
-    adminCredential = deviceStore.issue({ name: "Admin", role: "admin" }).credential
+    const admin = deviceStore.issue({ name: "Admin", role: "admin" })
+    adminCredential = admin.credential
+    adminDeviceId = admin.device.id
     const deps = buildDeps(port, deviceStore)
     server = createRemoteServer(deps)
     server.start()
@@ -379,7 +382,11 @@ describe("HTTP server integration", () => {
     const list = await fetch(`${baseUrl}/devices`, {
       headers: { Authorization: `Bearer ${adminCredential}` },
     })
-    const listed = await list.json() as { devices: Array<{ id: string; name: string; role: string }> }
+    const listed = await list.json() as {
+      devices: Array<{ id: string; name: string; role: string }>
+      currentDeviceId: string | null
+    }
+    expect(listed.currentDeviceId).toBe(adminDeviceId)
     expect(listed.devices).toContainEqual(expect.objectContaining({
       id: issued.device.id,
       name: "Desk tablet",

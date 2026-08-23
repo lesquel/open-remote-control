@@ -2,10 +2,18 @@
 // Shows LAN URL (+ tunnel above it when active) with QR code rendered via
 // dynamically loaded qrcode library. Localhost URL is intentionally omitted —
 // phones cannot reach 127.0.0.1 (closes #7).
-import { createDevicePairing, fetchConnectInfo } from '../api/api.js'
+import {
+  createDevicePairing,
+  fetchConnectInfo,
+  fetchDevices,
+  revokeDevice,
+  updateDevice,
+} from '../api/api.js'
 import { toast } from '../ui/toast.js'
 import { openModal } from './modal-helper.js'
 import { pickBestUrlForMobile } from './connect-url-picker.js'
+import { createDeviceManager } from './device-manager.js'
+import { clearStoredToken } from '../auth/auth.js'
 
 // ── QR loader (cached promise, loaded once) ────────────────────────────────
 
@@ -75,6 +83,17 @@ let _connectInfo = null
 let _refreshTimer = null
 let _modalHandle = null
 let _pairing = null
+let _activeTab = 'connect'
+const _deviceManager = createDeviceManager({
+  fetchDevices,
+  revokeDevice,
+  updateDevice,
+  toast,
+  onSelfRevoked: () => {
+    clearStoredToken()
+    location.reload()
+  },
+})
 
 function pairingUrl(rawUrl, pairingToken) {
   try {
@@ -128,7 +147,11 @@ export function closeConnectModal() {
 
 function _startPolling() {
   _stopPolling()
-  _refreshTimer = setInterval(_refresh, 10_000)
+  // Device rows contain editable controls; polling that tab would erase an
+  // in-progress rename or role selection. Mutations refresh it explicitly.
+  _refreshTimer = setInterval(() => {
+    if (_activeTab === 'connect') _refresh()
+  }, 10_000)
 }
 
 function _stopPolling() {
@@ -142,13 +165,17 @@ function _stopPolling() {
 
 async function _refresh() {
   try {
-    _connectInfo = await fetchConnectInfo()
-    if (!_pairing || _pairing.expiresAt - Date.now() < 30_000) {
-      _pairing = await createDevicePairing('operator')
-    }
-    if (_pairing?.pairingToken) {
-      if (_connectInfo.lan?.url) _connectInfo.lan.url = pairingUrl(_connectInfo.lan.url, _pairing.pairingToken)
-      if (_connectInfo.tunnel?.url) _connectInfo.tunnel.url = pairingUrl(_connectInfo.tunnel.url, _pairing.pairingToken)
+    if (_activeTab === 'connect') {
+      _connectInfo = await fetchConnectInfo()
+      if (!_pairing || _pairing.expiresAt - Date.now() < 30_000) {
+        _pairing = await createDevicePairing('operator')
+      }
+      if (_pairing?.pairingToken) {
+        if (_connectInfo.lan?.url) _connectInfo.lan.url = pairingUrl(_connectInfo.lan.url, _pairing.pairingToken)
+        if (_connectInfo.tunnel?.url) _connectInfo.tunnel.url = pairingUrl(_connectInfo.tunnel.url, _pairing.pairingToken)
+      }
+    } else {
+      await _deviceManager.refresh()
     }
   } catch {
     // If fetch fails (e.g. offline), keep the last known info
@@ -162,8 +189,22 @@ function _renderContent() {
   const body = document.getElementById('connect-phone-body')
   if (!body) return
 
+  const tabs = `
+    <div class="cpm-tabs" role="tablist" aria-label="Device connection options">
+      <button class="cpm-tab ${_activeTab === 'connect' ? 'active' : ''}" data-cpm-tab="connect" role="tab" aria-selected="${_activeTab === 'connect'}">Pair device</button>
+      <button class="cpm-tab ${_activeTab === 'devices' ? 'active' : ''}" data-cpm-tab="devices" role="tab" aria-selected="${_activeTab === 'devices'}">Connected devices</button>
+    </div>`
+
+  if (_activeTab === 'devices') {
+    body.innerHTML = tabs + _deviceManager.render()
+    _wireTabs(body)
+    _deviceManager.wire(body, _refresh)
+    return
+  }
+
   if (!_connectInfo) {
-    body.innerHTML = '<div class="cpm-loading">Loading…</div>'
+    body.innerHTML = tabs + '<div class="cpm-loading">Loading…</div>'
+    _wireTabs(body)
     return
   }
 
@@ -231,7 +272,8 @@ function _renderContent() {
 
   html += '</div>'
 
-  body.innerHTML = html
+  body.innerHTML = tabs + `<div class="cpm-connect-content">${html}</div>`
+  _wireTabs(body)
   _wireCopyButtons(body)
 
   // Render QR for the primary URL (tunnel takes priority)
@@ -240,6 +282,16 @@ function _renderContent() {
   } else if (lan?.available && lan?.exposed && lan?.url) {
     renderQR(document.getElementById('cpm-qr-lan'), lan.url)
   }
+}
+
+function _wireTabs(container) {
+  container.querySelectorAll('[data-cpm-tab]').forEach(button => {
+    button.addEventListener('click', () => {
+      _activeTab = button.dataset.cpmTab
+      _renderContent()
+      _refresh()
+    })
+  })
 }
 
 function _wireCopyButtons(container) {

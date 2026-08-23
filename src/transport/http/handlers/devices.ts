@@ -30,9 +30,12 @@ function storeUnavailable(): Response {
   return jsonError("DEVICE_AUTH_UNAVAILABLE", "Device authentication is unavailable", 503, CORS_HEADERS)
 }
 
-export async function listDevices({ deps }: RouteContext): Promise<Response> {
+export async function listDevices({ deps, principal }: RouteContext): Promise<Response> {
   if (!deps.deviceStore) return storeUnavailable()
-  return json({ devices: deps.deviceStore.list() }, 200, CORS_HEADERS)
+  return json({
+    devices: deps.deviceStore.list(),
+    currentDeviceId: principal?.kind === "device" ? principal.id : null,
+  }, 200, CORS_HEADERS)
 }
 
 export async function updateDevice({ req, params, deps }: RouteContext): Promise<Response> {

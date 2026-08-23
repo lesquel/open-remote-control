@@ -3801,6 +3801,64 @@ body {
   padding: 0;
 }
 
+.cpm-connect-content,
+.cpm-devices {
+  padding: 16px;
+}
+
+.cpm-devices {
+  display: grid;
+  gap: 10px;
+}
+
+.cpm-device {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-3);
+  padding: 12px;
+}
+
+.cpm-device.is-inactive { opacity: .65; }
+
+.cpm-device-heading,
+.cpm-device-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cpm-device-name { flex: 1; min-width: 0; }
+.cpm-device-role { min-width: 112px; }
+
+.cpm-device-meta {
+  color: var(--fg-muted);
+  font-size: 10px;
+  margin: 7px 0 10px;
+}
+
+.cpm-current-badge {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-size: 9px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+.cpm-device-actions .btn { min-height: 36px; }
+
+.cpm-empty {
+  color: var(--fg-muted);
+  padding: 24px 16px;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .cpm-device-actions { align-items: stretch; flex-wrap: wrap; }
+  .cpm-device-role { flex: 1 1 100%; min-height: 44px; }
+  .cpm-device-actions .btn { flex: 1; min-height: 44px; }
+}
+
 /* Tabs */
 .cpm-tabs {
   display: flex;
@@ -5067,4 +5125,3 @@ button:focus-visible, a:focus-visible { outline-offset: 4px; }
     scroll-behavior: auto !important;
   }
 }
-

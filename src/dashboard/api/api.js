@@ -382,6 +382,18 @@ export async function fetchConnectInfo() {
   return request('GET', '/connect-info')
 }
 
+export async function fetchDevices() {
+  return request('GET', '/devices', undefined, { directory: null })
+}
+
+export async function updateDevice(id, patch) {
+  return request('PATCH', `/devices/${encodeURIComponent(id)}`, patch, { directory: null })
+}
+
+export async function revokeDevice(id) {
+  return request('DELETE', `/devices/${encodeURIComponent(id)}`, undefined, { directory: null })
+}
+
 // ── Plugin settings (v1.12) ───────────────────────────────────────────────
 
 /**
