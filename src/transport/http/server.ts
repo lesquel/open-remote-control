@@ -4,6 +4,7 @@ import { jsonError } from "./middlewares/json"
 import { matchRoute, routes } from "./routes"
 import type { RouteDeps, Route } from "./routes"
 import { MAX_REQUEST_BODY_BYTES } from "../../infra/http/constants"
+import { readBoundedBytes } from "../../infra/http/text"
 import {
   applyBrowserResponseHeaders,
   validateBrowserBoundary,
@@ -155,15 +156,33 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
           deps.audit.log("request", { method: req.method, path, ip: getIP(req) })
         }
 
-        // Reject oversized bodies before they reach any handler that calls
-        // req.json() / req.arrayBuffer(). SSE and GET routes are unaffected.
+        let handlerRequest = req
+        // Buffer mutation bodies through a streaming hard limit, then rebuild
+        // the request so handlers can safely call json()/text(). This also
+        // covers chunked requests and dishonest Content-Length headers.
         if (req.method === "POST" || req.method === "PATCH" || req.method === "PUT") {
           const sizeError = checkBodySize(req)
           if (sizeError) return respond(sizeError)
+          let body: Uint8Array<ArrayBuffer> | null
+          try {
+            body = await readBoundedBytes(req, MAX_REQUEST_BODY_BYTES)
+          } catch (err) {
+            deps.audit.log("request.body_read_failed", { path, error: String(err) })
+            return respond(jsonError("INVALID_BODY", "Failed to read request body", 400, CORS_HEADERS))
+          }
+          if (body === null) {
+            return respond(jsonError(
+              "PAYLOAD_TOO_LARGE",
+              `Request body exceeds the ${MAX_REQUEST_BODY_BYTES}-byte limit`,
+              413,
+              CORS_HEADERS,
+            ))
+          }
+          handlerRequest = new Request(req, { body: body.byteLength > 0 ? body.buffer : undefined })
         }
 
         try {
-          return respond(await route.handler({ req, url, params, deps }))
+          return respond(await route.handler({ req: handlerRequest, url, params, deps }))
         } catch (err) {
           deps.audit.log("error", { path, error: String(err) })
           return respond(jsonError("INTERNAL_ERROR", "Internal server error", 500, CORS_HEADERS))

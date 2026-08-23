@@ -14,6 +14,7 @@ import { createPushService } from "../../../notifications/channels/push/service"
 import type { Logger } from "../../../infra/logger/index"
 import type { RouteDeps } from "../routes"
 import { createRemoteServer, type RemoteServer } from "../server"
+import { MAX_REQUEST_BODY_BYTES } from "../../../infra/http/constants"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -350,6 +351,26 @@ describe("integration: critical flows", () => {
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe("VALIDATION_FAILED")
+  })
+
+  it("rejects an oversized chunked body without Content-Length before the handler", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(MAX_REQUEST_BODY_BYTES))
+        controller.enqueue(new Uint8Array([1]))
+        controller.close()
+      },
+    })
+    const res = await fetch(`${base}/sessions/any-id/prompt`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: stream,
+    })
+    expect(res.status).toBe(413)
+    expect(await res.json()).toMatchObject({ error: { code: "PAYLOAD_TOO_LARGE" } })
   })
 
   it("POST /sessions/:id/prompt with empty message returns 400", async () => {

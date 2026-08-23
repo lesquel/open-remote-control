@@ -13,19 +13,18 @@
  * from external callers (e.g. Codex hook bridge) where Content-Length cannot
  * be trusted.
  */
-export async function readBoundedText(req: Request, maxBytes: number): Promise<string | null> {
-  if (!req.body) return ""
+export async function readBoundedBytes(req: Request, maxBytes: number): Promise<Uint8Array<ArrayBuffer> | null> {
+  if (!req.body) return new Uint8Array()
   const reader = req.body.getReader()
-  const decoder = new TextDecoder()
   let total = 0
-  let result = ""
+  const chunks: Uint8Array[] = []
   try {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
       total += value.byteLength
       if (total > maxBytes) {
-        try { reader.cancel() } catch {
+        try { await reader.cancel() } catch {
           // Provably irrelevant: cancel() is best-effort stream teardown after
           // we have already decided to reject the body. Failure here (e.g. the
           // request stream was already closed by the client) does not affect
@@ -33,9 +32,8 @@ export async function readBoundedText(req: Request, maxBytes: number): Promise<s
         }
         return null
       }
-      result += decoder.decode(value, { stream: true })
+      chunks.push(value)
     }
-    result += decoder.decode()
   } finally {
     try { reader.releaseLock() } catch {
       // Provably irrelevant: releaseLock() is finally-block cleanup. Failure
@@ -43,5 +41,16 @@ export async function readBoundedText(req: Request, maxBytes: number): Promise<s
       // return value or any downstream processing.
     }
   }
+  const result = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    result.set(chunk, offset)
+    offset += chunk.byteLength
+  }
   return result
+}
+
+export async function readBoundedText(req: Request, maxBytes: number): Promise<string | null> {
+  const bytes = await readBoundedBytes(req, maxBytes)
+  return bytes === null ? null : new TextDecoder().decode(bytes)
 }

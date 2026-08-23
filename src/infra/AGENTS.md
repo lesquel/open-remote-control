@@ -17,6 +17,7 @@
 - `validateBrowserBoundary / applyBrowserResponseHeaders` — (`http/browser-security.ts`) DNS-rebinding, Origin, CORS, and browser-header boundary
 - `json / jsonError` — (`http/json.ts`) typed JSON response helpers
 - `readBoundedText()` — (`http/text.ts`) bounded body reader
+- `readBoundedBytes()` — (`http/text.ts`) streaming byte cap for request middleware
 - `writePrivateFile()` — (`fs/private-file.ts`) atomic owner-private credential file replacement
 - `resolveContainedFile()` — (`fs/contained-file.ts`) canonical project-boundary proof for local files
 - `RouteContext<TDeps> / Route<TDeps> / AuthRequirement / RouteParams` — (`http/types.ts`) generic HTTP types

@@ -16,7 +16,7 @@
 - `interface RouteDeps` — the full dependency bag injected by the composition root
 - `interface RemoteServer` — `{ start, stop, registerRoute }`
 - `checkBodySize()` — 413 guard, re-exported for integrations
-- `readBoundedText()` — streaming body reader with size cap
+- `readBoundedText()` — integration-local streaming text reader with size cap
 
 ## Key files
 - `http/server.ts` — `createRemoteServer`; Bun.serve setup + route dispatch
