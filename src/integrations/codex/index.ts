@@ -3,14 +3,25 @@
 // Self-registers the route via registerRoute — the route no longer lives in
 // the central routes.ts table (removed in Commit 3).
 
-import type { AgentIntegration, IntegrationDeps, IntegrationHandle, RouteSpec } from '../ports'
+import { createAgentIntegration, type AgentIntegration, type IntegrationDeps, type IntegrationHandle, type RouteSpec } from '../ports'
 import { dispatchCodexHook } from './handlers'
 
 function createCodexIntegration(): AgentIntegration {
-  return {
-    name: 'codex',
-
-    setup(deps: IntegrationDeps): IntegrationHandle {
+  return createAgentIntegration({
+    id: 'codex',
+    displayName: 'Codex',
+    capabilities: {
+      sessions: false,
+      streaming: false,
+      permissions: true,
+      tools: true,
+      cost: false,
+      todos: false,
+      files: false,
+      models: false,
+      agents: false,
+    },
+  }, (deps: IntegrationDeps): IntegrationHandle => {
       if (deps.registerRoute) {
         const route: RouteSpec = {
           method: 'POST',
@@ -28,8 +39,7 @@ function createCodexIntegration(): AgentIntegration {
           // Codex is a stateless HTTP bridge — nothing to tear down
         },
       }
-    },
-  }
+  })
 }
 
 export const codexIntegration = createCodexIntegration()

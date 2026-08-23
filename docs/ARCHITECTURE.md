@@ -70,8 +70,13 @@ Implementations: `notifications/channels/telegram/index.ts`, `notifications/chan
 ### `AgentIntegration` — `src/integrations/ports.ts`
 
 ```ts
-export interface AgentIntegration {
-  readonly name: string          // 'opencode' | 'codex' | 'cursor' | ...
+export interface AgentDescriptor {
+  readonly id: string
+  readonly displayName: string
+  readonly capabilities: AgentCapabilities
+}
+
+export interface AgentIntegration extends AgentDescriptor {
   readonly setup: (deps: IntegrationDeps) => IntegrationHandle
 }
 
@@ -84,7 +89,9 @@ export type IntegrationDeps = {
 }
 ```
 
-The composition root passes `registerRoute` only to integrations that need HTTP; `registerHook` only to integrations that are native SDK plugins.
+`AgentCapabilities` declares support for sessions, streaming, permissions, tools, cost, todos, files, models, and named agents. Consumers must use this metadata instead of inferring support from the provider name.
+
+`createAgentDescriptor()` validates the stable protocol ID and freezes metadata for every adapter. `createAgentIntegration()` adds the standard imperative setup contract. The composition root passes `registerRoute` only to integrations that need HTTP. OpenCode is an intentional native-SDK outlier: its setup returns the hook object OpenCode requires, but it uses the same validated descriptor.
 
 Implementations: `integrations/opencode/index.ts`, `integrations/codex/index.ts`.
 
@@ -116,11 +123,23 @@ The composition root is the only file that crosses all layers. It is organized i
 1. Create `src/integrations/cursor/index.ts`:
 
 ```ts
-import type { AgentIntegration } from '../ports'
+import { createAgentIntegration } from '../ports'
 
-export const cursorIntegration: AgentIntegration = {
-  name: 'cursor',
-  setup: ({ permissions, events, audit, registerRoute }) => {
+export const cursorIntegration = createAgentIntegration({
+  id: 'cursor',
+  displayName: 'Cursor',
+  capabilities: {
+    sessions: false,
+    streaming: false,
+    permissions: false,
+    tools: true,
+    cost: false,
+    todos: false,
+    files: false,
+    models: false,
+    agents: false,
+  },
+}, ({ permissions, events, audit, registerRoute }) => {
     registerRoute!({
       method: 'POST',
       pattern: /^\/cursor\/hooks\/(?<event>[^/]+)$/,
@@ -128,8 +147,7 @@ export const cursorIntegration: AgentIntegration = {
       handler: async (ctx) => { /* ... */ },
     })
     return { shutdown: async () => {} }
-  },
-}
+})
 ```
 
 2. Add ONE line in `src/server/index.ts`:
