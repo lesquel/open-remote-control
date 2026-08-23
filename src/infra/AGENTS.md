@@ -21,7 +21,8 @@
 - `writePrivateFile()` — (`fs/private-file.ts`) atomic owner-private credential file replacement
 - `resolveContainedFile()` — (`fs/contained-file.ts`) canonical project-boundary proof for local files
 - `RouteContext<TDeps> / Route<TDeps> / AuthRequirement / RouteParams` — (`http/types.ts`) generic HTTP types
-- `createLogger(): Logger` — (`logger/index.ts`) wraps `ctx.client.app.log`
+- `createLogger(): Logger` — (`logger/index.ts`) wraps `ctx.client.app.log` and recursively redacts messages/structured extras
+- `logging/redact.ts` — bounded, cycle-safe secret and URL redaction shared by logs and audit persistence
 - `getLocalIP(): string` — (`network/ip.ts`)
 - `validateEndpoint() / isPublicIpAddress()` — (`network/ssrf.ts`) outbound HTTPS URL and IP policy
 - `createSafeHttpsFetcher()` — (`network/safe-https-fetch.ts`) DNS-pinned bounded HTTPS client

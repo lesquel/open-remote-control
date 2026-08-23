@@ -9,7 +9,7 @@
 ## Public API (what other modules consume from here)
 - `createPermissionQueue(): PermissionQueue` — exactly-once pending permission requests with duplicate-ID coalescing and timeouts
 - `getSharedEventBus() / createEventBus(): EventBus` — bounded in-process SSE fan-out with event IDs, bounded reconnect replay, and deterministic client cleanup
-- `createAuditLog(): AuditLog` — appends JSON-Lines audit records to `.opencode/pilot-audit.log`
+- `createAuditLog(): AuditLog` — appends recursively redacted JSON-Lines audit records to `.opencode/pilot-audit.log`
 - `rotateIfNeeded()` — rotates the audit log file when it exceeds the size limit
 - `createSettingsStore(): SettingsStore` — reads/writes `~/.opencode-pilot/config.json`
 - `writeState / clearState / updateStateToken / globalStatePath` — pilot-state.json lifecycle

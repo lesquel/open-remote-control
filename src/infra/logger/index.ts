@@ -3,6 +3,7 @@
 // level helpers so services don't need to repeat the boilerplate each time.
 
 import type { PluginInput } from "@opencode-ai/plugin"
+import { redactRecord, redactSecrets } from "../logging/redact"
 
 export interface Logger {
   debug(msg: string, extra?: Record<string, unknown>): void
@@ -20,8 +21,8 @@ export function createLogger(client: PluginInput["client"], service: string): Lo
         body: {
           service,
           level,
-          message: msg,
-          ...(extra ? { extra } : {}),
+          message: String(redactSecrets(msg)),
+          ...(extra ? { extra: redactRecord(extra) } : {}),
         },
       })
       .catch(() => {})
