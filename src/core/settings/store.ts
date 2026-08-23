@@ -14,11 +14,11 @@
 // Schema version intentionally omitted for v1 — we'll add one the first time
 // we need to rename or remove a field.
 //
-// No external deps — plain node:fs + node:os + node:path.
+// Sensitive writes use the shared private atomic-file helper from infra/.
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
-import { dirname } from "node:path"
+import { existsSync, readFileSync, unlinkSync } from "node:fs"
 import type { Logger } from "../../infra/logger/index"
+import { writePrivateFile } from "../../infra/fs/private-file"
 import { configFile } from "../../infra/paths/index"
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -149,25 +149,7 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
     }
   }
 
-  function ensureDir(): void {
-    const dir = dirname(path)
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-      // Best-effort: restrict the config directory to the owner only.
-      // chmod is effectively a no-op on Windows — the call is safe there.
-      try {
-        chmodSync(dir, 0o700)
-      } catch (err) {
-        logger.debug("settings-store: could not chmod config dir (non-critical)", {
-          dir,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    }
-  }
-
   function save(patch: Partial<PilotSettings>): PilotSettings {
-    ensureDir()
     const current = load()
     const clean = sanitize(patch)
     const merged: PilotSettings = { ...current, ...clean }
@@ -182,23 +164,7 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
     if (Object.prototype.hasOwnProperty.call(patch, "hookToken") && patch.hookToken === "") {
       delete merged.hookToken
     }
-    const tmp = path + ".tmp"
-    // Write with mode 0600 so the file is owner-readable only from the start.
-    // This matters because config.json contains VAPID private keys and Telegram
-    // tokens. On Windows the mode argument is ignored — that's acceptable.
-    writeFileSync(tmp, JSON.stringify(merged, null, 2), { encoding: "utf-8", mode: 0o600 })
-    renameSync(tmp, path)
-    // After rename, normalise permissions in case the file existed previously
-    // with broader permissions (e.g. created by an earlier version of the plugin).
-    // Best-effort: skip on Windows where chmod is a no-op or may throw EPERM.
-    try {
-      chmodSync(path, 0o600)
-    } catch (err) {
-      logger.debug("settings-store: could not chmod config file (non-critical)", {
-        path,
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
+    writePrivateFile(path, `${JSON.stringify(merged, null, 2)}\n`)
     return merged
   }
 
