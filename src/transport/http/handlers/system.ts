@@ -136,16 +136,9 @@ export async function getConnectInfo({ deps }: RouteContext): Promise<Response> 
 const SERVER_STARTED_AT = new Date()
 
 export async function getHealth({ deps }: RouteContext): Promise<Response> {
-  // SDK liveness: try a lightweight call
-  let sdkStatus: "up" | "down" = "down"
-  try {
-    await deps.client.session.list()
-    sdkStatus = "up"
-  } catch {
-    sdkStatus = "down"
-  }
-
-  // Tunnel status
+  // Public process-health must stay local and constant-cost. In particular it
+  // must never turn unauthenticated probes into OpenCode SDK or Telegram API
+  // traffic. Authenticated /status owns downstream diagnostics.
   const tunnelStatus: "up" | "down" | "disabled" =
     deps.config.tunnel === "off"
       ? "disabled"
@@ -153,47 +146,26 @@ export async function getHealth({ deps }: RouteContext): Promise<Response> {
         ? "up"
         : "down"
 
-  // Telegram status — "down" if bot is configured but not enabled (no config)
-  const telegramStatus: "up" | "down" | "disabled" =
-    deps.config.telegram === null
-      ? "disabled"
-      : deps.telegram.enabled()
-        ? "up"
-        : "down"
-
-  // Telegram connectivity — non-blocking check; fall back to null if invasive
-  let telegramOk: boolean | null = null
-  if (deps.telegram.enabled()) {
-    try {
-      const result = await deps.telegram.testConnection()
-      telegramOk = result.ok
-    } catch {
-      telegramOk = null
-    }
-  }
-
-  const anyDegraded =
-    sdkStatus === "down" ||
-    tunnelStatus === "down" ||
-    telegramStatus === "down"
+  const telegramStatus: "configured" | "disabled" =
+    deps.config.telegram === null ? "disabled" : "configured"
 
   const uptimeS = (Date.now() - SERVER_STARTED_AT.getTime()) / 1000
 
   return json(
     {
-      status: anyDegraded ? "degraded" : "ok",
+      status: "ok",
       version: deps.pilotVersion,
       uptime_s: Math.round(uptimeS),
       started_at: SERVER_STARTED_AT.toISOString(),
       sse_clients: deps.eventBus.clientCount(),
-      telegram_ok: telegramOk,
+      telegram_ok: null,
       push_configured: deps.push.isEnabled(),
       // Legacy fields kept for backward compatibility
       uptimeMs: Math.round(process.uptime() * 1000),
       services: {
         tunnel: tunnelStatus,
         telegram: telegramStatus,
-        sdk: sdkStatus,
+        sdk: "unknown",
       },
     },
     200,

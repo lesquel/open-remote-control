@@ -410,13 +410,13 @@ describe("HTTP server integration", () => {
       version: string
       services: { tunnel: string; telegram: string; sdk: string }
     }
-    expect(body.status === "ok" || body.status === "degraded").toBe(true)
+    expect(body.status).toBe("ok")
     expect(typeof body.uptimeMs).toBe("number")
     expect(typeof body.version).toBe("string")
     expect(body.services).toBeDefined()
     expect(["up", "down", "disabled"]).toContain(body.services.tunnel)
-    expect(["up", "down", "disabled"]).toContain(body.services.telegram)
-    expect(["up", "down"]).toContain(body.services.sdk)
+    expect(["configured", "disabled"]).toContain(body.services.telegram)
+    expect(body.services.sdk).toBe("unknown")
   })
 
   test("GET /health reports tunnel=disabled when tunnel=off", async () => {
