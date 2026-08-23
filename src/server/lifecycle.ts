@@ -23,6 +23,25 @@ export interface ShutdownCoordinator {
   register(handler: () => Promise<void>): () => void
 }
 
+export interface ShutdownStep {
+  name: string
+  run: () => void | Promise<void>
+}
+
+/** Run cleanup sequentially while making every failure observable and isolated. */
+export async function runShutdownSteps(
+  steps: ReadonlyArray<ShutdownStep>,
+  onError: (step: string, error: unknown) => void,
+): Promise<void> {
+  for (const step of steps) {
+    try {
+      await step.run()
+    } catch (error) {
+      onError(step.name, error)
+    }
+  }
+}
+
 /**
  * Own process signals once while allowing every plugin instance to register
  * independent cleanup. A failing instance is isolated from the remaining

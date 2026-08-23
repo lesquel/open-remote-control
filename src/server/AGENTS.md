@@ -15,7 +15,7 @@
 
 ## Key files
 - `index.ts` — THE composition root; 7 named sections (ENV+CONFIG → CORE → NOTIFICATIONS → STATE+BANNER → TRANSPORT → INTEGRATIONS → START → PLUGIN HANDLE); shutdown order is documented here
-- `lifecycle.ts` — process-global error/signal ownership, multi-instance shutdown fan-out, and the re-entrant shutdown guard that closes SSE clients; consumed only by `index.ts`
+- `lifecycle.ts` — process-global error/signal ownership, multi-instance shutdown fan-out, the re-entrant SSE shutdown guard, and observable sequential cleanup steps; consumed only by `index.ts`
 - `config.ts` — `loadConfigSafe`, `mergeStoredSettings`, `resolveSources`; config priority: shell env > `~/.opencode-pilot/config.json` > `.env` > defaults
 - `constants.ts` — `PILOT_VERSION`, `DEFAULT_PORT`, all magic numbers; **path is hard-referenced by the release script — do NOT move or rename this file**
 - `config.test.ts` — unit tests for config parsing and merging

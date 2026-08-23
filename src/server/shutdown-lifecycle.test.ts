@@ -12,6 +12,7 @@ import {
   installGlobalErrorHandlersOnce,
   createShutdownCoordinator,
   createShutdownGuard,
+  runShutdownSteps,
 } from "./lifecycle"
 import { EventEmitter } from "node:events"
 
@@ -82,6 +83,22 @@ describe("createShutdownGuard — closeAll called", () => {
     // Must not throw
     await expect(shutdown()).resolves.toBeUndefined()
     expect(closedAttempted).toBe(true)
+  })
+})
+
+describe("runShutdownSteps — observable failure isolation", () => {
+  test("preserves order and continues after a failed cleanup", async () => {
+    const calls: string[] = []
+    const errors: Array<{ step: string; error: unknown }> = []
+    await runShutdownSteps([
+      { name: "integration", run: () => { calls.push("integration"); throw new Error("failed") } },
+      { name: "http", run: async () => { calls.push("http") } },
+      { name: "state", run: () => { calls.push("state") } },
+    ], (step, error) => errors.push({ step, error }))
+
+    expect(calls).toEqual(["integration", "http", "state"])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.step).toBe("integration")
   })
 })
 

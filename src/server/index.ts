@@ -19,7 +19,7 @@ import { opencodeIntegration } from "../integrations/opencode/index"
 import { codexIntegration } from "../integrations/codex/index"
 import { createLogger } from "../infra/logger/index"
 import { PILOT_VERSION, TOAST_DURATION_MS, TOAST_PROMOTION_DURATION_MS, PROMOTION_POLL_INTERVAL_MS } from "./constants"
-import { installGlobalErrorHandlersOnce, createShutdownGuard, registerProcessShutdown } from "./lifecycle"
+import { installGlobalErrorHandlersOnce, createShutdownGuard, registerProcessShutdown, runShutdownSteps } from "./lifecycle"
 
 export default {
   id: "opencode-pilot",
@@ -434,16 +434,22 @@ export default {
           clearInterval(promotionTimer)
           promotionTimer = null
         }
-        try { telegram.stop() } catch {}
-        // Spec order: integrations → http → tunnel → notifications.flush → clearState
-        try { await opencode.shutdown() } catch {}
-        try { await codexHandle.shutdown() } catch {}
-        if (role === "primary") {
-          try { server.stop() } catch {}
-          try { tunnel.stop() } catch {}
-          try { await notifications.flush() } catch {}
-          try { clearState(ctx.directory) } catch {}
-        }
+        const steps = [
+          { name: "telegram", run: () => telegram.stop() },
+          { name: "opencode", run: () => opencode.shutdown() },
+          { name: "codex", run: () => codexHandle.shutdown() },
+          ...(role === "primary" ? [
+            { name: "http", run: () => server.stop() },
+            { name: "tunnel", run: () => tunnel.stop() },
+            { name: "notifications", run: () => notifications.flush() },
+            { name: "state", run: () => clearState(ctx.directory) },
+          ] : []),
+        ]
+        await runShutdownSteps(steps, (step, error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          audit.log("shutdown.step_failed", { step, error: message })
+          logger.warn("Shutdown step failed", { step, error: message })
+        })
       })
     }
 
