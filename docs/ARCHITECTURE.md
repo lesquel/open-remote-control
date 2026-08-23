@@ -233,6 +233,7 @@ flowchart LR
 - **Localhost by default** — `PILOT_HOST=127.0.0.1`. Exposed to LAN/internet only when `PILOT_TUNNEL` is set.
 - **Audit log** — every authed request, every permission decision, every SSE connection appended as JSON Lines to `.opencode/pilot-audit.log`.
 - **Request correlation** — every HTTP response carries a fresh `X-Request-ID`; server-generated error bodies and local structured logs use the same ID for diagnosis without exposing secrets.
+- **Rate limiting** — authentication failures use per-client plus global buckets, while mutations use per-route/client plus global buckets. Reads and SSE streaming are not charged; bounded global buckets prevent spoofed forwarding headers from bypassing protection.
 - **Path traversal guard** — static dashboard handler rejects paths containing `..`.
 - **Primary/passive promotion** — if port 4097 is taken (multiple OpenCode windows), the second instance runs passive (no HTTP, no tunnel) and auto-promotes when the primary exits.
 

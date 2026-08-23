@@ -277,6 +277,52 @@ describe("integration: critical flows", () => {
     expect(res.status).toBe(401)
   })
 
+  it("rate limits repeated authentication failures", async () => {
+    const port = findFreePort()
+    const isolated = createRemoteServer(buildDeps(port))
+    isolated.start()
+    try {
+      let response: Response | null = null
+      for (let attempt = 0; attempt < 11; attempt += 1) {
+        response = await fetch(`http://127.0.0.1:${port}/sessions`, {
+          headers: { Authorization: "Bearer wrong-token" },
+        })
+      }
+      expect(response?.status).toBe(429)
+      expect(response?.headers.get("retry-after")).toBeTruthy()
+      const body = await response?.json() as { error?: { code?: string; requestId?: string } }
+      expect(body.error?.code).toBe("RATE_LIMITED")
+      expect(body.error?.requestId).toBe(response?.headers.get("x-request-id") ?? undefined)
+    } finally {
+      isolated.stop()
+    }
+  })
+
+  it("rate limits sensitive mutations without blocking normal reads", async () => {
+    const port = findFreePort()
+    const isolated = createRemoteServer(buildDeps(port))
+    isolated.start()
+    try {
+      let response: Response | null = null
+      for (let attempt = 0; attempt < 31; attempt += 1) {
+        response = await fetch(`http://127.0.0.1:${port}/settings`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        })
+      }
+      expect(response?.status).toBe(429)
+
+      const health = await fetch(`http://127.0.0.1:${port}/health`)
+      expect(health.status).toBe(200)
+    } finally {
+      isolated.stop()
+    }
+  })
+
   // ─── validation ──────────────────────────────────────────────────────────
 
   it("POST /sessions with invalid payload (title too long) returns 400", async () => {

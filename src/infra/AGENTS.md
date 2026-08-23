@@ -23,6 +23,7 @@
 - `RouteContext<TDeps> / Route<TDeps> / AuthRequirement / RouteParams` — (`http/types.ts`) generic HTTP types, including the server-assigned request ID
 - `createLogger(): Logger` — (`logger/index.ts`) wraps `ctx.client.app.log` and recursively redacts messages/structured extras
 - `logging/redact.ts` — bounded, cycle-safe secret and URL redaction shared by logs and audit persistence
+- `http/rate-limit.ts` — bounded in-memory fixed-window limiter used for auth failures and mutation routes
 - `getLocalIP(): string` — (`network/ip.ts`)
 - `validateEndpoint() / isPublicIpAddress()` — (`network/ssrf.ts`) outbound HTTPS URL and IP policy
 - `createSafeHttpsFetcher()` — (`network/safe-https-fetch.ts`) DNS-pinned bounded HTTPS client

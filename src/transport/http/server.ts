@@ -10,6 +10,7 @@ import {
   validateBrowserBoundary,
 } from "../../infra/http/browser-security"
 import { randomUUID } from "node:crypto"
+import { createRateLimiter, type RateLimitPolicy } from "../../infra/http/rate-limit"
 
 export interface RemoteServer {
   /**
@@ -78,6 +79,18 @@ export { readBoundedText } from "../../infra/http/text"
 
 export function createRemoteServer(deps: RouteDeps): RemoteServer {
   let server: ReturnType<typeof Bun.serve> | null = null
+  const rateLimiter = createRateLimiter()
+  const authFailurePolicy = { limit: 10, windowMs: 60_000 }
+
+  function mutationPolicy(path: string): RateLimitPolicy {
+    if (path === "/auth/rotate" || path.startsWith("/pair")) return { limit: 10, windowMs: 60_000 }
+    if (path.includes("/prompt")) return { limit: 60, windowMs: 60_000 }
+    if (path.startsWith("/permissions/")) return { limit: 120, windowMs: 60_000 }
+    if (path === "/settings") return { limit: 30, windowMs: 60_000 }
+    if (path.startsWith("/push/")) return { limit: 60, windowMs: 60_000 }
+    if (path.startsWith("/codex/hooks/")) return { limit: 1_000, windowMs: 60_000 }
+    return { limit: 300, windowMs: 60_000 }
+  }
 
   // Dynamic routes registered after server construction (e.g. by codexIntegration)
   const dynamicRoutes: Route[] = []
@@ -116,6 +129,15 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
         }
         const requestError = (code: string, message: string, status: number): Response =>
           jsonError(code, message, status, CORS_HEADERS, requestId)
+        const rateError = (retryAfterSeconds: number): Response =>
+          jsonError(
+            "RATE_LIMITED",
+            "Too many requests. Retry later.",
+            429,
+            { ...CORS_HEADERS, "Retry-After": String(retryAfterSeconds) },
+            requestId,
+          )
+        const clientKey = getIP(req).slice(0, 128)
 
         if (!boundary.ok) {
           deps.audit.log("request.rejected", {
@@ -157,7 +179,17 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
         if (route.auth === "required") {
           if (!validateToken(req, deps.token)) {
             const ip = getIP(req)
+            const perClient = rateLimiter.consume(`auth:client:${clientKey}`, authFailurePolicy)
+            const global = rateLimiter.consume("auth:global", {
+              limit: authFailurePolicy.limit * 10,
+              windowMs: authFailurePolicy.windowMs,
+            })
             deps.audit.log("auth.failed", { path, ip, requestId })
+            if (!perClient.allowed || !global.allowed) {
+              const retryAfter = Math.max(perClient.retryAfterSeconds, global.retryAfterSeconds)
+              deps.audit.log("auth.rate_limited", { path, ip, requestId, retryAfter })
+              return respond(rateError(retryAfter))
+            }
             // Also surface via ctx.client.app.log so the user sees 401
             // storms in OpenCode's log panel (not only in the audit log
             // which most users never open). This is the signal that
@@ -172,6 +204,21 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
             return respond(requestError("UNAUTHORIZED", "Unauthorized", 401))
           }
           deps.audit.log("request", { method: req.method, path, ip: getIP(req), requestId })
+        }
+
+        if (req.method === "POST" || req.method === "PATCH" || req.method === "PUT" || req.method === "DELETE") {
+          const policy = mutationPolicy(path)
+          const routeKey = route.pattern.source
+          const perClient = rateLimiter.consume(`mutation:${routeKey}:client:${clientKey}`, policy)
+          const global = rateLimiter.consume(`mutation:${routeKey}:global`, {
+            limit: policy.limit * 10,
+            windowMs: policy.windowMs,
+          })
+          if (!perClient.allowed || !global.allowed) {
+            const retryAfter = Math.max(perClient.retryAfterSeconds, global.retryAfterSeconds)
+            deps.audit.log("request.rate_limited", { method: req.method, path, requestId, retryAfter })
+            return respond(rateError(retryAfter))
+          }
         }
 
         let handlerRequest = req
