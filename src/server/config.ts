@@ -24,7 +24,7 @@ import { DEFAULT_PWA_URL } from "../infra/banner/constants"
 // layers they describe, not here. Re-exports keep backward compatibility for
 // anything that still imports from server/config.
 export type { Config, TelegramConfig, VapidConfig, TunnelProvider, ProjectStateMode, ConfigSource } from "../core/types/config"
-import type { Config, TelegramConfig, VapidConfig, TunnelProvider, ProjectStateMode } from "../core/types/config"
+import type { Config, TelegramConfig, VapidConfig, TunnelProvider, ProjectStateMode, SettingsSnapshot } from "../core/types/config"
 
 /** Provenance map: for each UI-editable setting, where did its effective value
  *  come from? Used by the Settings UI to badge inputs and disable fields whose
@@ -97,7 +97,7 @@ function parseAllowedOrigins(env: NodeJS.ProcessEnv): string[] {
 // Used to both (a) detect whether a value came from the shell-env and (b)
 // translate stored settings into the env-var shape that loadConfig understands.
 
-const ENV_KEY_MAP: Record<keyof PilotSettings, string> = {
+const ENV_KEY_MAP: Partial<Record<keyof PilotSettings, string>> = {
   port: "PILOT_PORT",
   host: "PILOT_HOST",
   permissionTimeoutMs: "PILOT_PERMISSION_TIMEOUT",
@@ -114,7 +114,7 @@ const ENV_KEY_MAP: Record<keyof PilotSettings, string> = {
 }
 
 export function envKeyFor(field: keyof PilotSettings): string {
-  return ENV_KEY_MAP[field]
+  return ENV_KEY_MAP[field] ?? ""
 }
 
 /**
@@ -140,7 +140,7 @@ export function mergeStoredSettings(
 ): NodeJS.ProcessEnv {
   const out = { ...baseEnv }
   for (const key of Object.keys(ENV_KEY_MAP) as Array<keyof PilotSettings>) {
-    const envKey = ENV_KEY_MAP[key]
+    const envKey = ENV_KEY_MAP[key]!
     const storedValue = stored[key]
     if (storedValue === undefined || storedValue === null) continue
     if (shellEnv[envKey] !== undefined && shellEnv[envKey] !== "") continue
@@ -271,7 +271,7 @@ export function resolveSources(
   const out = {} as ConfigSources
   const envFileSet = new Set(envFileApplied)
   for (const key of Object.keys(ENV_KEY_MAP) as Array<keyof PilotSettings>) {
-    const envKey = ENV_KEY_MAP[key]
+    const envKey = ENV_KEY_MAP[key]!
     if (shellEnv[envKey] !== undefined && shellEnv[envKey] !== "") {
       out[key] = "shell-env"
     } else if (stored[key] !== undefined && stored[key] !== null) {
@@ -289,7 +289,7 @@ export function resolveSources(
  * Project the effective Config down to the PilotSettings shape the UI expects.
  * Used by GET /settings so the client can display a single structured object.
  */
-export function projectConfigToSettings(config: Config): Omit<Required<PilotSettings>, "hookToken"> & { hookTokenConfigured: boolean } {
+export function projectConfigToSettings(config: Config): SettingsSnapshot {
   return {
     port: config.port,
     host: config.host,
@@ -305,6 +305,11 @@ export function projectConfigToSettings(config: Config): Omit<Required<PilotSett
     projectStateMode: config.projectStateMode,
     // hookToken is intentionally omitted — raw token must never leave this module
     hookTokenConfigured: Boolean(config.hookToken && config.hookToken.length > 0),
+    notificationPreferences: {
+      permissionRequired: true,
+      agentFinished: true,
+      errors: true,
+    },
   }
 }
 

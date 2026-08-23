@@ -155,9 +155,17 @@ function buildSettingsResponse(deps: RouteContext["deps"]): {
   // active after that restart.
   const stored = deps.settingsStore.load()
   const { settings, sources } = deps.settingsLoader.loadEffective(stored)
+  const notificationPreferences = {
+    permissionRequired: stored.notificationPreferences?.permissionRequired ?? true,
+    agentFinished: stored.notificationPreferences?.agentFinished ?? true,
+    errors: stored.notificationPreferences?.errors ?? true,
+  }
   return {
-    settings,
-    sources,
+    settings: { ...settings, notificationPreferences },
+    sources: {
+      ...sources,
+      notificationPreferences: stored.notificationPreferences ? "settings-store" : "default",
+    },
     restartRequired: deps.settingsLoader.restartRequiredFields,
     configFilePath: deps.settingsStore.filePath(),
   }

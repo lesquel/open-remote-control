@@ -11,7 +11,7 @@
 - `getSharedEventBus() / createEventBus(): EventBus` — bounded in-process SSE fan-out with event IDs, bounded reconnect replay, and deterministic client cleanup
 - `createAuditLog(): AuditLog` — appends recursively redacted JSON-Lines audit records to `.opencode/pilot-audit.log`
 - `rotateIfNeeded()` — rotates the audit log file when it exceeds the size limit
-- `createSettingsStore(): SettingsStore` — reads/writes `~/.opencode-pilot/config.json`
+- `createSettingsStore(): SettingsStore` — reads/writes `~/.opencode-pilot/config.json`, including global outbound notification preferences
 - `createDeviceStore(): DeviceStore` — issues hashed per-device credentials, one-time pairing tokens, capability roles, naming, expiry, and individual revocation
 - `writeState / clearState / updateStateToken / globalStatePath` — pilot-state.json lifecycle
 - `PilotError` — base error class for the whole project

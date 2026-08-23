@@ -126,6 +126,7 @@ function makeDeps(overrides?: Partial<NotificationServiceDeps>): NotificationSer
     push,
     audit,
     channels: overrides?.channels,
+    getPreferences: overrides?.getPreferences,
   }
 }
 
@@ -590,6 +591,42 @@ describe("notifySessionError — fan-out to extra channels", () => {
     const entry = auditEntries.find(e => e.action === "telegram.send_failed")
     expect(entry).toBeDefined()
     expect(entry?.details.kind).toBe("session_error")
+  })
+})
+
+describe("outbound notification preferences", () => {
+  test("disables external permission delivery without hiding the SSE event", async () => {
+    const telegram = makeTelegram({ enabled: true })
+    const push = makePush({ enabled: true, subscriptionCount: 1 })
+    const eventBus = makeEventBus({ hasClients: true })
+    const service = createNotificationService(makeDeps({
+      telegram,
+      push,
+      eventBus,
+      getPreferences: () => ({ permissionRequired: false }),
+    }))
+
+    expect(await service.notifyPermissionPending("p1", "Allow", "s1", "shell")).toBe(true)
+    await service.flush()
+    expect(telegram.calls).toHaveLength(0)
+    expect(push.broadcasts).toHaveLength(0)
+    expect(eventBus.emitted.some(event => event.type === "pilot.permission.pending")).toBe(true)
+  })
+
+  test("skips disabled completion and error channels before session lookup", async () => {
+    let lookups = 0
+    const deps = makeDeps({
+      getPreferences: () => ({ agentFinished: false, errors: false }),
+      channels: [makeChannel()],
+    })
+    const service = createNotificationService(deps)
+    const client = {
+      session: { get: async () => { lookups++; return { data: { title: "Session" } } } },
+    } as unknown as Parameters<typeof service.notifySessionIdle>[0]
+
+    await service.notifySessionIdle(client, "s1")
+    await service.notifySessionError(client, "s1", "failure")
+    expect(lookups).toBe(0)
   })
 })
 

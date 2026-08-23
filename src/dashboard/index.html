@@ -487,8 +487,25 @@
 
       <!-- ── Notifications ────────────────────────────────────────────────── -->
       <section id="settings-pane-notif" role="tabpanel" class="settings-pane" data-pane="notif" hidden>
+        <div class="pcf-row">
+          <label for="s-notify-permission">Permission required</label>
+          <label class="toggle"><input type="checkbox" id="s-notify-permission"><span class="toggle-slider"></span></label>
+          <span class="pcf-source" data-source-for="notificationPreferences"></span>
+        </div>
+        <div class="pcf-row">
+          <label for="s-notify-finished">Agent finished</label>
+          <label class="toggle"><input type="checkbox" id="s-notify-finished"><span class="toggle-slider"></span></label>
+          <span></span>
+        </div>
+        <div class="pcf-row">
+          <label for="s-notify-errors">Agent error</label>
+          <label class="toggle"><input type="checkbox" id="s-notify-errors"><span class="toggle-slider"></span></label>
+          <span></span>
+        </div>
+        <small class="pcf-hint">Controls outbound Telegram, Web Push, and future notification channels. Dashboard activity remains local and visible.</small>
+        <hr class="settings-section-divider">
         <div class="pcf-row" id="push-notif-setting-row">
-          <label for="s-push-notif">Push notifications for permissions</label>
+          <label for="s-push-notif">Browser notifications</label>
           <div style="display:flex;align-items:center;gap:8px">
             <label class="toggle"><input type="checkbox" id="s-push-notif"><span class="toggle-slider"></span></label>
             <button class="btn btn-ghost" id="push-notif-test-btn" style="font-size:10px;padding:2px 8px;min-height:22px;display:none">Test</button>

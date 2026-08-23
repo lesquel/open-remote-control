@@ -105,3 +105,17 @@ describe("validateSettingsPatch — projectStateMode", () => {
     if (!result.ok) expect(result.error).toContain("projectStateMode")
   })
 })
+
+describe("validateSettingsPatch — notificationPreferences", () => {
+  test("accepts supported boolean preferences", () => {
+    const result = validateSettingsPatch({
+      notificationPreferences: { permissionRequired: false, agentFinished: true, errors: false },
+    })
+    expect(result.ok).toBe(true)
+  })
+
+  test("rejects unknown and non-boolean preferences", () => {
+    expect(validateSettingsPatch({ notificationPreferences: { unknown: true } }).ok).toBe(false)
+    expect(validateSettingsPatch({ notificationPreferences: { errors: "yes" } }).ok).toBe(false)
+  })
+})

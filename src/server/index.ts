@@ -89,7 +89,13 @@ export default {
     const push = createPushService({ config, audit, logger })
     const deviceStore = createDeviceStore({ logger })
 
-    const notifications = createNotificationService({ eventBus, telegram, audit, push })
+    const notifications = createNotificationService({
+      eventBus,
+      telegram,
+      audit,
+      push,
+      getPreferences: () => settingsStore.load().notificationPreferences ?? {},
+    })
 
     // ─── RouteDeps object — mutable so token rotation works ───────────────
     // rotateToken mutates deps.token in-place; the server reads deps.token on

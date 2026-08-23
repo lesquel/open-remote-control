@@ -34,6 +34,12 @@ import { configFile } from "../../infra/paths/index"
  *   - wire it into config.ts::mergeStoredSettings()
  *   - add a source entry in handlers.ts::getEffectiveSettings()
  */
+export interface NotificationPreferences {
+  permissionRequired?: boolean
+  agentFinished?: boolean
+  errors?: boolean
+}
+
 export interface PilotSettings {
   port?: number
   host?: string
@@ -49,6 +55,8 @@ export interface PilotSettings {
   projectStateMode?: "off" | "auto" | "always"
   /** Optional token accepted on POST /codex/hooks/* endpoints (in addition to main token). */
   hookToken?: string
+  /** Global outbound-channel event preferences. Missing values default to enabled. */
+  notificationPreferences?: NotificationPreferences
 }
 
 /** Whitelist of keys we actually write to disk. Unknown keys are dropped. */
@@ -66,6 +74,7 @@ const PERSISTED_KEYS: ReadonlyArray<keyof PilotSettings> = [
   "fetchTimeoutMs",
   "projectStateMode",
   "hookToken",
+  "notificationPreferences",
 ]
 
 // ─── Store ───────────────────────────────────────────────────────────────────
@@ -111,6 +120,16 @@ function sanitize(raw: unknown): PilotSettings {
       case "enableGlobOpener":
         if (typeof v === "boolean") out[key] = v
         break
+      case "notificationPreferences":
+        if (typeof v === "object" && !Array.isArray(v)) {
+          const source = v as Record<string, unknown>
+          const preferences: NotificationPreferences = {}
+          for (const preference of ["permissionRequired", "agentFinished", "errors"] as const) {
+            if (typeof source[preference] === "boolean") preferences[preference] = source[preference]
+          }
+          out.notificationPreferences = preferences
+        }
+        break
       case "tunnel":
         if (v === "off" || v === "cloudflared" || v === "ngrok") out[key] = v
         break
@@ -153,6 +172,12 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
     const current = load()
     const clean = sanitize(patch)
     const merged: PilotSettings = { ...current, ...clean }
+    if (clean.notificationPreferences) {
+      merged.notificationPreferences = {
+        ...current.notificationPreferences,
+        ...clean.notificationPreferences,
+      }
+    }
     for (const key of PERSISTED_KEYS) {
       if (Object.prototype.hasOwnProperty.call(patch, key) && patch[key] === undefined) {
         delete merged[key]

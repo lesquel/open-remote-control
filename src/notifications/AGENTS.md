@@ -9,7 +9,7 @@
 - `TELEGRAM_ERROR_MAX_CHARS` lives in `channels/telegram/constants.ts` — NOT in `server/constants`
 
 ## Public API (what other modules consume from here)
-- `createNotificationService(deps, options?): NotificationService` — (`pipeline.ts`) the fan-out orchestrator
+- `createNotificationService(deps, options?): NotificationService` — (`pipeline.ts`) the fan-out orchestrator; `deps.getPreferences` supplies live global event-category preferences
 - `createTelegramChannel(config, ...): TelegramChannel` — re-exported from `pipeline.ts`
 - `createPushService(deps): PushService` — (`channels/push/service.ts`) VAPID + subscription + channel
 - `interface NotificationChannel` — (`ports.ts`) the extension point for new channels
@@ -18,7 +18,7 @@
 
 ## Key files
 - `ports.ts` — `NotificationChannel`, `NotificationEvent`, `NotificationResult`
-- `pipeline.ts` — `createNotificationService`; integrations invoke it, and it emits local events plus deduplicated bounded external delivery to Push, Telegram, and enabled additional channels; also the barrel for public types
+- `pipeline.ts` — `createNotificationService`; integrations invoke it, and it emits local events plus preference-filtered, deduplicated bounded external delivery to Push, Telegram, and enabled additional channels; also the barrel for public types
 - `channels/telegram/index.ts` — `createTelegramChannel`; circuit-breaker wrapped Telegram Bot API
 - `channels/telegram/constants.ts` — `TELEGRAM_ERROR_MAX_CHARS` (telegram-specific limit)
 - `channels/push/service.ts` — `createPushService`; returns `{ channel, generateVapid, addSubscription, ... }`

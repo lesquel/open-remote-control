@@ -72,6 +72,28 @@ describe("settings-store", () => {
     expect(store.load().tunnel).toBe("cloudflared") // unchanged
   })
 
+  test("sanitizes notification preferences without accepting unknown values", () => {
+    const store = createSettingsStore({ logger: silentLogger, filePath: path })
+    store.save({
+      notificationPreferences: {
+        permissionRequired: false,
+        agentFinished: true,
+        // @ts-expect-error — unknown preference is intentionally dropped
+        secrets: true,
+      },
+    })
+    expect(store.load().notificationPreferences).toEqual({
+      permissionRequired: false,
+      agentFinished: true,
+    })
+    store.save({ notificationPreferences: { errors: false } })
+    expect(store.load().notificationPreferences).toEqual({
+      permissionRequired: false,
+      agentFinished: true,
+      errors: false,
+    })
+  })
+
   test("reset deletes the file", () => {
     const store = createSettingsStore({ logger: silentLogger, filePath: path })
     store.save({ port: 5050 })

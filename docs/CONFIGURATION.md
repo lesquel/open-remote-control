@@ -123,6 +123,17 @@ For real push notifications on phone (works even when browser is closed).
 If either VAPID key is missing, push notifications are disabled but every
 other feature still works.
 
+The dashboard's **Settings → Notifications** panel also stores local, global
+preferences for these outbound event categories:
+
+- permission required
+- agent finished
+- agent error
+
+They apply immediately to Telegram, Web Push, and future notification channels.
+They do not hide local dashboard activity or permission state. All three are
+enabled by default and are stored in the owner-private local config file.
+
 To generate keys (you only do this ONCE per deployment):
 
 ```bash

@@ -157,6 +157,31 @@ describe("PATCH /settings handler", () => {
     expect(stored.telegramToken).toBe("my-tok")
   })
 
+  test("persists notification preferences and returns effective defaults", async () => {
+    const path = join(dir, "config.json")
+    const deps = makeDeps({ configPath: path })
+    const initial = await (await getSettings(makeCtx(deps))).json()
+    expect(initial.settings.notificationPreferences).toEqual({
+      permissionRequired: true,
+      agentFinished: true,
+      errors: true,
+    })
+
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ notificationPreferences: { agentFinished: false } }),
+    })
+    const response = await patchSettings(makeCtx(deps, req))
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.settings.notificationPreferences).toEqual({
+      permissionRequired: true,
+      agentFinished: false,
+      errors: true,
+    })
+    expect(deps.settingsStore.load().notificationPreferences).toEqual({ agentFinished: false })
+  })
+
   test("rejects invalid port with 400", async () => {
     const deps = makeDeps({ configPath: join(dir, "config.json") })
     const req = new Request("http://test/settings", {

@@ -375,6 +375,26 @@ function applySnapshotToInputs(snap) {
   const pathCode = document.getElementById('plugin-config-path-code')
   if (pathCode) pathCode.textContent = configFilePath
 
+  const preferences = settings.notificationPreferences ?? {}
+  const preferenceInputs = {
+    permissionRequired: 's-notify-permission',
+    agentFinished: 's-notify-finished',
+    errors: 's-notify-errors',
+  }
+  for (const [preference, inputId] of Object.entries(preferenceInputs)) {
+    const input = document.getElementById(inputId)
+    if (input) input.checked = preferences[preference] !== false
+  }
+  const preferenceSource = sources.notificationPreferences || 'default'
+  const preferenceBadge = document.querySelector('.pcf-source[data-source-for="notificationPreferences"]')
+  if (preferenceBadge) {
+    preferenceBadge.textContent = formatSource(preferenceSource)
+    preferenceBadge.setAttribute('data-source', preferenceSource)
+    preferenceBadge.title = preferenceSource === 'settings-store'
+      ? 'Saved in ' + configFilePath
+      : 'Default value'
+  }
+
   for (const [field, spec] of Object.entries(FIELD_MAP)) {
     const el = document.getElementById(spec.id)
     if (!el) continue
@@ -446,6 +466,11 @@ function readInputsAsPatch() {
       // String: send even if empty so the user can clear a value.
       patch[field] = el.value
     }
+  }
+  patch.notificationPreferences = {
+    permissionRequired: document.getElementById('s-notify-permission')?.checked !== false,
+    agentFinished: document.getElementById('s-notify-finished')?.checked !== false,
+    errors: document.getElementById('s-notify-errors')?.checked !== false,
   }
   return patch
 }

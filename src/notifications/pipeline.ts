@@ -6,6 +6,7 @@ import type { PushService } from "./channels/push/service"
 import type { AuditLog } from "../core/audit/log"
 import type { NotificationChannel, NotificationEvent } from "./ports"
 import type { NotificationService } from "../core/types/notification-service"
+import type { NotificationPreferences } from "../core/settings/store"
 import { createHash } from "node:crypto"
 
 // Re-export the NotificationService type from core/ so both notifications/ and
@@ -49,6 +50,8 @@ export interface NotificationServiceDeps {
    * Pipeline iterates these for each event (future: Slack, Discord, etc.).
    */
   channels?: NotificationChannel[]
+  /** Read live outbound event preferences. Missing fields remain enabled. */
+  getPreferences?: () => NotificationPreferences
 }
 
 /**
@@ -83,6 +86,10 @@ export function createNotificationService(
   const dedupWindowMs = options.dedupWindowMs ?? NOTIFICATION_DEDUP_WINDOW_MS
   const now = options.now ?? Date.now
   const recentDeliveries = new Map<string, number>()
+
+  function preferenceEnabled(key: keyof NotificationPreferences): boolean {
+    return deps.getPreferences?.()[key] !== false
+  }
 
   // ─── In-flight tracking ───────────────────────────────────────────────────
   // Keeps a live set of every fire-and-forget dispatch currently outstanding.
@@ -133,13 +140,16 @@ export function createNotificationService(
     pattern?: string | string[],
     metadata: Record<string, unknown> = {},
   ): Promise<boolean> {
-    const telegramReachable = telegram.enabled()
-    const pushReachable = push.isEnabled() && push.count() > 0
+    const externalEnabled = preferenceEnabled("permissionRequired")
+    const telegramReachable = externalEnabled && telegram.enabled()
+    const pushReachable = externalEnabled && push.isEnabled() && push.count() > 0
     const sseReachable = eventBus.hasClients()
-    const externalReachable = telegramReachable || pushReachable || channels.some((ch) => ch.enabled())
+    const externalReachable = externalEnabled && (
+      telegramReachable || pushReachable || channels.some((ch) => ch.enabled())
+    )
     const suppressExternal = externalReachable && isDuplicateDelivery(`permission.pending:${permissionID}`)
 
-    if (!suppressExternal) {
+    if (externalEnabled && !suppressExternal) {
       // Fire-and-forget — keep the existing .catch(audit) intact;
       // track the non-rejecting post-.catch() promise so flush() can drain it.
       track(
@@ -206,6 +216,7 @@ export function createNotificationService(
     client: PluginInput["client"],
     sessionID: string,
   ): Promise<void> {
+    if (!preferenceEnabled("agentFinished")) return
     if (isDuplicateDelivery(`session.idle:${sessionID}`)) {
       audit.log("notifications.duplicate_suppressed", { kind: "session.idle" })
       return
@@ -249,6 +260,7 @@ export function createNotificationService(
     sessionID: string,
     error: string,
   ): Promise<void> {
+    if (!preferenceEnabled("errors")) return
     if (isDuplicateDelivery(`session.error:${sessionID}:${privateFingerprint(error)}`)) {
       audit.log("notifications.duplicate_suppressed", { kind: "session.error" })
       return
