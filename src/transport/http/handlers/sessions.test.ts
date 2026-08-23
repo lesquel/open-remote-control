@@ -1,7 +1,8 @@
 // sessions.test.ts — Handler tests for GET /sessions/:id/attachments/:partId
 import { describe, expect, test } from "bun:test"
 import type { RouteDeps, RouteContext } from "../routes"
-import { getSessionAttachment } from "./sessions"
+import { fetchRemoteAttachment, getSessionAttachment } from "./sessions"
+import type { SafeHttpsFetcher } from "../../../infra/network/safe-https-fetch"
 import type { Logger } from "../../../infra/logger/index"
 import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -23,6 +24,30 @@ const FILE_PART = {
   mime: "image/png",
   url: "https://example.com/image.png",
 }
+
+describe("fetchRemoteAttachment", () => {
+  const resultFrom = async (result: Awaited<ReturnType<SafeHttpsFetcher>>) =>
+    fetchRemoteAttachment("https://example.com/file", 1000, async () => result)
+
+  test("maps successful bytes and remote status codes", async () => {
+    const body = new Uint8Array([1, 2, 3])
+    expect(await resultFrom({ ok: true, status: 200, body })).toEqual({ ok: true, body })
+    expect(await resultFrom({ ok: true, status: 404, body })).toMatchObject({ ok: false, error: "ATTACHMENT_URL_NOT_FOUND", httpStatus: 404 })
+    expect(await resultFrom({ ok: true, status: 503, body })).toMatchObject({ ok: false, error: "REMOTE_ERROR", httpStatus: 502 })
+  })
+
+  test.each([
+    ["forbidden", "FORBIDDEN", 403],
+    ["timeout", "TIMEOUT", 504],
+    ["too-large", "PAYLOAD_TOO_LARGE", 413],
+    ["network", "FETCH_ERROR", 502],
+    ["redirect", "FETCH_ERROR", 502],
+  ] as const)("maps safe-fetch failure %s without leaking internals", async (reason, error, httpStatus) => {
+    const result = await resultFrom({ ok: false, reason, detail: "private resolver detail" })
+    expect(result).toMatchObject({ ok: false, error, httpStatus })
+    if (!result.ok) expect(result.detail).not.toContain("private resolver detail")
+  })
+})
 
 // Mock SDK client factory — allows per-test customization of part lookups
 function makeMockClient(opts?: {

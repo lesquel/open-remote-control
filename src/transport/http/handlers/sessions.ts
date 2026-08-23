@@ -8,7 +8,10 @@ import {
 } from "../validators/sessions"
 import { extractDirectory } from "./system"
 import { validateToken, safeEqual } from "../middlewares/auth"
-import { validateEndpoint } from "../../../infra/network/ssrf"
+import {
+  createSafeHttpsFetcher,
+  type SafeHttpsFetcher,
+} from "../../../infra/network/safe-https-fetch"
 import { ATTACHMENT_MAX_BYTES, MIME_SAFELIST } from "../../../infra/http/constants"
 import type { FilePart } from "@opencode-ai/sdk"
 import { fileURLToPath } from "node:url"
@@ -313,6 +316,7 @@ export async function abortSession({ url, params, deps }: RouteContext): Promise
 
 type StructuredError = { ok: false; error: string; detail: string; httpStatus: number }
 type Bytes = { ok: true; body: Uint8Array }
+const safeHttpsFetch = createSafeHttpsFetcher()
 
 /**
  * Dispatch a FilePart URL to the appropriate byte-fetching strategy.
@@ -359,43 +363,35 @@ async function fetchHttp(
   url: string,
   deps: RouteContext["deps"],
 ): Promise<Bytes | StructuredError> {
-  // SSRF guard: blocks non-HTTPS schemes and non-public hosts on SDK-supplied
-  // attachment URLs. The attachment proxy intentionally inherits the HTTPS-only
-  // policy from validateEndpoint (http:// attachment URLs are rejected here).
-  const endpointCheck = validateEndpoint(url)
-  if (!endpointCheck.ok) {
-    return { ok: false, error: "FORBIDDEN", detail: "attachment url blocked by ssrf guard", httpStatus: 403 }
+  return fetchRemoteAttachment(url, deps.config.fetchTimeoutMs ?? 10_000)
+}
+
+export async function fetchRemoteAttachment(
+  url: string,
+  timeoutMs: number,
+  fetchSafe: SafeHttpsFetcher = safeHttpsFetch,
+): Promise<Bytes | StructuredError> {
+  const result = await fetchSafe(url, { timeoutMs, maxBytes: ATTACHMENT_MAX_BYTES })
+  if (result.ok) {
+    if (result.status === 404) {
+      return { ok: false, error: "ATTACHMENT_URL_NOT_FOUND", detail: "remote attachment not found", httpStatus: 404 }
+    }
+    if (result.status < 200 || result.status >= 300) {
+      return { ok: false, error: "REMOTE_ERROR", detail: `remote returned ${result.status}`, httpStatus: 502 }
+    }
+    return { ok: true, body: result.body }
   }
-  const timeoutMs = deps.config.fetchTimeoutMs ?? 10_000
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, { signal: controller.signal })
-    clearTimeout(timer)
-    if (!res.ok) {
-      if (res.status === 404) {
-        return { ok: false, error: "ATTACHMENT_URL_NOT_FOUND", detail: `remote returned 404 for url`, httpStatus: 404 }
-      }
-      return { ok: false, error: "REMOTE_ERROR", detail: `remote returned ${res.status}`, httpStatus: 502 }
-    }
-    // Enforce size limit via Content-Length before buffering
-    const contentLength = res.headers.get("content-length")
-    if (contentLength !== null && parseInt(contentLength, 10) > ATTACHMENT_MAX_BYTES) {
-      return { ok: false, error: "PAYLOAD_TOO_LARGE", detail: "attachment exceeds 2 MiB limit", httpStatus: 413 }
-    }
-    const buffer = await res.arrayBuffer()
-    if (buffer.byteLength > ATTACHMENT_MAX_BYTES) {
-      return { ok: false, error: "PAYLOAD_TOO_LARGE", detail: "attachment exceeds 2 MiB limit", httpStatus: 413 }
-    }
-    return { ok: true, body: new Uint8Array(buffer) }
-  } catch (err) {
-    clearTimeout(timer)
-    if (err instanceof Error && err.name === "AbortError") {
-      return { ok: false, error: "TIMEOUT", detail: "remote fetch timed out", httpStatus: 504 }
-    }
-    const message = err instanceof Error ? err.message : String(err)
-    return { ok: false, error: "FETCH_ERROR", detail: message, httpStatus: 502 }
+
+  if (result.reason === "forbidden") {
+    return { ok: false, error: "FORBIDDEN", detail: "attachment URL blocked by SSRF guard", httpStatus: 403 }
   }
+  if (result.reason === "timeout") {
+    return { ok: false, error: "TIMEOUT", detail: "remote fetch timed out", httpStatus: 504 }
+  }
+  if (result.reason === "too-large") {
+    return { ok: false, error: "PAYLOAD_TOO_LARGE", detail: "attachment exceeds 2 MiB limit", httpStatus: 413 }
+  }
+  return { ok: false, error: "FETCH_ERROR", detail: "remote attachment fetch failed", httpStatus: 502 }
 }
 
 async function readLocalFile(path: string, root: string): Promise<Bytes | StructuredError> {
