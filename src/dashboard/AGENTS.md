@@ -16,7 +16,7 @@
 - `api/api-fetch.js` — fetch wrapper with auth headers
 - `state/state.js` — reactive client-side state
 - `sse/sse.js` — reconnecting `/events` client; forwards the last event ID, deduplicates bounded replay, detects host generations/offline state, applies jittered backoff, and reconciles canonical snapshots
-- `auth/` — token management and connect-modal flow
+- `auth/` — legacy-token migration plus short-lived device pairing and credential storage
 - `components/` — domain UI components (sessions, permissions, settings, etc.)
 - `components/permission-response.js` — exactly-once client gate that prevents permission double-taps and stale queue removal
 - `components/latest-request.js` — generation gate used to prevent stale asynchronous responses from committing UI state

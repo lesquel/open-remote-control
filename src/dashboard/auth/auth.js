@@ -1,6 +1,6 @@
 // auth.js — Token handling: query param, localStorage, and no-token screen
 import { setState, getState } from '../state/state.js'
-import { resetTokenInvalidated } from '../api/api.js'
+import { redeemDevicePairing, resetTokenInvalidated } from '../api/api.js'
 import { closeEventSource } from '../sse/sse.js'
 
 const STORAGE_KEY = 'pilot_token'
@@ -13,7 +13,7 @@ const STORAGE_KEY = 'pilot_token'
  * localStorage is used (not sessionStorage) so the token survives
  * browser restarts and is shared across tabs on the same origin.
  */
-export function resolveToken() {
+export async function resolveToken() {
   // 1. Check URL query param (e.g. from QR scan or banner link)
   const params = new URLSearchParams(location.search)
   const urlToken = params.get('token')
@@ -21,7 +21,13 @@ export function resolveToken() {
     localStorage.setItem(STORAGE_KEY, urlToken)
     // Clean up the URL so the token doesn't linger in history
     history.replaceState({}, '', location.pathname)
-    return Promise.resolve(urlToken)
+    return urlToken
+  }
+
+  const pairingToken = params.get('pair')
+  if (pairingToken) {
+    history.replaceState({}, '', location.pathname)
+    return showPairingScreen(pairingToken)
   }
 
   // 2. Check localStorage (persistent across reloads + restarts)
@@ -31,14 +37,57 @@ export function resolveToken() {
     // any future 401 (e.g. from a second OpenCode restart) can surface the
     // recovery UI again.
     resetTokenInvalidated()
-    return Promise.resolve(stored)
+    return stored
   }
 
   // 3. No token anywhere — show the "scan QR" screen.
   //    This Promise never resolves: the user must either scan the QR or
   //    reload the page from a link that contains ?token=...
   showNoTokenScreen()
-  return Promise.reject(new Error('NO_TOKEN'))
+  throw new Error('NO_TOKEN')
+}
+
+function showPairingScreen(pairingToken) {
+  const gate = document.getElementById('token-gate')
+  if (!gate) return Promise.reject(new Error('PAIRING_UI_UNAVAILABLE'))
+  const suggestedName = navigator.userAgentData?.platform || navigator.platform || 'Browser device'
+  gate.innerHTML = `
+    <div class="no-token-card">
+      <h2>Pair this device</h2>
+      <p>Name this browser so you can recognize and revoke it later.</p>
+      <label for="pairing-device-name">Device name</label>
+      <input id="pairing-device-name" class="input" maxlength="80" autocomplete="off" />
+      <p id="pairing-error" role="alert" style="display:none; color:var(--error, #f87171);"></p>
+      <button class="btn btn-primary" id="pairing-submit">Pair device</button>
+    </div>`
+  gate.style.display = 'flex'
+  const input = document.getElementById('pairing-device-name')
+  const button = document.getElementById('pairing-submit')
+  const error = document.getElementById('pairing-error')
+  if (input) input.value = suggestedName
+
+  return new Promise((resolve, reject) => {
+    const submit = async () => {
+      const name = input?.value.trim() ?? ''
+      if (!name) {
+        if (error) { error.textContent = 'Enter a device name.'; error.style.display = 'block' }
+        return
+      }
+      button.disabled = true
+      try {
+        const issued = await redeemDevicePairing(pairingToken, name)
+        saveToken(issued.credential)
+        gate.style.display = 'none'
+        resolve(issued.credential)
+      } catch (err) {
+        button.disabled = false
+        if (error) { error.textContent = err?.message ?? 'Pairing failed'; error.style.display = 'block' }
+      }
+    }
+    button?.addEventListener('click', submit)
+    input?.addEventListener('keydown', event => { if (event.key === 'Enter') submit() })
+    if (!button || !input) reject(new Error('PAIRING_UI_UNAVAILABLE'))
+  })
 }
 
 /**

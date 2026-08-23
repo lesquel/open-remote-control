@@ -2,7 +2,7 @@
 // Shows LAN URL (+ tunnel above it when active) with QR code rendered via
 // dynamically loaded qrcode library. Localhost URL is intentionally omitted —
 // phones cannot reach 127.0.0.1 (closes #7).
-import { fetchConnectInfo } from '../api/api.js'
+import { createDevicePairing, fetchConnectInfo } from '../api/api.js'
 import { toast } from '../ui/toast.js'
 import { openModal } from './modal-helper.js'
 import { pickBestUrlForMobile } from './connect-url-picker.js'
@@ -74,6 +74,18 @@ let _isOpen = false
 let _connectInfo = null
 let _refreshTimer = null
 let _modalHandle = null
+let _pairing = null
+
+function pairingUrl(rawUrl, pairingToken) {
+  try {
+    const url = new URL(rawUrl)
+    url.searchParams.delete('token')
+    url.searchParams.set('pair', pairingToken)
+    return url.toString()
+  } catch {
+    return rawUrl
+  }
+}
 
 /**
  * Invalidate the cached connect-info snapshot.
@@ -131,6 +143,13 @@ function _stopPolling() {
 async function _refresh() {
   try {
     _connectInfo = await fetchConnectInfo()
+    if (!_pairing || _pairing.expiresAt - Date.now() < 30_000) {
+      _pairing = await createDevicePairing('operator')
+    }
+    if (_pairing?.pairingToken) {
+      if (_connectInfo.lan?.url) _connectInfo.lan.url = pairingUrl(_connectInfo.lan.url, _pairing.pairingToken)
+      if (_connectInfo.tunnel?.url) _connectInfo.tunnel.url = pairingUrl(_connectInfo.tunnel.url, _pairing.pairingToken)
+    }
   } catch {
     // If fetch fails (e.g. offline), keep the last known info
   }
@@ -166,7 +185,7 @@ function _renderContent() {
           <button class="btn btn-ghost cpm-copy-btn" data-copy="${escHtml(tunnel.url)}">Copy</button>
         </div>
         <div class="cpm-warning-box cpm-warning-box--security">
-          Anyone with this URL + token can control your OpenCode. Treat the token as a password.
+          This one-time operator pairing link expires in five minutes. Only share it with a device you trust.
         </div>
       </div>
     `

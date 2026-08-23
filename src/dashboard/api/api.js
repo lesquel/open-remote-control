@@ -187,6 +187,24 @@ export async function rotateAuthToken() {
   return request('POST', '/auth/rotate')
 }
 
+export async function createDevicePairing(role = 'operator') {
+  return request('POST', '/pairing', { role }, { directory: null })
+}
+
+export async function redeemDevicePairing(pairingToken, name) {
+  const r = await fetch(baseUrl() + '/pairing/redeem', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pairingToken, name }),
+  })
+  if (!r.ok) {
+    const err = new Error(r.status === 401 ? 'Pairing link expired or already used' : `Pairing failed (${r.status})`)
+    err.status = r.status
+    throw err
+  }
+  return r.json()
+}
+
 export async function fetchHealth() {
   const r = await apiFetch(baseUrl() + '/health')
   if (!r.ok) throw new Error(`${r.status}`)
