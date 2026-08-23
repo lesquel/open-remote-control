@@ -37,14 +37,13 @@
   SW re-registers itself during the normal page init and the next load
   is fast again.
 
-  Bump PILOT_ASSET_GEN any time the dashboard assets change in a way
-  that old SW caches must be flushed (new file, renamed file, breaking
-  change to main.js/sw.js). The value matches package.json::version.
+  The server and the GitHub Pages deployment replace the generation
+  placeholder below with package.json::version. Do not hardcode it.
 -->
 <script>
 (function() {
   try {
-    var GEN = "1.21.1";
+    var GEN = "__PILOT_ASSET_GENERATION__";
     var KEY = "pilot:asset-gen";
     if (localStorage.getItem(KEY) === GEN) return;
     localStorage.setItem(KEY, GEN);

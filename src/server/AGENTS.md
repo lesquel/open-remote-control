@@ -21,7 +21,7 @@
 - `config.test.ts` — unit tests for config parsing and merging
 
 ## Conventions specific to this folder
-- `PILOT_VERSION` in `constants.ts` must be bumped in sync with `package.json::version` and `dashboard/index.html` `var GEN` on every release (enforced by `__tests__/asset-sanity.test.ts`).
+- `PILOT_VERSION` in `constants.ts` must be bumped in sync with `package.json::version` on every release. Dashboard generation markers are injected from that version at serve/deploy time.
 - Shutdown order in `index.ts` is non-negotiable: integrations → server → tunnel → notifications → clearState.
 
 ## DO NOT
@@ -31,4 +31,4 @@
 
 ## See also
 - `docs/ARCHITECTURE.md` — composition root section (7 named phases) and shutdown order
-- `AGENTS.md` §4 — the three-file version bump rule for releases
+- `AGENTS.md` §4 — the two-file version bump rule for releases

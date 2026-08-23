@@ -6,17 +6,15 @@ This is the **execution** checklist for shipping a new version. First-time npm-a
 
 ---
 
-## The three places version lives
+## The two release version sources
 
-Every release must bump **all three of these in a single commit**. The asset-sanity test (`src/server/dashboard/__tests__/asset-sanity.test.ts`) fails the build if they drift.
+Every release must bump **both** of these in a single commit. The asset-sanity test (`src/dashboard/__tests__/asset-sanity.test.ts`) fails the build if they drift.
 
 | File | Line to change | Notes |
 |------|---------------|-------|
 | `package.json` | `"version": "X.Y.Z"` | Canonical — npm reads this one. |
 | `src/server/constants.ts` | `export const PILOT_VERSION = "X.Y.Z"` | Served from `/health` so the dashboard + TUI show the live version. |
-| `src/dashboard/index.html` | `var GEN = "X.Y.Z"` | Bumps the self-heal marker so browsers purge the old service worker + localStorage. |
-
-If you forget any of them, `bun test` fails with a clear diff, which is the whole point — CI catches it before anything leaves your machine.
+The dashboard self-heal marker is not a third source: the local server and the GitHub Pages workflow replace `__PILOT_ASSET_GENERATION__` from the current version automatically. If you forget either release source, `bun test` fails before anything leaves your machine.
 
 The release workflow also refuses to publish when the pushed tag differs from
 the package version prefixed with `v`, or its commit is not reachable from
@@ -53,13 +51,12 @@ Semver, applied to a user-facing plugin:
 - **Minor (Y)** — new optional features, new endpoints, new slash commands. No breaking change to `opencode.json::plugin` spec, `PilotState` shape, or HTTP route table.
 - **Major (X)** — break any of the above. Plan a deprecation cycle first. Major bumps are rare for plugins because every user must restart OpenCode.
 
-### 2. Bump the three version strings
+### 2. Bump the two version strings
 
 ```bash
 # Use your editor or a quick sd/sed pass:
 sd '"version": "[^"]*"'              '"version": "X.Y.Z"'          package.json
 sd 'PILOT_VERSION = "[^"]*"'         'PILOT_VERSION = "X.Y.Z"'     src/server/constants.ts
-sd 'var GEN = "[^"]*";'              'var GEN = "X.Y.Z";'          src/dashboard/index.html
 ```
 
 ### 3. Write the CHANGELOG entry

@@ -24,7 +24,7 @@ It complements:
 | Classes in services / hooks / http layers | Convention is factory functions named `create*`. Mixing the two causes wiring confusion. |
 | Edit `package-lock.json` or `bun.lock` by hand | Let the installers regenerate them. |
 | Commit to `main` without running tests | CI runs `bun test` on push, but a red CI after you pushed is wasted turnaround. Run locally first. |
-| Publish a new version by editing `package.json` alone | Three files must bump together. See §4 Release Process. |
+| Publish a new version by editing `package.json` alone | The package and server versions must bump together. See §4 Release Process. |
 | Create files outside the paths users expect | `~/.opencode-pilot/` for global state, `.opencode/` for per-project. Anything else breaks conventions and user tooling. |
 
 ---
@@ -125,10 +125,9 @@ Releases are triggered by pushing a tag matching `v*.*.*` to `origin`. Do **not*
 Quick form:
 
 ```bash
-# 1. Bump THREE places (all must match exactly, asset-sanity test enforces it):
+# 1. Bump TWO places (both must match exactly, asset-sanity test enforces it):
 #    - package.json::version
 #    - src/server/constants.ts::PILOT_VERSION
-#    - src/dashboard/index.html  → var GEN = "x.y.z"
 #
 # 2. Add a CHANGELOG.md entry at the top (Keep-a-Changelog format, most recent first).
 #

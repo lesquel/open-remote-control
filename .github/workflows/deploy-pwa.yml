@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'src/dashboard/**'
+      - 'package.json'
       - '.github/workflows/deploy-pwa.yml'
   workflow_dispatch:
 
@@ -31,6 +32,17 @@ jobs:
         run: |
           mkdir -p dist
           cp -r src/dashboard/. dist/
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const version = require('./package.json').version
+          const path = 'dist/index.html'
+          const source = fs.readFileSync(path, 'utf8')
+          const placeholder = '__PILOT_ASSET_GENERATION__'
+          if (!source.includes(placeholder)) {
+            throw new Error(`Missing ${placeholder} in ${path}`)
+          }
+          fs.writeFileSync(path, source.replaceAll(placeholder, version))
+          NODE
           echo "Dashboard files:"
           ls -la dist/
           echo "Icons:"

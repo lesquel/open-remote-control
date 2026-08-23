@@ -26,6 +26,13 @@ describe("PWA deployment source", () => {
     expect(DEPLOY_WORKFLOW).toContain("cp -r src/dashboard/. dist/")
     expect(DEPLOY_WORKFLOW).not.toContain("src/server/dashboard")
   })
+
+  test("injects package version into the hosted dashboard", () => {
+    expect(DEPLOY_WORKFLOW).toContain("- 'package.json'")
+    expect(DEPLOY_WORKFLOW).toContain("__PILOT_ASSET_GENERATION__")
+    expect(DEPLOY_WORKFLOW).toContain("require('./package.json').version")
+    expect(DEPLOY_WORKFLOW).toContain("source.replaceAll(placeholder, version)")
+  })
 })
 
 describe("dashboard/index.html highlight.js bundle", () => {
@@ -60,10 +67,11 @@ describe("dashboard/index.html self-healing cleanup", () => {
     expect(INDEX_HTML).toMatch(/caches\.keys/)
   })
 
-  test("self-heal version marker matches package.json::version", () => {
+  test("self-heal version marker is injected at serve/deploy time", () => {
     const match = INDEX_HTML.match(/var\s+GEN\s*=\s*"([^"]+)"/)
     expect(match).not.toBeNull()
-    expect(match?.[1]).toBe(PACKAGE_JSON.version)
+    expect(match?.[1]).toBe("__PILOT_ASSET_GENERATION__")
+    expect(INDEX_HTML).not.toContain(`var GEN = "${PACKAGE_JSON.version}"`)
   })
 })
 

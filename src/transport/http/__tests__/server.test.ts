@@ -548,6 +548,8 @@ describe("HTTP server integration", () => {
     expect(res.headers.get("content-type")).toContain("text/html")
     const body = await res.text()
     expect(body.length).toBeGreaterThan(0)
+    expect(body).not.toContain("__PILOT_ASSET_GENERATION__")
+    expect(body).toContain('var GEN = "1.0.0"')
   })
 
   test("GET /sw.js substitutes CACHE_NAME placeholder with versioned value (1.13.15)", async () => {
