@@ -245,18 +245,21 @@ function renderReasoningPart(p) {
   const id = 'reasoning-' + (p.id ?? Math.random().toString(36).slice(2))
 
   return `<div class="reasoning-block${expandedClass}" id="${escapeHtml(id)}">
-    <div class="reasoning-header" onclick="window.__toggleReasoning('${escapeHtml(id)}')">
+    <div class="reasoning-header" role="button" tabindex="0" aria-expanded="${defaultExpanded}" aria-controls="${escapeHtml(id)}-body" onclick="window.__toggleReasoning('${escapeHtml(id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__toggleReasoning('${escapeHtml(id)}')}">
       <span class="reasoning-toggle">▸</span>
       <span class="reasoning-label">~ thinking</span>
       ${durationHtml}
     </div>
-    <div class="reasoning-body">${text}</div>
+    <div class="reasoning-body" id="${escapeHtml(id)}-body">${text}</div>
   </div>`
 }
 
 // Expose reasoning toggle globally (called from inline onclick in rendered HTML)
 window.__toggleReasoning = function(id) {
-  document.getElementById(id)?.classList.toggle('reasoning-expanded')
+  const block = document.getElementById(id)
+  if (!block) return
+  const expanded = block.classList.toggle('reasoning-expanded')
+  block.querySelector('.reasoning-header')?.setAttribute('aria-expanded', String(expanded))
 }
 
 // ── Agent transition part renderer ──────────────────────────────────────────
@@ -708,7 +711,7 @@ function renderToolPart(p) {
       return `<div class="tw-item tw-item--${escapeHtml(stClass)}">
         <span class="tw-item-icon" aria-hidden="true">${stIcon}</span>
         <span class="tw-item-text">${text}</span>
-        <button class="tw-pin-btn" onclick="window.__pinTodoItem(this)" data-text="${escapeHtml(String(item.text ?? item.content ?? ''))}" title="Pin this todo">[+]</button>
+        <button class="tw-pin-btn" onclick="window.__pinTodoItem(this)" data-text="${escapeHtml(String(item.text ?? item.content ?? ''))}" title="Pin this todo" aria-label="Pin todo: ${text}">[+]</button>
       </div>`
     }).join('')
     todoItemsHtml = `<div class="tw-items">${rows}</div>`
@@ -733,11 +736,11 @@ function renderToolPart(p) {
   const partIdAttr = p.id ? ` data-part-id="${escapeHtml(p.id)}"` : ''
   const msgIdAttr = p.messageID ? ` data-message-id="${escapeHtml(p.messageID)}"` : ''
   return `<div class="tool-block ${hiddenClass}${autoOpen}" id="${id}"${partIdAttr}${msgIdAttr}>
-    <div class="tool-line tool-header" onclick="window.__toggleTool('${id}')">
+    <div class="tool-line tool-header" role="button" tabindex="0" aria-expanded="${autoOpen !== ''}" aria-controls="${id}-body" onclick="window.__toggleTool('${id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__toggleTool('${id}')}">
       ${summaryHtml}
       <span class="tool-chevron">▶</span>
     </div>
-    <div class="tool-body">${todoItemsHtml}${argsHtml}${resultHtml}${attachmentsHtml}</div>
+    <div class="tool-body" id="${id}-body">${todoItemsHtml}${argsHtml}${resultHtml}${attachmentsHtml}</div>
   </div>`
 }
 
@@ -861,7 +864,10 @@ export function renderMessages(msgs, { sessionId } = {}) {
 
 // Expose toggleTool globally (called from inline onclick in rendered HTML)
 window.__toggleTool = function(id) {
-  document.getElementById(id)?.classList.toggle('open')
+  const block = document.getElementById(id)
+  if (!block) return
+  const expanded = block.classList.toggle('open')
+  block.querySelector('.tool-header')?.setAttribute('aria-expanded', String(expanded))
 }
 
 /**
