@@ -279,7 +279,11 @@ export async function postSessionPrompt({
   const sessionID = params.id
   deps.audit.log("prompt.sent", {
     sessionID,
-    messagePreview: body.message?.slice(0, 100) ?? "(parts)",
+    inputMode: body.message !== undefined ? "message" : "parts",
+    contentLength: body.message?.length ?? 0,
+    partCount: body.parts?.length ?? 0,
+    agentSelected: body.agent !== undefined,
+    modelSelected: body.model !== undefined,
   })
 
   const promptBody: {
