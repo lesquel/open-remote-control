@@ -78,6 +78,8 @@ bun install
 ### Before you code
 
 - Read the [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) file to understand the layout.
+- Follow [`docs/ADDING_AN_AGENT.md`](docs/ADDING_AN_AGENT.md) for agent adapters.
+- Follow [`docs/ADDING_NOTIFICATION_CHANNEL.md`](docs/ADDING_NOTIFICATION_CHANNEL.md) for outbound channels.
 - Read [`AGENTS.md`](AGENTS.md) — same conventions apply to human contributors.
 - Check if there's a related discussion in the issue you're resolving.
 
@@ -95,9 +97,10 @@ bun install
 ```bash
 bun run typecheck
 bun test
+bun run test:e2e
 ```
 
-Both must pass. The repo's `prepublishOnly` hook enforces this before a release goes to npm — if you break either, the release cannot ship.
+All three must pass. Install the Chromium test browser once with `bunx playwright install chromium`. The repo's `prepublishOnly` hook enforces typechecking and Bun tests before a release goes to npm, while CI also runs the browser journey against a real local Pilot server.
 
 ### Commit style
 

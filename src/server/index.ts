@@ -5,6 +5,7 @@ import { generateToken } from "../infra/auth/token"
 import { createAuditLog } from "../core/audit/log"
 import { getSharedEventBus } from "../core/events/bus"
 import { createPermissionQueue } from "../core/permissions/queue"
+import { createDeviceStore } from "../core/devices/store"
 import { createTelegramChannel } from "../notifications/channels/telegram/index"
 import { createPushService } from "../notifications/channels/push/service"
 import { createSettingsStore } from "../core/settings/store"
@@ -18,7 +19,7 @@ import { opencodeIntegration } from "../integrations/opencode/index"
 import { codexIntegration } from "../integrations/codex/index"
 import { createLogger } from "../infra/logger/index"
 import { PILOT_VERSION, TOAST_DURATION_MS, TOAST_PROMOTION_DURATION_MS, PROMOTION_POLL_INTERVAL_MS } from "./constants"
-import { installGlobalErrorHandlersOnce, createShutdownGuard } from "./lifecycle"
+import { installGlobalErrorHandlersOnce, createShutdownGuard, registerProcessShutdown, runShutdownSteps } from "./lifecycle"
 
 export default {
   id: "opencode-pilot",
@@ -86,8 +87,15 @@ export default {
     const codexPermissionQueue = createPermissionQueue(config.codexPermissionTimeoutMs)
     const telegram = createTelegramChannel(config.telegram, permissionQueue, codexPermissionQueue, logger)
     const push = createPushService({ config, audit, logger })
+    const deviceStore = createDeviceStore({ logger })
 
-    const notifications = createNotificationService({ eventBus, telegram, audit, push })
+    const notifications = createNotificationService({
+      eventBus,
+      telegram,
+      audit,
+      push,
+      getPreferences: () => settingsStore.load().notificationPreferences ?? {},
+    })
 
     // ─── RouteDeps object — mutable so token rotation works ───────────────
     // rotateToken mutates deps.token in-place; the server reads deps.token on
@@ -99,6 +107,7 @@ export default {
       worktree: ctx.worktree,
       config,
       token: currentToken,
+      deviceStore,
       rotateToken(newToken: string): void {
         deps.token = newToken
         currentToken = newToken
@@ -115,6 +124,7 @@ export default {
       shellEnv,
       envFileApplied: dotenv.applied,
       pilotVersion: PILOT_VERSION,
+      integrations: [opencodeIntegration, codexIntegration],
       settingsLoader: {
         loadEffective(stored: import("../core/settings/store").PilotSettings) {
           const effectiveEnv = mergeStoredSettings(process.env, shellEnv, stored)
@@ -424,16 +434,22 @@ export default {
           clearInterval(promotionTimer)
           promotionTimer = null
         }
-        try { telegram.stop() } catch {}
-        // Spec order: integrations → http → tunnel → notifications.flush → clearState
-        try { await opencode.shutdown() } catch {}
-        try { await codexHandle.shutdown() } catch {}
-        if (role === "primary") {
-          try { server.stop() } catch {}
-          try { tunnel.stop() } catch {}
-          try { await notifications.flush() } catch {}
-          try { clearState(ctx.directory) } catch {}
-        }
+        const steps = [
+          { name: "telegram", run: () => telegram.stop() },
+          { name: "opencode", run: () => opencode.shutdown() },
+          { name: "codex", run: () => codexHandle.shutdown() },
+          ...(role === "primary" ? [
+            { name: "http", run: () => server.stop() },
+            { name: "tunnel", run: () => tunnel.stop() },
+            { name: "notifications", run: () => notifications.flush() },
+            { name: "state", run: () => clearState(ctx.directory) },
+          ] : []),
+        ]
+        await runShutdownSteps(steps, (step, error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          audit.log("shutdown.step_failed", { step, error: message })
+          logger.warn("Shutdown step failed", { step, error: message })
+        })
       })
     }
 
@@ -483,13 +499,18 @@ export default {
     // (opencode.shutdown(), notifications.flush(), etc.) silently never run;
     // the `void` only suppressed the TS error without fixing anything.
     // SIGINT and SIGTERM fire BEFORE drain and are sufficient for graceful
-    // shutdown. Note (out-of-scope follow-up): in the multi-instance model,
-    // SIGINT/SIGTERM use process.once, so only the first plugin-factory
-    // invocation's runShutdown() runs on a signal. The second invocation's
-    // cleanup depends on the primary tearing down shared resources. This
-    // design tension is pre-existing and not addressed in this PR.
-    process.once("SIGINT", () => void runShutdown())
-    process.once("SIGTERM", () => void runShutdown())
+    // shutdown. The process-wide coordinator owns one listener per signal and
+    // fans out to every plugin instance, avoiding listener accumulation while
+    // preserving per-instance cleanup.
+    registerProcessShutdown(async () => {
+      try {
+        await runShutdown()
+      } catch (error) {
+        logger.error("Plugin shutdown failed", {
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+    })
 
     return {
       event: roleAwareHooks.event,

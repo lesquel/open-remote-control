@@ -127,6 +127,7 @@ body {
 .conn-dot.connected     { background: var(--success); box-shadow: 0 0 4px var(--success); }
 .conn-dot.error         { background: var(--warn); }
 .conn-dot.disconnected  { background: var(--danger); }
+.conn-dot.incompatible  { background: var(--danger); box-shadow: 0 0 4px var(--danger); }
 
 .conn-label {
   color: var(--fg-muted);
@@ -134,6 +135,23 @@ body {
   white-space: nowrap;
 }
 .conn-label.reconnecting { color: var(--warn); }
+.conn-label.incompatible { color: var(--danger); font-weight: 700; }
+
+.protocol-mismatch {
+  position: fixed;
+  inset: var(--header-h) 0 auto 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--danger);
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+}
 
 /* Header action buttons (minimal, TUI style) */
 .header-actions {
@@ -141,6 +159,24 @@ body {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.activity-center-btn { position: relative; }
+.activity-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--bg);
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
@@ -3056,6 +3092,14 @@ body {
     display: none;
   }
 
+  .conn-label.incompatible {
+    display: inline;
+  }
+
+  .protocol-mismatch {
+    justify-content: space-between;
+  }
+
   /* Hide "+ New" button text — icon only */
   #header-new-btn .btn-text {
     display: none;
@@ -3322,7 +3366,7 @@ body {
     padding: 10px 14px;
   }
   /* Allow / Deny buttons: 44px min touch target */
-  .btn-allow, .btn-deny {
+  #btn-allow, #btn-deny {
     min-height: 44px;
     font-size: 13px;
   }
@@ -3799,6 +3843,64 @@ body {
   overflow-y: auto;
   flex: 1;
   padding: 0;
+}
+
+.cpm-connect-content,
+.cpm-devices {
+  padding: 16px;
+}
+
+.cpm-devices {
+  display: grid;
+  gap: 10px;
+}
+
+.cpm-device {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-3);
+  padding: 12px;
+}
+
+.cpm-device.is-inactive { opacity: .65; }
+
+.cpm-device-heading,
+.cpm-device-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cpm-device-name { flex: 1; min-width: 0; }
+.cpm-device-role { min-width: 112px; }
+
+.cpm-device-meta {
+  color: var(--fg-muted);
+  font-size: 10px;
+  margin: 7px 0 10px;
+}
+
+.cpm-current-badge {
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-size: 9px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+.cpm-device-actions .btn { min-height: 36px; }
+
+.cpm-empty {
+  color: var(--fg-muted);
+  padding: 24px 16px;
+  text-align: center;
+}
+
+@media (max-width: 520px) {
+  .cpm-device-actions { align-items: stretch; flex-wrap: wrap; }
+  .cpm-device-role { flex: 1 1 100%; min-height: 44px; }
+  .cpm-device-actions .btn { flex: 1; min-height: 44px; }
 }
 
 /* Tabs */
@@ -4427,6 +4529,57 @@ body {
 }
 .modal-box--wide { max-width: 680px; }
 
+.diagnostics-modal {
+  max-height: min(88vh, 760px);
+  display: flex;
+  flex-direction: column;
+}
+
+.diagnostics-modal .modal-header {
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.diagnostics-modal .modal-header h2,
+.diagnostics-card h3 { margin: 0; }
+
+.diagnostics-modal .modal-header p {
+  margin: 5px 0 0;
+  color: var(--fg-dim);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.diagnostics-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.diagnostics-body { flex: 1; overflow: auto; padding: 16px; }
+.diagnostics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.diagnostics-card { padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-raised); }
+.diagnostics-card--wide { margin-top: 12px; }
+.diagnostics-card h3 { margin-bottom: 10px; color: var(--fg-dim); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.diagnostics-card dl { margin: 0; }
+.diagnostics-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 12px; padding: 5px 0; }
+.diagnostics-row dt { color: var(--fg-dim); }
+.diagnostics-row dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+.diagnostics-errors { display: grid; gap: 8px; margin: 0; padding-left: 22px; }
+.diagnostics-errors li { padding-left: 4px; }
+.diagnostics-errors strong, .diagnostics-errors span { display: block; overflow-wrap: anywhere; }
+.diagnostics-errors span, .diagnostics-empty { color: var(--fg-dim); }
+.diagnostics-integrations { display: grid; gap: 8px; }
+.diagnostics-integrations article { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: 12px; }
+.diagnostics-integrations span { color: var(--fg-dim); overflow-wrap: anywhere; text-align: right; }
+.diagnostics-error { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--danger); border-radius: var(--radius); }
+.diagnostics-error span { color: var(--fg-dim); }
+
+@media (max-width: 620px) {
+  .diagnostics-modal { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .diagnostics-modal .modal-header { flex-direction: column; }
+  .diagnostics-actions { width: 100%; justify-content: stretch; }
+  .diagnostics-actions .btn { flex: 1; min-height: 44px; }
+  .diagnostics-grid { grid-template-columns: 1fr; }
+}
+
 .modal-header {
   flex-shrink: 0;
 }
@@ -4918,6 +5071,89 @@ body {
 }
 .modal-close:hover { color: var(--fg); background: var(--bg-3); }
 
+/* ── Activity center ────────────────────────────────────────────────────── */
+.activity-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.activity-panel .modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.activity-panel .modal-header h2 { margin: 0; font-size: 0.95rem; }
+.activity-subtitle {
+  margin: 4px 0 0;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.activity-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.activity-list { overflow: auto; }
+.activity-group h3 {
+  margin: 0;
+  padding: 10px 14px 6px;
+  color: var(--fg-dim);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.activity-item {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 54px;
+  padding: 9px 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.activity-item:hover,
+.activity-item:focus-visible { background: var(--bg-3); }
+.activity-item.needs-attention { border-left: 3px solid var(--warn); }
+.activity-icon {
+  color: var(--accent);
+  font-size: 1rem;
+  text-align: center;
+}
+.activity-item.needs-attention .activity-icon { color: var(--warn); }
+.activity-copy { display: grid; min-width: 0; gap: 2px; }
+.activity-copy strong,
+.activity-copy span,
+.activity-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-copy strong { font-size: 0.8rem; }
+.activity-copy span,
+.activity-copy small,
+.activity-item time { color: var(--fg-muted); font-size: 0.7rem; }
+.activity-empty {
+  display: grid;
+  gap: 6px;
+  padding: 36px 18px;
+  color: var(--fg-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+.activity-empty strong { color: var(--fg); }
+
 /* ── Help modal body sections ───────────────────────────────────────────── */
 .help-section {
   padding: 12px 16px;
@@ -4975,6 +5211,14 @@ kbd {
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 600px) {
   .modal-panel { max-width: 100%; border-radius: 0; }
+  .activity-panel {
+    width: 100%;
+    height: 100%;
+    max-height: 100%;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .activity-panel .modal-header { padding-top: max(14px, env(safe-area-inset-top)); }
+  .activity-item { min-height: 60px; }
   .empty-state { padding: 24px 16px; }
 }
 
@@ -5067,4 +5311,3 @@ button:focus-visible, a:focus-visible { outline-offset: 4px; }
     scroll-behavior: auto !important;
   }
 }
-

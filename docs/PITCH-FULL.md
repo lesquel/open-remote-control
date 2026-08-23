@@ -6,7 +6,7 @@ Deck de 20 slides para una presentación de 20–30 minutos. Cubre problema, sol
 
 ## Documento técnico detallado — tecnologías, funcionamiento y alcance
 
-> **Nota de versión:** el pitch original fue escrito con datos de v1.14.1. En el repositorio actual, `package.json` y `src/server/constants.ts` indican **v1.16.13**. Esta sección resume el funcionamiento real del proyecto según el código y la documentación actual, manteniendo el pitch como narrativa de presentación.
+> **Borrador histórico:** este pitch conserva el snapshot de v1.14.1 y no debe usarse como fuente de hechos actuales. Consultá `package.json`, `README.md`, `docs/ARCHITECTURE.md` y `docs/THREAT_MODEL.md` antes de reutilizar cifras o capacidades.
 
 ### 1. Resumen ejecutivo
 
@@ -869,7 +869,7 @@ Si ya hay un OpenCode corriendo y abrís otro, el segundo detecta que el puerto 
 
 **Números:**
 
-- Versión actual: **v1.14.1** (abril 2026)
+- Versión de este borrador histórico: **v1.14.1** (abril 2026)
 - **232 tests** verdes, 443 expect calls, 22 archivos de tests
 - **0 vulnerabilidades** reportadas
 - **27 endpoints HTTP** documentados y cubiertos

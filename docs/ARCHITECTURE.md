@@ -2,7 +2,7 @@
 
 opencode-pilot is an OpenCode plugin that adds a remote-control layer on top of the OpenCode SDK. It exposes sessions, prompts, permissions, and live events over HTTP + Server-Sent Events so you can monitor and drive OpenCode from a phone, another machine, or a public URL — without changing how OpenCode itself works.
 
-**Current version:** v1.18.0. The internal structure was fully reorganized in this version — see `docs/REFACTOR-2026-04-architecture.md` for the full migration history and rationale.
+The current architecture was introduced in v1.18.0 and continues to evolve. Release automation keeps `package.json` and the runtime `PILOT_VERSION` synchronized; dashboard cache generations are derived from them. Protocol compatibility versions evolve independently; see `docs/REFACTOR-2026-04-architecture.md` for migration history and rationale.
 
 ---
 
@@ -35,7 +35,7 @@ infra/ ← core/ ← (transport/, integrations/, notifications/) ← server/inde
 - **`transport/`, `integrations/`, and `notifications/` import from `core/` and `infra/`.** Cross-imports between siblings (e.g., `transport/ → notifications/`) are FORBIDDEN except through the two explicit ports below.
 - **`server/index.ts` is the only file that imports across all layers.** It is the composition root by definition — standard hexagonal/clean architecture.
 
-This rule is enforced by convention (documented here, in `AGENTS.md` §3, and in code review). If violations recur, mechanical enforcement via `eslint-plugin-import/no-restricted-paths` is the natural next step.
+This rule is documented here and in `AGENTS.md` §3, and mechanically enforced by `scripts/architecture.test.ts`. The test resolves production relative imports and fails when a top-level module crosses its allowlist; it deliberately excludes tests and declarations, where realistic fixtures may need broader imports.
 
 ---
 
@@ -70,8 +70,13 @@ Implementations: `notifications/channels/telegram/index.ts`, `notifications/chan
 ### `AgentIntegration` — `src/integrations/ports.ts`
 
 ```ts
-export interface AgentIntegration {
-  readonly name: string          // 'opencode' | 'codex' | 'cursor' | ...
+export interface AgentDescriptor {
+  readonly id: string
+  readonly displayName: string
+  readonly capabilities: AgentCapabilities
+}
+
+export interface AgentIntegration extends AgentDescriptor {
   readonly setup: (deps: IntegrationDeps) => IntegrationHandle
 }
 
@@ -84,7 +89,9 @@ export type IntegrationDeps = {
 }
 ```
 
-The composition root passes `registerRoute` only to integrations that need HTTP; `registerHook` only to integrations that are native SDK plugins.
+`AgentCapabilities` declares support for sessions, streaming, permissions, tools, cost, todos, files, models, and named agents. Consumers must use this metadata instead of inferring support from the provider name.
+
+`createAgentDescriptor()` validates the stable protocol ID and freezes metadata for every adapter. `createAgentIntegration()` adds the standard imperative setup contract. The composition root passes `registerRoute` only to integrations that need HTTP. OpenCode is an intentional native-SDK outlier: its setup returns the hook object OpenCode requires, but it uses the same validated descriptor.
 
 Implementations: `integrations/opencode/index.ts`, `integrations/codex/index.ts`.
 
@@ -116,11 +123,23 @@ The composition root is the only file that crosses all layers. It is organized i
 1. Create `src/integrations/cursor/index.ts`:
 
 ```ts
-import type { AgentIntegration } from '../ports'
+import { createAgentIntegration } from '../ports'
 
-export const cursorIntegration: AgentIntegration = {
-  name: 'cursor',
-  setup: ({ permissions, events, audit, registerRoute }) => {
+export const cursorIntegration = createAgentIntegration({
+  id: 'cursor',
+  displayName: 'Cursor',
+  capabilities: {
+    sessions: false,
+    streaming: false,
+    permissions: false,
+    tools: true,
+    cost: false,
+    todos: false,
+    files: false,
+    models: false,
+    agents: false,
+  },
+}, ({ permissions, events, audit, registerRoute }) => {
     registerRoute!({
       method: 'POST',
       pattern: /^\/cursor\/hooks\/(?<event>[^/]+)$/,
@@ -128,8 +147,7 @@ export const cursorIntegration: AgentIntegration = {
       handler: async (ctx) => { /* ... */ },
     })
     return { shutdown: async () => {} }
-  },
-}
+})
 ```
 
 2. Add ONE line in `src/server/index.ts`:
@@ -166,6 +184,12 @@ channels: [createTelegramChannel(...), push.channel, createSlackChannel(config.s
 Zero changes to `pipeline.ts`. Zero changes to `core/`. The port does the work.
 
 ---
+
+## Local device identity
+
+`core/devices/store.ts` owns versioned device state and capability roles. Raw device credentials are returned once, only their SHA-256 hashes are persisted through the owner-private atomic writer, and short-lived pairing secrets stay in memory. `transport/http/authentication.ts` maps either the backwards-compatible legacy bearer or a device credential to a request principal; the HTTP server enforces each route's declared capabilities before invoking its handler.
+
+The legacy bearer intentionally remains an admin migration path for existing installations. It is not a device credential and cannot be individually revoked. A future E2EE relay must build on reviewed endpoint key identities rather than treating these bearer credentials as an encryption protocol.
 
 ## Web Push subsystem (special case)
 
@@ -216,12 +240,25 @@ flowchart LR
 
 ---
 
+## SSE event delivery
+
+- Each process generation has a random identifier and monotonically increasing event sequence.
+- SSE frames carry IDs in the form `<generation>:<sequence>` while their JSON payload remains backward-compatible.
+- The event protocol version is currently `1` and is advertised by the `pilot.connected` event independently of the npm package version.
+- `/health` advertises HTTP API and SSE protocol versions separately. A dashboard accepts legacy servers that omit the SSE version, but stops reconnecting and presents a persistent reload action when a server explicitly declares an incompatible version.
+- The server retains the latest 256 events and replays at most 24 per reconnect. The dashboard sends its last accepted ID, deduplicates replays, and falls back to canonical HTTP snapshots when the cursor is too old or the host generation changed.
+- Replay is an availability feature, not durable history: the local agent remains the source of truth.
+
+---
+
 ## Security model
 
 - **Auth token** — `crypto.randomBytes(32).toString("hex")` — 64 hex chars generated at startup. Rotatable via `POST /auth/rotate`. Persisted in `pilot-state.json` only for the TUI to display.
 - **Bearer scheme** — every `auth: "required"` route checks `Authorization: Bearer <token>`. `/events` also accepts `?token=` because `EventSource` cannot set custom headers.
 - **Localhost by default** — `PILOT_HOST=127.0.0.1`. Exposed to LAN/internet only when `PILOT_TUNNEL` is set.
 - **Audit log** — every authed request, every permission decision, every SSE connection appended as JSON Lines to `.opencode/pilot-audit.log`.
+- **Request correlation** — every HTTP response carries a fresh `X-Request-ID`; server-generated error bodies and local structured logs use the same ID for diagnosis without exposing secrets.
+- **Rate limiting** — authentication failures use per-client plus global buckets, while mutations use per-route/client plus global buckets. Reads and SSE streaming are not charged; bounded global buckets prevent spoofed forwarding headers from bypassing protection.
 - **Path traversal guard** — static dashboard handler rejects paths containing `..`.
 - **Primary/passive promotion** — if port 4097 is taken (multiple OpenCode windows), the second instance runs passive (no HTTP, no tunnel) and auto-promotes when the primary exits.
 
@@ -232,4 +269,4 @@ flowchart LR
 - `docs/REFACTOR-2026-04-architecture.md` — full spec for the v1.18.0 architecture migration (6 atomic commits + JD remediation), with design decisions, risk analysis, and per-commit acceptance gates.
 - `src/server/index.ts` — the composition root; live wiring of all 8 modules.
 - `AGENTS.md` §3 — hard conventions (dependency rule, factory pattern, test co-location).
-- `AGENTS.md` §4 — release process (the three-version-bump rule, tag/push order).
+- `AGENTS.md` §4 — release process (the two-version-source rule, tag/push order).

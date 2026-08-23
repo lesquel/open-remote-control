@@ -135,15 +135,21 @@ function ensureAssetsLoaded(): void {
 }
 
 /**
- * Apply per-file template substitutions. Right now only `sw.js` uses this —
- * its `__PILOT_CACHE_VERSION__` placeholder is replaced with a version-
- * scoped cache name so browsers invalidate cached dashboard assets on
- * every plugin release (see 1.13.15 fix for the "token inválido" issue).
+ * Apply per-file template substitutions. The service worker receives a
+ * version-scoped cache name and index.html receives the same version as its
+ * asset-generation marker. Keeping both derived from the injected package
+ * version removes a manual release-time synchronization point.
  *
  * Keep this function pure and O(1) per file — it runs inside every
  * response path.
  */
 function applyTemplating(relativePath: string, content: Buffer, pilotVersion: string): Buffer {
+  if (relativePath === "index.html") {
+    const replaced = content
+      .toString("utf-8")
+      .replace(/__PILOT_ASSET_GENERATION__/g, pilotVersion)
+    return Buffer.from(replaced, "utf-8")
+  }
   if (relativePath === "sw.js") {
     const replaced = content
       .toString("utf-8")
@@ -208,8 +214,9 @@ async function serveDashboardFile(
 // ─── Handlers ───────────────────────────────────────────────────────────────
 
 export async function serveDashboard({ deps }: RouteContext): Promise<Response> {
-  const html = getDashboardHtml(deps.config.dev)
-  return new Response(html, {
+  const html = Buffer.from(getDashboardHtml(deps.config.dev), "utf-8")
+  const content = applyTemplating("index.html", html, deps.pilotVersion)
+  return new Response(new Uint8Array(content), {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       ...DASHBOARD_CACHE_HEADERS,

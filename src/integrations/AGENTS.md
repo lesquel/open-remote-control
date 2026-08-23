@@ -8,9 +8,10 @@
 - `MAX_REQUEST_BODY_BYTES` comes from `infra/http/constants` — NOT from `server/constants`
 
 ## Public API (what other modules consume from here)
-- `opencodeIntegration: AgentIntegration` — native SDK hook wiring (event, permission.ask, tool hooks)
+- `opencodeIntegration` — native SDK hook wiring plus the shared `AgentDescriptor` metadata contract
 - `codexIntegration: AgentIntegration` — HTTP bridge via `POST /codex/hooks/:event`
-- `interface AgentIntegration` — (`ports.ts`) the extension point for new CLI agents
+- `interface AgentIntegration` and `createAgentIntegration()` — (`ports.ts`) the extension point for HTTP/hook-bridged agents
+- `AgentDescriptor` / `AgentCapabilities` — shared metadata contract used by both imperative and native-SDK integrations
 - `type IntegrationDeps` — (`ports.ts`) what the composition root injects into every integration
 - `type IntegrationHandle` — (`ports.ts`) what `setup()` returns (always includes `shutdown`)
 - `type RouteSpec` — (`ports.ts`) used by integrations that self-register HTTP routes

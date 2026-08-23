@@ -4,6 +4,7 @@
 
 export { createEventBus, getSharedEventBus } from "./events/bus"
 export type { EventBus } from "./events/bus"
+export { HTTP_API_PROTOCOL_VERSION, SSE_PROTOCOL_VERSION } from "./protocol"
 
 export { createPermissionQueue } from "./permissions/queue"
 export type {
@@ -41,6 +42,19 @@ export type {
 } from "./settings/store"
 
 export { PilotError } from "./errors"
+
+export { createAgentDescriptor } from "./types/agent-integration"
+export type { AgentDescriptor, AgentCapabilities } from "./types/agent-integration"
+
+export { createDeviceStore, capabilitiesForRole } from "./devices/store"
+export type {
+  DeviceStore,
+  DeviceStoreDeps,
+  Device,
+  DeviceRole,
+  DeviceCapability,
+  IssuedDevice,
+} from "./devices/store"
 
 export type {
   PilotEvent,

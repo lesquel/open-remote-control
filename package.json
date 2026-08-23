@@ -1,6 +1,6 @@
 {
   "name": "@lesquel/opencode-pilot",
-  "version": "1.21.1",
+  "version": "1.22.0",
   "description": "Remote control web dashboard for OpenCode — multi-project tabs, live SSE streaming, mobile-friendly, push/Telegram notifications, tunnel for phone access from anywhere.",
   "publishConfig": {
     "access": "public"
@@ -16,6 +16,10 @@
   },
   "files": [
     "src/",
+    "!src/**/*.test.ts",
+    "!src/**/__tests__/**",
+    "!src/**/AGENTS.md",
+    "!src/**/*.d.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -31,6 +35,8 @@
     "lint": "oxlint .",
     "format": "prettier --write 'src/**/*.ts'",
     "test": "bun test",
+    "test:e2e": "playwright test",
+    "load:sse": "bun scripts/load-sse.ts",
     "prepublishOnly": "bun scripts/prepublish-guard.ts && tsc --noEmit && bun test"
   },
   "repository": {
@@ -84,7 +90,11 @@
     "qrcode-terminal": "^0.12.0",
     "web-push": "^3.6.7"
   },
+  "overrides": {
+    "uuid": "13.0.2"
+  },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/bun": "latest",
     "@types/web-push": "^3.6.4",
     "oxlint": "^1.65.0",

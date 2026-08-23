@@ -15,7 +15,7 @@
 //   never passed to this integration; it exists only for future integrations
 //   that embed an imperative SDK registration API.
 
-import type { IntegrationHandle } from '../ports'
+import { createAgentDescriptor, type IntegrationHandle } from '../ports'
 import type { NotificationService } from '../../core/types/notification-service'
 import type { PermissionQueue } from '../../core/permissions/queue'
 import type { AuditLog } from '../../core/audit/log'
@@ -65,8 +65,24 @@ export type OpenCodeSetupDeps = {
 
 // Intentional outlier: this does NOT implement the `AgentIntegration` port
 // (../ports.ts) — native-SDK shape, see the SDK injection-shape note above.
+const descriptor = createAgentDescriptor({
+  id: 'opencode',
+  displayName: 'OpenCode',
+  capabilities: {
+    sessions: true,
+    streaming: true,
+    permissions: true,
+    tools: true,
+    cost: true,
+    todos: true,
+    files: true,
+    models: true,
+    agents: true,
+  },
+})
+
 export const opencodeIntegration = {
-  name: 'opencode' as const,
+  ...descriptor,
 
   setup(deps: OpenCodeSetupDeps): OpenCodeIntegrationHandle {
     const { notifications, sessionBusyStart, client, permissions, audit } = deps
@@ -120,4 +136,6 @@ export const opencodeIntegration = {
       },
     }
   },
+} satisfies typeof descriptor & {
+  setup(deps: OpenCodeSetupDeps): OpenCodeIntegrationHandle
 }

@@ -1,8 +1,9 @@
-import { mkdirSync, writeFileSync } from "fs"
-import { dirname, join } from "path"
+import { join } from "path"
+import { writePrivateFile } from "../fs/private-file"
 import { generateQR } from "../qr/index"
 import { stateFile } from "../paths/index"
 import { shouldWriteProjectState, type ProjectStateMode } from "../paths/index"
+import { DEFAULT_PWA_URL } from "./constants"
 
 export function globalBannerPath(): string {
   return stateFile("pilot-banner.txt")
@@ -17,8 +18,7 @@ export function globalBannerPath(): string {
  */
 function safeWrite(path: string, content: string): string | null {
   try {
-    mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, content)
+    writePrivateFile(path, content)
     return null
   } catch (err) {
     // Per-project banner write is best-effort: the project may not have an
@@ -27,8 +27,6 @@ function safeWrite(path: string, content: string): string | null {
     return err instanceof Error ? err.message : String(err)
   }
 }
-
-const DEFAULT_PWA_URL = "https://lesquel.github.io/open-remote-control/"
 
 export interface BannerOptions {
   localUrl: string

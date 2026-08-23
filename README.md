@@ -27,6 +27,16 @@ Spin up OpenCode locally, get a web dashboard you can open on your laptop or pho
 
 All from one keyboard shortcut (`?` opens the command palette).
 
+### Pilot or OpenCode's built-in web UI?
+
+OpenCode already ships an excellent full browser client through `opencode web`.
+Use it when you want the complete OpenCode experience in a browser. Pilot is a
+local-first **operations companion** that loads alongside your normal TUI: it is
+optimized for quick phone control, permission approvals, attention and
+notifications, multi-project monitoring, and a shared command center for
+OpenCode plus Codex CLI. Both can be useful, and Pilot does not replace or
+disable the built-in UI.
+
 ---
 
 ## Install once, use everywhere
@@ -83,6 +93,22 @@ bun add @lesquel/opencode-pilot@latest @opencode-ai/plugin@latest
 OpenCode runs **two separate plugin loaders**: the server loader reads `opencode.json::plugin` (for `server()` exports like the dashboard), and the TUI loader reads `tui.json::plugin` (for `tui()` exports like slash commands). A spec in only one of them gets you half the plugin. Do **not** add wrappers in `<config>/plugins/` — they conflict with the server loader's strict validation.
 
 Run `opencode` from any project directory. Banner prints with URL + token + QR.
+
+### Uninstall
+
+Fully quit OpenCode, then run:
+
+```bash
+npx @lesquel/opencode-pilot uninstall
+# or: bunx @lesquel/opencode-pilot uninstall
+```
+
+The uninstaller removes only Pilot's plugin registrations, installed package,
+cache entries, legacy wrappers, and local runtime state. Add `--keep-config` to
+preserve `~/.opencode-pilot/config.json` for a future reinstall. It never edits
+your source projects. Browser-local tokens and the PWA service worker must be
+cleared separately from the browser's site-data settings; the command prints
+those final steps.
 
 ---
 
@@ -287,6 +313,8 @@ The `.env` file is searched in: (1) `process.cwd()/.env` then (2) the plugin's i
 
 ## Documentation
 
+Pilot is local-first and has no telemetry by default. Read [where data goes](docs/PRIVACY.md) and the [threat model](docs/THREAT_MODEL.md) before exposing it through a LAN or tunnel.
+
 **For users**
 - [Troubleshooting runtime issues](docs/TROUBLESHOOTING.md) — start here if `/remote` says "server not running", the dashboard 401s, push/telegram isn't arriving, or the wrong tab opens
 - [Install deep-dive](docs/INSTALL.md) — how OpenCode's two-loader plugin architecture works, every trap we've hit getting a clean install, full troubleshooting matrix
@@ -298,6 +326,9 @@ The `.env` file is searched in: (1) `process.cwd()/.env` then (2) the plugin's i
 - [`AGENTS.md`](AGENTS.md) — strict workflow for AI agents and humans editing the repo (hard rules, release process, debugging playbook, Engram protocol)
 - [`CLAUDE.md`](CLAUDE.md) — codebase overview, file map, routes, event types
 - [Architecture](docs/ARCHITECTURE.md) — design decisions with rationale
+- [Performance checks](docs/PERFORMANCE.md) — reproducible local SSE load baselines
+- [Add an agent](docs/ADDING_AN_AGENT.md) — adapter contract, capability rules, security, and tests
+- [Add a notification channel](docs/ADDING_NOTIFICATION_CHANNEL.md) — delivery contract, privacy, and registration
 - [Release checklist](docs/RELEASE.md) — step-by-step execution guide for shipping a new version
 - [Publishing to npm](docs/PUBLISHING_TO_NPM.md) — one-time npm account setup and scope choice
 - [Cloud relay v2.0 design](docs/CLOUD_RELAY_v2_DESIGN.md) — architecture doc for a future centralized service

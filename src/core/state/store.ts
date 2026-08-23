@@ -1,6 +1,7 @@
-import { dirname, join } from "path"
-import { mkdirSync, writeFileSync, existsSync, readFileSync, unlinkSync } from "fs"
+import { join } from "path"
+import { existsSync, readFileSync, unlinkSync } from "fs"
 import { stateFile, ProjectStateMode, shouldWriteProjectState } from "../../infra/paths/index"
+import { writePrivateFile } from "../../infra/fs/private-file"
 
 // Re-export from infra/paths so consumers that currently import from here
 // continue to work without changes.
@@ -35,15 +36,6 @@ export function globalStatePath(): string {
   return stateFile("pilot-state.json")
 }
 
-
-function safeMkdir(path: string) {
-  try {
-    mkdirSync(path, { recursive: true })
-  } catch {
-    // ignore — best-effort; writeFile below will surface a clearer error
-  }
-}
-
 /**
  * Per-path write outcome. `ok:false` callers can surface `error` to the user
  * (or the OpenCode log panel) so silent ENOENT / EACCES on `~/.opencode-pilot/`
@@ -70,8 +62,7 @@ export interface WriteStateResult {
 
 function writeOne(path: string, content: string): WriteOutcome {
   try {
-    safeMkdir(dirname(path))
-    writeFileSync(path, content)
+    writePrivateFile(path, content)
     return { path, ok: true }
   } catch (err) {
     return { path, ok: false, error: (err as Error)?.message ?? String(err) }

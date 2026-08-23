@@ -23,10 +23,21 @@ import type { PermissionQueue } from '../core/permissions/queue'
 import type { EventBus } from '../core/events/bus'
 import type { AuditLog } from '../core/audit/log'
 import type { Route } from '../infra/http/types'
+import { createAgentDescriptor } from '../core/types/agent-integration'
+import type { AgentDescriptor } from '../core/types/agent-integration'
 
-export interface AgentIntegration {
-  readonly name: string
+export { createAgentDescriptor }
+export type { AgentDescriptor, AgentCapabilities } from '../core/types/agent-integration'
+
+export interface AgentIntegration extends AgentDescriptor {
   readonly setup: (deps: IntegrationDeps) => IntegrationHandle
+}
+
+export function createAgentIntegration(
+  descriptor: AgentDescriptor,
+  setup: (deps: IntegrationDeps) => IntegrationHandle,
+): AgentIntegration {
+  return Object.freeze({ ...createAgentDescriptor(descriptor), setup })
 }
 
 // RouteSpec is an alias for the infra Route type. Using `unknown` as TDeps means

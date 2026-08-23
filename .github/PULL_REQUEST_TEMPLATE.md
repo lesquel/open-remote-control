@@ -31,7 +31,7 @@ Closes #
 - [ ] A maintainer approved the linked issue before this PR was opened.
 - [ ] This PR is scoped to one issue.
 - [ ] I added or updated tests where appropriate.
-- [ ] I did not edit `package.json::version`, `src/server/constants.ts::PILOT_VERSION`, dashboard `GEN`, or `CHANGELOG.md` unless explicitly asked by the maintainer.
+- [ ] I did not edit `package.json::version`, `src/server/constants.ts::PILOT_VERSION`, or `CHANGELOG.md` unless explicitly asked by the maintainer.
 - [ ] I did not add dependencies without explaining why.
 - [ ] I did not include AI attribution, generated-by footers, or `Co-Authored-By` lines.
 - [ ] I did not include secrets, tokens, private tunnel URLs, or private logs.

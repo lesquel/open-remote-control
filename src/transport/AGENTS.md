@@ -16,21 +16,25 @@
 - `interface RouteDeps` — the full dependency bag injected by the composition root
 - `interface RemoteServer` — `{ start, stop, registerRoute }`
 - `checkBodySize()` — 413 guard, re-exported for integrations
-- `readBoundedText()` — streaming body reader with size cap
+- `readBoundedText()` — integration-local streaming text reader with size cap
 
 ## Key files
-- `http/server.ts` — `createRemoteServer`; Bun.serve setup + route dispatch
+- `http/server.ts` — `createRemoteServer`; Bun.serve setup, request-ID assignment, bounded-body/auth/capability/rate middleware, and route dispatch
+- `http/authentication.ts` — legacy-token migration principal plus per-device credential authentication and capability checks
 - `http/routes.ts` — core route table, `RouteDeps` type, `matchRoute()`
 - `http/validation.ts` — generic body validation middleware
 - `http/handlers/sessions.ts` — `/sessions*` endpoints
 - `http/handlers/permissions.ts` — `/permissions*` endpoints
-- `http/handlers/events.ts` — `/events` SSE endpoint
+- `http/handlers/events.ts` — `/events` SSE endpoint; authenticates the stream and forwards the optional replay cursor to the core event bus
 - `http/handlers/settings.ts` — `/settings*` + `/settings/vapid/generate` + push endpoints
 - `http/handlers/system.ts` — thin barrel + core system handlers: `getStatus`, `getHealth`, `getConnectInfo`, `rotateAuthToken`, `extractDirectory`, `getIP`; re-exports all symbols from `dashboard.ts`, `sdk-proxy.ts`, and `filesystem.ts` so importers need no changes
 - `http/handlers/dashboard.ts` — `/`, `/dashboard/*` static asset serving + in-memory asset cache
 - `http/handlers/sdk-proxy.ts` — SDK proxy endpoints: `/tools`, `/project`, `/agents`, `/providers`, `/mcp/status`, `/lsp/status`
 - `http/handlers/filesystem.ts` — file-browser endpoints: `/file/list`, `/file/content`, `/fs/glob`, `/fs/read`
 - `http/handlers/projects.ts` — `/projects`, `/project/current`
+- `http/handlers/devices.ts` — `/devices*` management plus short-lived one-time `/pairing*` exchange
+- `http/handlers/diagnostics.ts` — protected, secret-free local runtime/config/integration diagnostics snapshot
+- `http/handlers/integrations.ts` — versioned loaded-agent descriptor and capability catalog
 - `http/middlewares/auth.ts` — re-exports `validateToken`, `getIP`, `safeEqual` from `infra/http/auth`
 - `http/middlewares/cors.ts` — re-exports CORS helpers from `infra/http/cors`
 - `http/middlewares/json.ts` — re-exports `json`, `jsonError` from `infra/http/json`

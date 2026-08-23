@@ -7,6 +7,7 @@ import { isPartStreaming } from '../state/state.js'
 // Dynamic agent references — imported lazily to avoid circular-init issues
 import { renderAgentBadge, getMcpServers, sanitizeMcpName } from './references.js'
 import { LIMITS } from '../constants.js'
+import { createLatestRequestGate } from './latest-request.js'
 // TODO (sessions subagent): import renderAgentBadge from './references.js' and use it
 //   for session-list header badges in sessions.js to get consistent dynamic coloring.
 
@@ -114,20 +115,14 @@ function buildAttachmentUrl(part) {
  * Unknown mimes fall back to a text link — defensive for any future SDK extension.
  */
 const ATTACHMENT_MIME_SAFELIST = new Set([
-  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp',
 ])
 
 /**
  * Render a FilePart as an <img> element.
  *
- * SVG SECURITY NOTE:
- *   SVGs are rendered ONLY via <img src="...">, never via innerHTML, <object>,
- *   or <iframe>. When a browser loads SVG via <img>, it sandboxes the SVG
- *   context — inline <script> tags, event handlers, and external resource loads
- *   inside the SVG are all blocked. Rendering SVG via innerHTML would execute
- *   those scripts in the page context, enabling XSS.
- *   DO NOT "improve" this to use innerHTML or <object>, even if the SVG
- *   "looks safe" — the server does not sanitize SVG content.
+ * Active document formats such as SVG are excluded by both client and server
+ * safelists. Do not add them without sanitization and dedicated security tests.
  *
  * @param {object} part  FilePart from the SDK
  * @returns {string}     HTML string
@@ -250,18 +245,21 @@ function renderReasoningPart(p) {
   const id = 'reasoning-' + (p.id ?? Math.random().toString(36).slice(2))
 
   return `<div class="reasoning-block${expandedClass}" id="${escapeHtml(id)}">
-    <div class="reasoning-header" onclick="window.__toggleReasoning('${escapeHtml(id)}')">
+    <div class="reasoning-header" role="button" tabindex="0" aria-expanded="${defaultExpanded}" aria-controls="${escapeHtml(id)}-body" onclick="window.__toggleReasoning('${escapeHtml(id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__toggleReasoning('${escapeHtml(id)}')}">
       <span class="reasoning-toggle">▸</span>
       <span class="reasoning-label">~ thinking</span>
       ${durationHtml}
     </div>
-    <div class="reasoning-body">${text}</div>
+    <div class="reasoning-body" id="${escapeHtml(id)}-body">${text}</div>
   </div>`
 }
 
 // Expose reasoning toggle globally (called from inline onclick in rendered HTML)
 window.__toggleReasoning = function(id) {
-  document.getElementById(id)?.classList.toggle('reasoning-expanded')
+  const block = document.getElementById(id)
+  if (!block) return
+  const expanded = block.classList.toggle('reasoning-expanded')
+  block.querySelector('.reasoning-header')?.setAttribute('aria-expanded', String(expanded))
 }
 
 // ── Agent transition part renderer ──────────────────────────────────────────
@@ -713,7 +711,7 @@ function renderToolPart(p) {
       return `<div class="tw-item tw-item--${escapeHtml(stClass)}">
         <span class="tw-item-icon" aria-hidden="true">${stIcon}</span>
         <span class="tw-item-text">${text}</span>
-        <button class="tw-pin-btn" onclick="window.__pinTodoItem(this)" data-text="${escapeHtml(String(item.text ?? item.content ?? ''))}" title="Pin this todo">[+]</button>
+        <button class="tw-pin-btn" onclick="window.__pinTodoItem(this)" data-text="${escapeHtml(String(item.text ?? item.content ?? ''))}" title="Pin this todo" aria-label="Pin todo: ${text}">[+]</button>
       </div>`
     }).join('')
     todoItemsHtml = `<div class="tw-items">${rows}</div>`
@@ -738,11 +736,11 @@ function renderToolPart(p) {
   const partIdAttr = p.id ? ` data-part-id="${escapeHtml(p.id)}"` : ''
   const msgIdAttr = p.messageID ? ` data-message-id="${escapeHtml(p.messageID)}"` : ''
   return `<div class="tool-block ${hiddenClass}${autoOpen}" id="${id}"${partIdAttr}${msgIdAttr}>
-    <div class="tool-line tool-header" onclick="window.__toggleTool('${id}')">
+    <div class="tool-line tool-header" role="button" tabindex="0" aria-expanded="${autoOpen !== ''}" aria-controls="${id}-body" onclick="window.__toggleTool('${id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__toggleTool('${id}')}">
       ${summaryHtml}
       <span class="tool-chevron">▶</span>
     </div>
-    <div class="tool-body">${todoItemsHtml}${argsHtml}${resultHtml}${attachmentsHtml}</div>
+    <div class="tool-body" id="${id}-body">${todoItemsHtml}${argsHtml}${resultHtml}${attachmentsHtml}</div>
   </div>`
 }
 
@@ -796,7 +794,10 @@ export function showTypingIndicator() {
  * erased in-progress deltas and made the UI flash. We now only show the
  * placeholder when the pane is genuinely empty (first load, session switch).
  */
+const messageLoadGate = createLatestRequestGate(() => getState().activeSession)
+
 export async function loadMessages(sessionId) {
+  const requestTicket = messageLoadGate.begin(sessionId)
   const box = document.getElementById('messages')
   const alreadyHasMessages = !!box.querySelector('.message')
   if (!alreadyHasMessages) {
@@ -808,11 +809,15 @@ export async function loadMessages(sessionId) {
   }
   try {
     const raw = await fetchMessages(sessionId)
+    if (!messageLoadGate.isCurrent(requestTicket)) return
     const msgs = Array.isArray(raw) ? raw : []
     console.debug('[pilot:data] loadMessages session=%s raw=%d', sessionId, msgs.length)
     withErrorBoundary('messages', () => renderMessages(msgs, { sessionId }), () => loadMessages(sessionId))
   } catch (_) {
-    if (!alreadyHasMessages) {
+    if (
+      !alreadyHasMessages &&
+      messageLoadGate.isCurrent(requestTicket)
+    ) {
       box.innerHTML = '<div class="panel-error"><span>⚠ Failed to load messages</span></div>'
     }
   }
@@ -859,7 +864,10 @@ export function renderMessages(msgs, { sessionId } = {}) {
 
 // Expose toggleTool globally (called from inline onclick in rendered HTML)
 window.__toggleTool = function(id) {
-  document.getElementById(id)?.classList.toggle('open')
+  const block = document.getElementById(id)
+  if (!block) return
+  const expanded = block.classList.toggle('open')
+  block.querySelector('.tool-header')?.setAttribute('aria-expanded', String(expanded))
 }
 
 /**

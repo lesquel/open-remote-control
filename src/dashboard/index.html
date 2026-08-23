@@ -37,14 +37,13 @@
   SW re-registers itself during the normal page init and the next load
   is fast again.
 
-  Bump PILOT_ASSET_GEN any time the dashboard assets change in a way
-  that old SW caches must be flushed (new file, renamed file, breaking
-  change to main.js/sw.js). The value matches package.json::version.
+  The server and the GitHub Pages deployment replace the generation
+  placeholder below with package.json::version. Do not hardcode it.
 -->
 <script>
 (function() {
   try {
-    var GEN = "1.21.1";
+    var GEN = "__PILOT_ASSET_GENERATION__";
     var KEY = "pilot:asset-gen";
     if (localStorage.getItem(KEY) === GEN) return;
     localStorage.setItem(KEY, GEN);
@@ -162,22 +161,23 @@
     </div>
 
     <!-- SSE connection indicator -->
-    <div class="conn-indicator" id="conn-indicator">
-      <div class="conn-dot" id="conn-dot" title="SSE connection status"></div>
+    <div class="conn-indicator" id="conn-indicator" role="status" aria-live="polite">
+      <div class="conn-dot" id="conn-dot" title="SSE connection status" aria-hidden="true"></div>
       <span class="conn-label" id="conn-label"></span>
     </div>
 
     <!-- Header actions -->
     <div class="header-actions">
-      <button class="btn btn-icon" id="connect-phone-btn" title="Connect from phone (c)">
+      <button class="btn btn-icon" id="connect-phone-btn" title="Connect from phone (c)" aria-label="Connect from phone">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/>
           <line x1="12" y1="18" x2="12.01" y2="18"/>
         </svg>
       </button>
-      <button class="btn btn-icon" id="sidebar-toggle-btn" title="Toggle sidebar (alt+b)">☰</button>
-      <button class="btn btn-icon" id="info-toggle-btn" title="Toggle info panel (alt+i)">i</button>
-      <button class="btn btn-icon" id="settings-btn" title="Settings">⚙</button>
+      <button class="btn btn-icon" id="sidebar-toggle-btn" title="Toggle sidebar (alt+b)" aria-label="Toggle session sidebar">☰</button>
+      <button class="btn btn-icon" id="info-toggle-btn" title="Toggle info panel (alt+i)" aria-label="Toggle session information">i</button>
+      <button class="btn btn-icon" id="settings-btn" title="Settings" aria-label="Open settings">⚙</button>
+      <button class="btn btn-icon activity-center-btn" id="activity-center-btn" title="Activity center" aria-label="Activity center: 0 unread">◎<span id="activity-count" class="activity-count" hidden></span></button>
       <!-- Mobile kebab menu — reveals commands not accessible without keyboard -->
       <button class="btn btn-icon mobile-kebab-btn" id="mobile-kebab-btn" title="More actions" aria-label="More actions" aria-haspopup="true" aria-expanded="false">⋮</button>
       <button class="btn btn-primary" id="header-new-btn" style="flex-shrink:0">+<span class="btn-text"> New</span></button>
@@ -185,7 +185,7 @@
   </div>
 
   <!-- ── Permission Banner ──────────────────────────────────────────────── -->
-  <div id="perm-banner" role="alertdialog" aria-live="polite" aria-atomic="true">
+  <div id="perm-banner" role="alertdialog" aria-live="polite" aria-atomic="true" aria-labelledby="perm-title" aria-describedby="perm-detail perm-meta">
     <div class="perm-banner-row">
       <div class="perm-banner-icon" data-risk="shell" aria-hidden="true">⚠</div>
       <div class="perm-banner-body">
@@ -421,27 +421,27 @@
           </select>
         </div>
         <div class="setting-row">
-          <label>Sound notifications</label>
+          <label for="s-sound">Sound notifications</label>
           <label class="toggle"><input type="checkbox" id="s-sound"><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
-          <label>Browser notifications</label>
+          <label for="s-notif">Browser notifications</label>
           <label class="toggle"><input type="checkbox" id="s-notif"><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
-          <label>Show reasoning by default</label>
+          <label for="s-reasoning">Show reasoning by default</label>
           <label class="toggle"><input type="checkbox" id="s-reasoning"><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
-          <label>Show tool calls</label>
+          <label for="s-tools">Show tool calls</label>
           <label class="toggle"><input type="checkbox" id="s-tools" checked><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
-          <label>Grid background</label>
+          <label for="s-grid">Grid background</label>
           <label class="toggle"><input type="checkbox" id="s-grid"><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
-          <label>Scanlines overlay</label>
+          <label for="s-scanlines">Scanlines overlay</label>
           <label class="toggle"><input type="checkbox" id="s-scanlines"><span class="toggle-slider"></span></label>
         </div>
         <div class="setting-row">
@@ -487,8 +487,25 @@
 
       <!-- ── Notifications ────────────────────────────────────────────────── -->
       <section id="settings-pane-notif" role="tabpanel" class="settings-pane" data-pane="notif" hidden>
+        <div class="pcf-row">
+          <label for="s-notify-permission">Permission required</label>
+          <label class="toggle"><input type="checkbox" id="s-notify-permission"><span class="toggle-slider"></span></label>
+          <span class="pcf-source" data-source-for="notificationPreferences"></span>
+        </div>
+        <div class="pcf-row">
+          <label for="s-notify-finished">Agent finished</label>
+          <label class="toggle"><input type="checkbox" id="s-notify-finished"><span class="toggle-slider"></span></label>
+          <span></span>
+        </div>
+        <div class="pcf-row">
+          <label for="s-notify-errors">Agent error</label>
+          <label class="toggle"><input type="checkbox" id="s-notify-errors"><span class="toggle-slider"></span></label>
+          <span></span>
+        </div>
+        <small class="pcf-hint">Controls outbound Telegram, Web Push, and future notification channels. Dashboard activity remains local and visible.</small>
+        <hr class="settings-section-divider">
         <div class="pcf-row" id="push-notif-setting-row">
-          <label>Push notifications for permissions</label>
+          <label for="s-push-notif">Browser notifications</label>
           <div style="display:flex;align-items:center;gap:8px">
             <label class="toggle"><input type="checkbox" id="s-push-notif"><span class="toggle-slider"></span></label>
             <button class="btn btn-ghost" id="push-notif-test-btn" style="font-size:10px;padding:2px 8px;min-height:22px;display:none">Test</button>
@@ -577,14 +594,14 @@
 </div>
 
 <!-- Command Palette (Ctrl+P) -->
-<div id="command-palette">
+<div id="command-palette" aria-label="Command palette">
   <div class="palette-box">
     <div class="palette-search">
       <span class="palette-search-icon">▶</span>
-      <input id="palette-input" placeholder="Search sessions and commands…" autocomplete="off" spellcheck="false">
+      <input id="palette-input" role="combobox" aria-label="Search commands and sessions" aria-controls="palette-list" aria-autocomplete="list" aria-expanded="false" placeholder="Search sessions and commands…" autocomplete="off" spellcheck="false">
       <span class="palette-hint"><kbd>↑↓</kbd> navigate &nbsp;<kbd>↵</kbd> select &nbsp;<kbd>esc</kbd> close</span>
     </div>
-    <div id="palette-list"></div>
+    <div id="palette-list" role="listbox" aria-label="Commands and sessions"></div>
   </div>
 </div>
 

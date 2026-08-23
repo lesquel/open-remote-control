@@ -157,6 +157,31 @@ describe("PATCH /settings handler", () => {
     expect(stored.telegramToken).toBe("my-tok")
   })
 
+  test("persists notification preferences and returns effective defaults", async () => {
+    const path = join(dir, "config.json")
+    const deps = makeDeps({ configPath: path })
+    const initial = await (await getSettings(makeCtx(deps))).json()
+    expect(initial.settings.notificationPreferences).toEqual({
+      permissionRequired: true,
+      agentFinished: true,
+      errors: true,
+    })
+
+    const req = new Request("http://test/settings", {
+      method: "PATCH",
+      body: JSON.stringify({ notificationPreferences: { agentFinished: false } }),
+    })
+    const response = await patchSettings(makeCtx(deps, req))
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.settings.notificationPreferences).toEqual({
+      permissionRequired: true,
+      agentFinished: false,
+      errors: true,
+    })
+    expect(deps.settingsStore.load().notificationPreferences).toEqual({ agentFinished: false })
+  })
+
   test("rejects invalid port with 400", async () => {
     const deps = makeDeps({ configPath: join(dir, "config.json") })
     const req = new Request("http://test/settings", {
@@ -545,5 +570,20 @@ describe("V3 hookToken live-update (mutable container)", () => {
 
     // After clearing, hookToken must be undefined in memory
     expect(deps.config.hookToken).toBeUndefined()
+    expect(deps.settingsStore.load().hookToken).toBeUndefined()
+    const response = await res.json() as { settings: { hookTokenConfigured: boolean } }
+    expect(response.settings.hookTokenConfigured).toBe(false)
+  })
+
+  test("POST /settings/reset clears a store-sourced hook token in memory", async () => {
+    const configPath = join(dir, "config.json")
+    writeFileSync(configPath, JSON.stringify({ hookToken: "old-token" }), "utf-8")
+    const config = loadConfig({})
+    config.hookToken = "old-token"
+    const deps = makeDeps({ configPath, config })
+    const res = await resetSettings(makeCtx(deps))
+    expect(res.status).toBe(200)
+    expect(deps.config.hookToken).toBeUndefined()
+    expect(deps.settingsStore.load().hookToken).toBeUndefined()
   })
 })

@@ -468,8 +468,8 @@ export async function dispatchCodexHook(ctx: RouteContext): Promise<Response> {
     return jsonError("UNKNOWN_HOOK_EVENT", `Unknown hook event: "${event.slice(0, 40)}"`, 404, CORS_HEADERS)
   }
 
-  // Read body with a hard byte cap — enforces 1 MiB even on chunked requests
-  // that omit Content-Length (which bypasses the upstream checkBodySize guard).
+  // Keep an integration-local hard cap so direct adapter invocation remains
+  // safe even outside the main server's bounded-body middleware.
   const rawText = await readBoundedText(req, MAX_REQUEST_BODY_BYTES)
   if (rawText === null) {
     deps.audit.log("codex.hook", {

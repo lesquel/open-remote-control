@@ -126,6 +126,7 @@ function makeDeps(overrides?: Partial<NotificationServiceDeps>): NotificationSer
     push,
     audit,
     channels: overrides?.channels,
+    getPreferences: overrides?.getPreferences,
   }
 }
 
@@ -293,6 +294,31 @@ describe("notifyPermissionPending — fire-and-forget channel dispatch", () => {
     // Failure was audited
     expect(auditEntries.some(e => e.action === "channel.send_failed")).toBe(true)
   })
+
+  test("deduplicates external delivery while preserving SSE reachability", async () => {
+    let now = 1_000
+    const channel = makeChannel({ enabled: true })
+    const telegram = makeTelegram({ enabled: true })
+    const push = makePush({ enabled: true, subscriptionCount: 1 })
+    const eventBus = makeEventBus({ hasClients: true })
+    const deps = makeDeps({ channels: [channel], telegram, push, eventBus })
+    const svc = createNotificationService(deps, { dedupWindowMs: 100, now: () => now })
+
+    await svc.notifyPermissionPending("perm-dup", "Allow", "sess", "execute")
+    await svc.notifyPermissionPending("perm-dup", "Allow", "sess", "execute")
+    await svc.flush()
+
+    expect(telegram.calls.filter(call => call.method === "sendPermissionRequest")).toHaveLength(1)
+    expect(push.broadcasts).toHaveLength(1)
+    expect(channel.sentEvents).toHaveLength(1)
+    expect(eventBus.emitted.filter(event => event.type === "pilot.permission.pending")).toHaveLength(2)
+    expect(deps.audit.entries.some(entry => entry.action === "notifications.duplicate_suppressed")).toBe(true)
+
+    now += 100
+    await svc.notifyPermissionPending("perm-dup", "Allow", "sess", "execute")
+    await svc.flush()
+    expect(push.broadcasts).toHaveLength(2)
+  })
 })
 
 // ─── emit / emitPilot ─────────────────────────────────────────────────────────
@@ -447,6 +473,26 @@ describe("notifySessionIdle — fan-out to extra channels", () => {
     expect(channel.sentEvents.some(e => e.kind === "session.idle")).toBe(true)
   })
 
+  test("sends one deduplicated push notification when the agent finishes", async () => {
+    const push = makePush({ enabled: true, subscriptionCount: 1 })
+    const deps = makeDeps({ push })
+    const svc = createNotificationService(deps)
+    const fakeClient = {
+      session: { get: async () => ({ data: { title: "My Session" } }) },
+    } as unknown as Parameters<typeof svc.notifySessionIdle>[0]
+
+    await svc.notifySessionIdle(fakeClient, "sess-push-idle")
+    await svc.notifySessionIdle(fakeClient, "sess-push-idle")
+    await svc.flush()
+
+    expect(push.broadcasts).toHaveLength(1)
+    expect(push.broadcasts[0]).toMatchObject({
+      title: "Agent finished",
+      body: "My Session",
+      data: { kind: "session", sessionID: "sess-push-idle" },
+    })
+  })
+
   test("disabled channel is not called during session.idle", async () => {
     const channel = makeChannel({ enabled: false })
     const deps = makeDeps({ channels: [channel] })
@@ -485,6 +531,31 @@ describe("notifySessionError — fan-out to extra channels", () => {
     expect(errEvent?.payload.error).toBe("crashed")
   })
 
+  test("sends one deduplicated push notification when the agent fails", async () => {
+    const push = makePush({ enabled: true, subscriptionCount: 1 })
+    const deps = makeDeps({ push })
+    const svc = createNotificationService(deps)
+    const fakeClient = {
+      session: { get: async () => ({ data: { title: "Broken Session" } }) },
+    } as unknown as Parameters<typeof svc.notifySessionError>[0]
+
+    await svc.notifySessionError(fakeClient, "sess-push-error", "private failure detail")
+    await svc.notifySessionError(fakeClient, "sess-push-error", "private failure detail")
+    await svc.flush()
+
+    expect(push.broadcasts).toHaveLength(1)
+    expect(push.broadcasts[0]).toMatchObject({
+      title: "Agent error",
+      body: "Broken Session",
+      data: { kind: "session", sessionID: "sess-push-error" },
+    })
+    expect(JSON.stringify(push.broadcasts[0])).not.toContain("private failure detail")
+
+    await svc.notifySessionError(fakeClient, "sess-push-error", "a different failure")
+    await svc.flush()
+    expect(push.broadcasts).toHaveLength(2)
+  })
+
   test("telegram.send_failed is audited when session lookup throws in notifySessionIdle", async () => {
     const auditEntries: AuditEntry[] = []
     const deps = makeDeps({ audit: makeAudit(auditEntries) })
@@ -520,6 +591,42 @@ describe("notifySessionError — fan-out to extra channels", () => {
     const entry = auditEntries.find(e => e.action === "telegram.send_failed")
     expect(entry).toBeDefined()
     expect(entry?.details.kind).toBe("session_error")
+  })
+})
+
+describe("outbound notification preferences", () => {
+  test("disables external permission delivery without hiding the SSE event", async () => {
+    const telegram = makeTelegram({ enabled: true })
+    const push = makePush({ enabled: true, subscriptionCount: 1 })
+    const eventBus = makeEventBus({ hasClients: true })
+    const service = createNotificationService(makeDeps({
+      telegram,
+      push,
+      eventBus,
+      getPreferences: () => ({ permissionRequired: false }),
+    }))
+
+    expect(await service.notifyPermissionPending("p1", "Allow", "s1", "shell")).toBe(true)
+    await service.flush()
+    expect(telegram.calls).toHaveLength(0)
+    expect(push.broadcasts).toHaveLength(0)
+    expect(eventBus.emitted.some(event => event.type === "pilot.permission.pending")).toBe(true)
+  })
+
+  test("skips disabled completion and error channels before session lookup", async () => {
+    let lookups = 0
+    const deps = makeDeps({
+      getPreferences: () => ({ agentFinished: false, errors: false }),
+      channels: [makeChannel()],
+    })
+    const service = createNotificationService(deps)
+    const client = {
+      session: { get: async () => { lookups++; return { data: { title: "Session" } } } },
+    } as unknown as Parameters<typeof service.notifySessionIdle>[0]
+
+    await service.notifySessionIdle(client, "s1")
+    await service.notifySessionError(client, "s1", "failure")
+    expect(lookups).toBe(0)
   })
 })
 

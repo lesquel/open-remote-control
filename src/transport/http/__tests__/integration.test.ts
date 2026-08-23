@@ -14,6 +14,7 @@ import { createPushService } from "../../../notifications/channels/push/service"
 import type { Logger } from "../../../infra/logger/index"
 import type { RouteDeps } from "../routes"
 import { createRemoteServer, type RemoteServer } from "../server"
+import { MAX_REQUEST_BODY_BYTES } from "../../../infra/http/constants"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -208,6 +209,7 @@ describe("integration: critical flows", () => {
     expect(typeof body.status).toBe("string")
     expect(body.status === "ok" || body.status === "degraded").toBe(true)
     expect(typeof body.version).toBe("string")
+    expect(body.protocols).toEqual({ http: 1, sse: 1 })
     expect(typeof body.uptime_s).toBe("number")
     expect(body.uptime_s).toBeGreaterThanOrEqual(0)
     expect(typeof body.started_at).toBe("string")
@@ -224,6 +226,17 @@ describe("integration: critical flows", () => {
     expect(res.status).toBe(200)
   })
 
+  it("assigns a correlation ID to every response", async () => {
+    const first = await fetch(`${base}/health`)
+    const second = await fetch(`${base}/health`)
+    const firstId = first.headers.get("x-request-id")
+    const secondId = second.headers.get("x-request-id")
+
+    expect(firstId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(secondId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(secondId).not.toBe(firstId)
+  })
+
   // ─── auth ─────────────────────────────────────────────────────────────────
 
   it("endpoints reject requests without Bearer token", async () => {
@@ -237,9 +250,18 @@ describe("integration: critical flows", () => {
     for (const { method, path } of endpoints) {
       const res = await fetch(`${base}${path}`, { method })
       expect(res.status).toBe(401)
-      const body = (await res.json()) as { error: { code: string } }
+      const body = (await res.json()) as { error: { code: string; requestId?: string } }
       expect(body.error.code).toBe("UNAUTHORIZED")
+      expect(body.error.requestId).toBe(res.headers.get("x-request-id") ?? undefined)
     }
+  })
+
+  it("returns the correlation ID in server-generated error bodies", async () => {
+    const res = await fetch(`${base}/does-not-exist`)
+    const body = (await res.json()) as { error: { code: string; requestId?: string } }
+
+    expect(res.status).toBe(404)
+    expect(body.error.requestId).toBe(res.headers.get("x-request-id") ?? undefined)
   })
 
   it("endpoints accept requests with valid Bearer token", async () => {
@@ -254,6 +276,52 @@ describe("integration: critical flows", () => {
       headers: { Authorization: "Bearer wrong-token" },
     })
     expect(res.status).toBe(401)
+  })
+
+  it("rate limits repeated authentication failures", async () => {
+    const port = findFreePort()
+    const isolated = createRemoteServer(buildDeps(port))
+    isolated.start()
+    try {
+      let response: Response | null = null
+      for (let attempt = 0; attempt < 11; attempt += 1) {
+        response = await fetch(`http://127.0.0.1:${port}/sessions`, {
+          headers: { Authorization: "Bearer wrong-token" },
+        })
+      }
+      expect(response?.status).toBe(429)
+      expect(response?.headers.get("retry-after")).toBeTruthy()
+      const body = await response?.json() as { error?: { code?: string; requestId?: string } }
+      expect(body.error?.code).toBe("RATE_LIMITED")
+      expect(body.error?.requestId).toBe(response?.headers.get("x-request-id") ?? undefined)
+    } finally {
+      isolated.stop()
+    }
+  })
+
+  it("rate limits sensitive mutations without blocking normal reads", async () => {
+    const port = findFreePort()
+    const isolated = createRemoteServer(buildDeps(port))
+    isolated.start()
+    try {
+      let response: Response | null = null
+      for (let attempt = 0; attempt < 31; attempt += 1) {
+        response = await fetch(`http://127.0.0.1:${port}/settings`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        })
+      }
+      expect(response?.status).toBe(429)
+
+      const health = await fetch(`http://127.0.0.1:${port}/health`)
+      expect(health.status).toBe(200)
+    } finally {
+      isolated.stop()
+    }
   })
 
   // ─── validation ──────────────────────────────────────────────────────────
@@ -350,6 +418,26 @@ describe("integration: critical flows", () => {
     expect(res.status).toBe(400)
     const body = (await res.json()) as { error: { code: string } }
     expect(body.error.code).toBe("VALIDATION_FAILED")
+  })
+
+  it("rejects an oversized chunked body without Content-Length before the handler", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(MAX_REQUEST_BODY_BYTES))
+        controller.enqueue(new Uint8Array([1]))
+        controller.close()
+      },
+    })
+    const res = await fetch(`${base}/sessions/any-id/prompt`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: stream,
+    })
+    expect(res.status).toBe(413)
+    expect(await res.json()).toMatchObject({ error: { code: "PAYLOAD_TOO_LARGE" } })
   })
 
   it("POST /sessions/:id/prompt with empty message returns 400", async () => {

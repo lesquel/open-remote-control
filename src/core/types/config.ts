@@ -10,7 +10,7 @@
 
 import type { TunnelProvider } from "../../infra/tunnel/types"
 import type { ProjectStateMode } from "../../infra/paths/index"
-import type { PilotSettings } from "../settings/store"
+import type { NotificationPreferences, PilotSettings } from "../settings/store"
 
 export type { TunnelProvider }
 export type { ProjectStateMode }
@@ -32,6 +32,10 @@ export type ConfigSource = "default" | "env-file" | "settings-store" | "shell-en
 export interface Config {
   port: number
   host: string
+  /** Additional browser Host values accepted behind a user-managed reverse proxy. */
+  allowedHosts?: string[]
+  /** Standalone PWA origins allowed to call the local/tunnel HTTP API. */
+  allowedOrigins?: string[]
   permissionTimeoutMs: number
   tunnel: TunnelProvider
   telegram: TelegramConfig | null
@@ -78,6 +82,7 @@ export type SettingsSnapshot = {
   fetchTimeoutMs: number
   projectStateMode: ProjectStateMode
   hookTokenConfigured: boolean
+  notificationPreferences?: Required<NotificationPreferences>
 }
 
 /**

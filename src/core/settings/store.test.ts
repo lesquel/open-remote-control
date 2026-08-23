@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { Logger } from "../../infra/logger/index"
@@ -72,6 +72,28 @@ describe("settings-store", () => {
     expect(store.load().tunnel).toBe("cloudflared") // unchanged
   })
 
+  test("sanitizes notification preferences without accepting unknown values", () => {
+    const store = createSettingsStore({ logger: silentLogger, filePath: path })
+    store.save({
+      notificationPreferences: {
+        permissionRequired: false,
+        agentFinished: true,
+        // @ts-expect-error — unknown preference is intentionally dropped
+        secrets: true,
+      },
+    })
+    expect(store.load().notificationPreferences).toEqual({
+      permissionRequired: false,
+      agentFinished: true,
+    })
+    store.save({ notificationPreferences: { errors: false } })
+    expect(store.load().notificationPreferences).toEqual({
+      permissionRequired: false,
+      agentFinished: true,
+      errors: false,
+    })
+  })
+
   test("reset deletes the file", () => {
     const store = createSettingsStore({ logger: silentLogger, filePath: path })
     store.save({ port: 5050 })
@@ -102,6 +124,26 @@ describe("settings-store", () => {
   test("save is atomic — no .tmp file left on disk", () => {
     const store = createSettingsStore({ logger: silentLogger, filePath: path })
     store.save({ port: 5050 })
-    expect(existsSync(path + ".tmp")).toBe(false)
+    expect(readdirSync(dir).some((name) => name.endsWith(".tmp"))).toBe(false)
+  })
+
+  test("save creates owner-only config storage", () => {
+    const nestedDir = join(dir, "nested")
+    const nested = join(nestedDir, "config.json")
+    const store = createSettingsStore({ logger: silentLogger, filePath: nested })
+    store.save({ telegramToken: "secret" })
+
+    if (process.platform !== "win32") {
+      expect(statSync(nestedDir).mode & 0o777).toBe(0o700)
+      expect(statSync(nested).mode & 0o777).toBe(0o600)
+    }
+  })
+
+  test("save removes an explicitly cleared hook token instead of merging the old value back", async () => {
+    const store = createSettingsStore({ logger: silentLogger, filePath: path })
+    store.save({ port: 5050, hookToken: "old-secret" })
+    store.save({ hookToken: "" })
+    expect(store.load()).toEqual({ port: 5050 })
+    await expect(Bun.file(path).text()).resolves.not.toContain("old-secret")
   })
 })

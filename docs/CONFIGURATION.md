@@ -84,6 +84,8 @@ Reload OpenCode. Banner prints with URL + QR. Open URL — done.
 |----------|---------|--------------|
 | `PILOT_PORT` | `4097` | TCP port the dashboard server listens on. Pick anything not in use. |
 | `PILOT_HOST` | `127.0.0.1` | Bind address. Use `0.0.0.0` to allow LAN access (other devices on your WiFi can reach you). **Do NOT use `0.0.0.0` on untrusted networks** — anyone on the same network gets to your dashboard if they have the token. |
+| `PILOT_ALLOWED_HOSTS` | _(empty)_ | Comma-separated hostnames accepted in browser requests when a user-managed reverse proxy changes `Host` (for example `pilot.home.example`). Built-in tunnel hostnames and local interface addresses are discovered automatically. Do not include schemes, paths, or ports. |
+| `PILOT_ALLOWED_ORIGINS` | _(empty)_ | Additional HTTP(S) origins allowed for separately hosted PWA clients. The origin of `PILOT_PWA_URL` is included automatically. Use exact origins such as `https://pilot.example.com`; never use `*`. |
 
 ### Tunnel (optional, for public access)
 
@@ -120,6 +122,17 @@ For real push notifications on phone (works even when browser is closed).
 
 If either VAPID key is missing, push notifications are disabled but every
 other feature still works.
+
+The dashboard's **Settings → Notifications** panel also stores local, global
+preferences for these outbound event categories:
+
+- permission required
+- agent finished
+- agent error
+
+They apply immediately to Telegram, Web Push, and future notification channels.
+They do not hide local dashboard activity or permission state. All three are
+enabled by default and are stored in the owner-private local config file.
 
 To generate keys (you only do this ONCE per deployment):
 

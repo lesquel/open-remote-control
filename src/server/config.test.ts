@@ -26,6 +26,31 @@ describe("loadConfig", () => {
     expect(cfg.port).toBe(8080)
   })
 
+  test("parses and normalizes PILOT_ALLOWED_HOSTS", () => {
+    expect(
+      loadConfig({ PILOT_ALLOWED_HOSTS: "Pilot.Example.test, proxy.example.test.,Pilot.Example.test" }).allowedHosts,
+    ).toEqual(["pilot.example.test", "proxy.example.test"])
+  })
+
+  test("rejects malformed PILOT_ALLOWED_HOSTS entries", () => {
+    expect(() => loadConfig({ PILOT_ALLOWED_HOSTS: "https://pilot.example.test/path" })).toThrow(
+      ConfigError,
+    )
+  })
+
+  test("allows the configured hosted PWA plus additional explicit origins", () => {
+    expect(
+      loadConfig({
+        PILOT_PWA_URL: "https://pilot.example.test/app/",
+        PILOT_ALLOWED_ORIGINS: "https://backup.example.test, http://127.0.0.1:8080",
+      }).allowedOrigins,
+    ).toEqual([
+      "https://pilot.example.test",
+      "https://backup.example.test",
+      "http://127.0.0.1:8080",
+    ])
+  })
+
   test("throws ConfigError on invalid port (out of range)", () => {
     expect(() => loadConfig({ PILOT_PORT: "99999" })).toThrow(ConfigError)
   })

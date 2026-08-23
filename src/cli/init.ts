@@ -27,6 +27,8 @@ import { homedir, platform } from "node:os"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { getPluginStateDir, stateFile } from "../tui/paths"
+import { buildSupportBundle, writePrivateBundle } from "./diagnostics"
+import { buildUpdateReport, fetchLatestVersion } from "./update"
 
 const PACKAGE_NAME = "@lesquel/opencode-pilot"
 
@@ -828,6 +830,61 @@ if (import.meta.main) {
     if (findings.some((f) => f.ok === false)) {
       process.exit(1)
     }
+  } else if (command === "diagnostics") {
+    const outputIndex = args.indexOf("--output")
+    const outputPath = outputIndex >= 0 ? args[outputIndex + 1] : undefined
+    if (outputIndex >= 0 && !outputPath) {
+      console.error("--output requires a file path")
+      process.exit(1)
+    }
+    let packageVersion = "unknown"
+    try {
+      const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version?: unknown }
+      if (typeof pkg.version === "string") packageVersion = pkg.version
+    } catch {
+      // The report remains useful when package metadata is unavailable.
+    }
+    const bundle = await buildSupportBundle({
+      configDir: locateOpencodeConfigDir(),
+      statePath: stateFile("pilot-state.json"),
+      packageVersion,
+    })
+    if (outputPath) {
+      try {
+        writePrivateBundle(outputPath, bundle)
+        console.log(`Diagnostics written to ${outputPath}`)
+      } catch (error) {
+        console.error((error as Error).message)
+        process.exit(1)
+      }
+    } else {
+      console.log(JSON.stringify(bundle, null, 2))
+    }
+  } else if (command === "update") {
+    let installed = "unknown"
+    try {
+      const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as { version?: unknown }
+      if (typeof pkg.version === "string") installed = pkg.version
+    } catch {
+      console.error("Could not read the installed package version.")
+      process.exit(1)
+    }
+    try {
+      const report = buildUpdateReport(installed, await fetchLatestVersion())
+      console.log(`Installed: ${report.installed}`)
+      console.log(`Latest:    ${report.latest}`)
+      if (report.status === "current") {
+        console.log("OpenCode Pilot is up to date. No files changed.")
+      } else if (report.status === "ahead") {
+        console.log("This installation is newer than npm's latest tag. No files changed.")
+      } else {
+        console.log(`Update available. Run: npx ${PACKAGE_NAME}@latest init`)
+        console.log("The update command only checks versions; it never changes files automatically.")
+      }
+    } catch (error) {
+      console.error(`Could not check npm for updates: ${(error as Error).message}`)
+      process.exit(1)
+    }
   } else if (command === "--help" || command === "-h" || command === "help") {
     console.log(`Usage: npx ${PACKAGE_NAME} <command>`)
     console.log(``)
@@ -836,6 +893,8 @@ if (import.meta.main) {
     console.log(`  uninstall [--keep-config]  Remove plugin config, package, cache, and state.`)
     console.log(`                             --keep-config preserves ~/.opencode-pilot/config.json.`)
     console.log(`  doctor                     Print diagnostic status report. Zero side effects.`)
+    console.log(`  diagnostics [--output PATH] Print or privately write a sanitized support report.`)
+    console.log(`  update                     Check npm for a newer version. Never installs automatically.`)
     console.log(`  --version, -v              Print version.`)
     console.log(`  --help, -h                 Print this help.`)
     process.exit(0)

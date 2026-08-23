@@ -10,8 +10,11 @@
 import { describe, test, expect, mock } from "bun:test"
 import {
   installGlobalErrorHandlersOnce,
+  createShutdownCoordinator,
   createShutdownGuard,
+  runShutdownSteps,
 } from "./lifecycle"
+import { EventEmitter } from "node:events"
 
 // ─── D1: installGlobalErrorHandlersOnce ──────────────────────────────────────
 
@@ -83,6 +86,22 @@ describe("createShutdownGuard — closeAll called", () => {
   })
 })
 
+describe("runShutdownSteps — observable failure isolation", () => {
+  test("preserves order and continues after a failed cleanup", async () => {
+    const calls: string[] = []
+    const errors: Array<{ step: string; error: unknown }> = []
+    await runShutdownSteps([
+      { name: "integration", run: () => { calls.push("integration"); throw new Error("failed") } },
+      { name: "http", run: async () => { calls.push("http") } },
+      { name: "state", run: () => { calls.push("state") } },
+    ], (step, error) => errors.push({ step, error }))
+
+    expect(calls).toEqual(["integration", "http", "state"])
+    expect(errors).toHaveLength(1)
+    expect(errors[0]?.step).toBe("integration")
+  })
+})
+
 // ─── D3: shutdown must be idempotent ─────────────────────────────────────────
 
 describe("createShutdownGuard — idempotency", () => {
@@ -129,6 +148,53 @@ describe("D4 — no process exit listener registered by lifecycle module", () =>
     await import("./lifecycle")
     const countAfter = process.listenerCount("exit")
     expect(countAfter).toBe(countBefore)
+  })
+})
+
+describe("createShutdownCoordinator — process-wide ownership", () => {
+  test("installs one listener per signal and runs every registered instance", async () => {
+    const signals = new EventEmitter()
+    const errors: unknown[] = []
+    const coordinator = createShutdownCoordinator(signals, (error) => errors.push(error))
+    let first = 0
+    let second = 0
+
+    coordinator.register(async () => { first += 1 })
+    coordinator.register(async () => { second += 1 })
+    expect(signals.listenerCount("SIGINT")).toBe(1)
+    expect(signals.listenerCount("SIGTERM")).toBe(1)
+
+    signals.emit("SIGINT")
+    await Bun.sleep(0)
+    expect(first).toBe(1)
+    expect(second).toBe(1)
+    expect(errors).toEqual([])
+  })
+
+  test("a second signal cannot run instance cleanup twice", async () => {
+    const signals = new EventEmitter()
+    const coordinator = createShutdownCoordinator(signals, () => {})
+    let calls = 0
+    coordinator.register(async () => { calls += 1 })
+
+    signals.emit("SIGINT")
+    signals.emit("SIGTERM")
+    await Bun.sleep(0)
+    expect(calls).toBe(1)
+  })
+
+  test("one rejected cleanup does not prevent the remaining instances", async () => {
+    const signals = new EventEmitter()
+    const errors: unknown[] = []
+    const coordinator = createShutdownCoordinator(signals, (error) => errors.push(error))
+    let completed = false
+    coordinator.register(async () => { throw new Error("cleanup failed") })
+    coordinator.register(async () => { completed = true })
+
+    signals.emit("SIGTERM")
+    await Bun.sleep(0)
+    expect(completed).toBe(true)
+    expect(errors).toHaveLength(1)
   })
 })
 

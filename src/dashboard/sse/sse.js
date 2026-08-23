@@ -19,6 +19,9 @@ import { buildApiUrl } from '../api/api.js'
 import { EVENTS, LIMITS } from '../constants.js'
 import { normalizePermissionPending, normalizePermissionResolved } from './permission-normalize.js'
 import { playNotifySound } from '../ui/notif-sound.js'
+import { jitteredReconnectDelay } from './backoff.js'
+import { classifySseProtocol } from './protocol.js'
+import { recordActivity, resolveActivity } from '../components/activity-center.js'
 
 let eventSource = null
 let reconnectTimer = null
@@ -32,6 +35,13 @@ const BACKOFF_MAX = LIMITS.SSE_BACKOFF_MAX_MS
 // Tooltip metadata for the SSE dot
 let _lastConnectTime = null
 let _reconnectAttempts = 0
+let _lastEventId = ''
+let _serverGeneration = null
+let _hostRestartTimer = null
+let _protocolBlocked = false
+const _seenEventIds = new Set()
+const _seenEventOrder = []
+const SEEN_EVENT_LIMIT = 256
 
 // OpenCode's `message.part.delta` payload intentionally carries only
 // { messageID, partID, field, delta } in current SDK builds. Older versions of
@@ -90,7 +100,7 @@ const SSE_EVENTS = [
 
 /**
  * Update the connection indicator in the header.
- * status: 'connected' | 'reconnecting' | 'disconnected'
+ * status: 'connected' | 'reconnecting' | 'disconnected' | 'host-restarted'
  */
 function setConnectionStatus(status) {
   const dot = document.getElementById('conn-dot')
@@ -106,6 +116,12 @@ function setConnectionStatus(status) {
     } else if (status === 'reconnecting') {
       label.textContent = 'reconnecting…'
       label.className = 'conn-label reconnecting'
+    } else if (status === 'host-restarted') {
+      label.textContent = 'host restarted · synced'
+      label.className = 'conn-label reconnecting'
+    } else if (status === 'incompatible') {
+      label.textContent = 'update required'
+      label.className = 'conn-label incompatible'
     } else {
       label.textContent = 'offline'
       label.className = 'conn-label'
@@ -120,6 +136,28 @@ function setConnectionStatus(status) {
     ? ` · Reconnect attempts: ${_reconnectAttempts}`
     : ''
   dot.title = `SSE: ${status} · ${timeStr}${attemptsStr}`
+}
+
+function showProtocolMismatch(serverVersion) {
+  setConnectionStatus('incompatible')
+  if (document.getElementById('protocol-mismatch')) return
+
+  const banner = document.createElement('aside')
+  banner.id = 'protocol-mismatch'
+  banner.className = 'protocol-mismatch'
+  banner.setAttribute('role', 'alert')
+
+  const message = document.createElement('span')
+  message.textContent = `Dashboard update required (server protocol ${String(serverVersion)}).`
+
+  const reload = document.createElement('button')
+  reload.type = 'button'
+  reload.className = 'btn'
+  reload.textContent = 'Reload dashboard'
+  reload.addEventListener('click', () => location.reload())
+
+  banner.append(message, reload)
+  document.body.appendChild(banner)
 }
 
 function _closeEventSource() {
@@ -140,6 +178,60 @@ export function closeEventSource() {
   _closeEventSource()
 }
 
+function rememberEventId(id) {
+  if (!id) return true
+  if (_seenEventIds.has(id)) return false
+  _lastEventId = id
+  _seenEventIds.add(id)
+  _seenEventOrder.push(id)
+  if (_seenEventOrder.length > SEEN_EVENT_LIMIT) {
+    _seenEventIds.delete(_seenEventOrder.shift())
+  }
+  return true
+}
+
+function refreshCanonicalSnapshots() {
+  const { activeSession, multiviewActive, mvPanels } = getState()
+  if (activeSession && !multiviewActive) {
+    loadMessages(activeSession).catch(() => {})
+  }
+  for (const sessionId of mvPanels ?? []) {
+    loadMVMessages(sessionId).catch(() => {})
+  }
+}
+
+function handleConnectionMetadata(event) {
+  const properties = event?.properties ?? {}
+  if (classifySseProtocol(properties.protocolVersion) === 'incompatible') {
+    _protocolBlocked = true
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    showProtocolMismatch(properties.protocolVersion)
+    setState({ sse: { connected: false } })
+    _closeEventSource()
+    return false
+  }
+  const generation = properties.generation
+  const replayStatus = properties.replay?.status
+  const hostRestarted = _serverGeneration && generation && generation !== _serverGeneration
+  if (generation) _serverGeneration = generation
+
+  if (hostRestarted || replayStatus === 'generation_changed') {
+    setConnectionStatus('host-restarted')
+    refreshCanonicalSnapshots()
+    if (_hostRestartTimer) clearTimeout(_hostRestartTimer)
+    _hostRestartTimer = setTimeout(() => {
+      _hostRestartTimer = null
+      if (eventSource?.readyState === 1) setConnectionStatus('connected')
+    }, 4_000)
+  } else if (replayStatus === 'unavailable') {
+    refreshCanonicalSnapshots()
+  }
+  return true
+}
+
 // Opt-in boot-time SSE tracing. Set localStorage['pilot:debug:sse']='1' to
 // revive the [sse-boot] markers that helped diagnose the pre-v1.16.9 bug.
 function _sseBootDebug() {
@@ -147,6 +239,7 @@ function _sseBootDebug() {
 }
 
 export function connect() {
+  if (_protocolBlocked) return
   const { token } = getState()
   if (!token) {
     if (_sseBootDebug()) console.warn('[sse-boot] connect() called without a token — SSE will NOT start. State may not be hydrated yet.')
@@ -169,7 +262,10 @@ export function connect() {
   // and serverUrl (tunnel) is respected. Then append the token.
   const base = buildApiUrl('/events')
   const sep = base.includes('?') ? '&' : '?'
-  const url = `${base}${sep}token=${encodeURIComponent(token)}`
+  const replayCursor = _lastEventId
+    ? `&lastEventId=${encodeURIComponent(_lastEventId)}`
+    : ''
+  const url = `${base}${sep}token=${encodeURIComponent(token)}${replayCursor}`
   if (_sseBootDebug()) console.info('[sse-boot] opening EventSource →', url.replace(/token=[^&]+/, 'token=***'))
   eventSource = new EventSource(url)
 
@@ -183,17 +279,9 @@ export function connect() {
     setState({ sse: { connected: true } })
     loadSessions(true)
     if (wasReconnect) {
-      const { activeSession, multiviewActive, mvPanels } = getState()
-      // SSE has no replay buffer. Any message/tool events emitted while the
-      // browser was reconnecting are gone, so pull the canonical snapshot once
-      // the stream is healthy again. This is the difference between "the
-      // connection hiccuped" and "I have to refresh the whole page to catch up".
-      if (activeSession && !multiviewActive) {
-        loadMessages(activeSession).catch(() => {})
-      }
-      for (const sessionId of mvPanels ?? []) {
-        loadMVMessages(sessionId).catch(() => {})
-      }
+      // The server replays a bounded event window. Pull the canonical snapshot
+      // as well because a longer outage can exceed that window.
+      refreshCanonicalSnapshots()
     }
   }
 
@@ -203,7 +291,9 @@ export function connect() {
       reconnectAttempts: _reconnectAttempts,
       backoffMs,
     })
-    setConnectionStatus('reconnecting')
+    setConnectionStatus(typeof navigator !== 'undefined' && navigator.onLine === false
+      ? 'disconnected'
+      : 'reconnecting')
     setState({ sse: { connected: false } })
     _closeEventSource()
     scheduleReconnect()
@@ -219,8 +309,10 @@ export function connect() {
 
   function onMessage(e) {
     try {
+      if (!rememberEventId(e.lastEventId)) return
       const parsed = JSON.parse(e.data)
       if (_sseDebug()) console.debug('[sse] onmessage', parsed.type ?? '(untyped)', parsed)
+      if (parsed.type === 'pilot.connected' && !handleConnectionMetadata(parsed)) return
       handleEvent(parsed)
     } catch (err) {
       if (_sseDebug()) console.error('[sse] onmessage parse/handle error', err, e.data)
@@ -232,6 +324,7 @@ export function connect() {
   SSE_EVENTS.forEach(name => {
     function onNamedEvent(e) {
       try {
+        if (!rememberEventId(e.lastEventId)) return
         const data = JSON.parse(e.data)
         if (_sseDebug()) console.debug('[sse] event', name, data)
         handleEvent({ type: name, data })
@@ -282,12 +375,13 @@ function scheduleReconnect() {
   if (reconnectTimer) return
   _reconnectAttempts++
   setConnectionStatus('reconnecting')  // update tooltip with new attempt count
+  const delayMs = jitteredReconnectDelay(backoffMs)
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     connect()
     // Double the backoff for next failure, capped at BACKOFF_MAX
     backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX)
-  }, backoffMs)
+  }, delayMs)
 }
 
 async function handleEvent(ev) {
@@ -462,6 +556,15 @@ async function handleEvent(ev) {
     // Only on final updates — intermediate ones carry partial/stale token counts.
     if (t === EVENTS.MESSAGE_UPDATED && evtSessionId && isFinal) {
       refreshSessionMeta(evtSessionId)
+      if (isAssistant) {
+        recordActivity({
+          key: `completed:${messageId ?? evtSessionId}`,
+          kind: 'completed',
+          title: 'Agent finished',
+          detail: sessions[evtSessionId]?.title ?? 'Response ready',
+          sessionID: evtSessionId,
+        })
+      }
     }
   }
 
@@ -473,6 +576,15 @@ async function handleEvent(ev) {
     // normalizePermissionPending handles both shapes identically.
     const normalized = normalizePermissionPending(ev)
     handlePermissionRequested(normalized)
+    recordActivity({
+      key: `permission:${normalized.permissionID}`,
+      kind: 'permission',
+      title: normalized.title ?? normalized.description ?? 'Permission required',
+      detail: Array.isArray(normalized.pattern) ? normalized.pattern.join(' ') : normalized.pattern,
+      sessionID: normalized.sessionID,
+      project: normalized.metadata?.project ?? normalized.metadata?.directory,
+      attention: true,
+    })
     // Dispatch for push-notifications module
     window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: normalized }))
   }
@@ -481,6 +593,7 @@ async function handleEvent(ev) {
     // Payload may be under .properties (pilot events) or .data (named-event path).
     const resolvedNormalized = normalizePermissionResolved(ev)
     handlePermissionResolved(resolvedNormalized)
+    resolveActivity(`permission:${resolvedNormalized.permissionID}`)
   }
 
   if (t === EVENTS.TODO_UPDATED) {
@@ -516,6 +629,17 @@ async function handleEvent(ev) {
       updateInfoBar(d.sessionId, title, d.status, s)
     }
     updateMVPanelStatus(d.sessionId, d.status)
+    const statusType = typeof d.status === 'string' ? d.status : d.status?.type
+    if (statusType === 'error' || statusType === 'failed') {
+      recordActivity({
+        key: `error:${d.sessionId}:${Math.floor(Date.now() / 30_000)}`,
+        kind: 'error',
+        title: 'Agent failed',
+        detail: sessions[d.sessionId]?.title ?? 'Session error',
+        sessionID: d.sessionId,
+        attention: true,
+      })
+    }
   }
 
   if (t === EVENTS.VCS_BRANCH_UPDATED) {
@@ -560,5 +684,10 @@ export function startSseWatchdog() {
 // appears; then the watchdog picks it up on its next tick. This makes SSE
 // recovery automatic regardless of bootstrap call order.
 if (typeof window !== 'undefined') {
+  window.addEventListener('offline', () => setConnectionStatus('disconnected'))
+  window.addEventListener('online', () => {
+    setConnectionStatus('reconnecting')
+    connect()
+  })
   startSseWatchdog()
 }

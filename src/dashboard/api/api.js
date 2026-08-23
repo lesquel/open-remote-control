@@ -46,6 +46,8 @@ function authHeaders() {
 // Endpoints that are global (never get ?directory= appended)
 const DIRECTORY_EXEMPT = [
   '/health',
+  '/diagnostics',
+  '/integrations',
   '/auth/rotate',
   '/status',
   '/projects',
@@ -109,8 +111,11 @@ async function request(method, path, body, opts = {}) {
     // 503: server temporarily unavailable — NOT a token problem. Don't clear
     // the token; the server will come back and the stored token is still valid.
     // Other 4xx/5xx: throw with status so callers can decide.
-    const err = new Error(`${r.status}`)
+    const requestId = r.headers.get('x-request-id')
+    const suffix = requestId ? ` · Error ID: ${requestId}` : ''
+    const err = new Error(`${r.status}${suffix}`)
     err.status = r.status
+    err.requestId = requestId
     throw err
   }
   // Log shape summary for debugging (array length or top-level keys)
@@ -184,10 +189,36 @@ export async function rotateAuthToken() {
   return request('POST', '/auth/rotate')
 }
 
+export async function createDevicePairing(role = 'operator') {
+  return request('POST', '/pairing', { role }, { directory: null })
+}
+
+export async function redeemDevicePairing(pairingToken, name) {
+  const r = await fetch(baseUrl() + '/pairing/redeem', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pairingToken, name }),
+  })
+  if (!r.ok) {
+    const err = new Error(r.status === 401 ? 'Pairing link expired or already used' : `Pairing failed (${r.status})`)
+    err.status = r.status
+    throw err
+  }
+  return r.json()
+}
+
 export async function fetchHealth() {
   const r = await apiFetch(baseUrl() + '/health')
   if (!r.ok) throw new Error(`${r.status}`)
   return r.json()
+}
+
+export async function fetchDiagnostics() {
+  return request('GET', '/diagnostics', undefined, { directory: null })
+}
+
+export async function fetchIntegrations() {
+  return request('GET', '/integrations', undefined, { directory: null })
 }
 
 // ── Dynamic config fetchers (Deliverable 8) ───────────────────────────────
@@ -359,6 +390,18 @@ export async function pushTest(endpoint) {
  */
 export async function fetchConnectInfo() {
   return request('GET', '/connect-info')
+}
+
+export async function fetchDevices() {
+  return request('GET', '/devices', undefined, { directory: null })
+}
+
+export async function updateDevice(id, patch) {
+  return request('PATCH', `/devices/${encodeURIComponent(id)}`, patch, { directory: null })
+}
+
+export async function revokeDevice(id) {
+  return request('DELETE', `/devices/${encodeURIComponent(id)}`, undefined, { directory: null })
 }
 
 // ── Plugin settings (v1.12) ───────────────────────────────────────────────

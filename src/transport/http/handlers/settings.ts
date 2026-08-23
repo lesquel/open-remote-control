@@ -155,9 +155,17 @@ function buildSettingsResponse(deps: RouteContext["deps"]): {
   // active after that restart.
   const stored = deps.settingsStore.load()
   const { settings, sources } = deps.settingsLoader.loadEffective(stored)
+  const notificationPreferences = {
+    permissionRequired: stored.notificationPreferences?.permissionRequired ?? true,
+    agentFinished: stored.notificationPreferences?.agentFinished ?? true,
+    errors: stored.notificationPreferences?.errors ?? true,
+  }
   return {
-    settings,
-    sources,
+    settings: { ...settings, notificationPreferences },
+    sources: {
+      ...sources,
+      notificationPreferences: stored.notificationPreferences ? "settings-store" : "default",
+    },
     restartRequired: deps.settingsLoader.restartRequiredFields,
     configFilePath: deps.settingsStore.filePath(),
   }
@@ -245,6 +253,7 @@ export async function patchSettings({ req, deps }: RouteContext): Promise<Respon
 
 export async function resetSettings({ deps }: RouteContext): Promise<Response> {
   deps.settingsStore.reset()
+  if (!deps.shellEnv.PILOT_HOOK_TOKEN) deps.config.hookToken = undefined
   deps.audit.log("settings.reset", {})
   return json({ ok: true, configFilePath: deps.settingsStore.filePath() }, 200, CORS_HEADERS)
 }

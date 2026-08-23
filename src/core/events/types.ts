@@ -88,7 +88,18 @@ export type CodexPermissionResponse = {
  * External SDK events flow through as BusEvent.
  */
 export type PilotEvent =
-  | { type: "pilot.connected"; properties: { timestamp: number } }
+  | {
+      type: "pilot.connected"
+      properties: {
+        timestamp: number
+        generation?: string
+        protocolVersion?: number
+        replay?: {
+          status: "not_requested" | "generation_changed" | "replayed" | "unavailable"
+          count: number
+        }
+      }
+    }
   | {
       type: "pilot.permission.pending"
       properties: {

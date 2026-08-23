@@ -52,4 +52,33 @@ describe("createPermissionQueue", () => {
     expect(entry.resolved).toBe(false)
     expect(typeof entry.createdAt).toBe("number")
   })
+
+  test("duplicate IDs share one waiter instead of orphaning the first promise", async () => {
+    const queue = createPermissionQueue(5_000)
+    const first = queue.waitForResponse("duplicate", { title: "original" })
+    const duplicate = queue.waitForResponse("duplicate", { title: "replacement" })
+    expect(duplicate).toBe(first)
+    expect(queue.pending()).toHaveLength(1)
+    expect(queue.pending()[0]?.title).toBe("original")
+    expect(queue.resolve("duplicate", "allow")).toBe(true)
+    expect(await Promise.all([first, duplicate])).toEqual([{ action: "allow" }, { action: "allow" }])
+  })
+
+  test("resolve is exactly-once and stale resolutions cannot change the outcome", async () => {
+    const queue = createPermissionQueue(5_000)
+    const response = queue.waitForResponse("once")
+    expect(queue.pending().map((item) => item.permissionID)).toContain("once")
+    expect(queue.resolve("once", "deny")).toBe(true)
+    expect(queue.resolve("once", "allow")).toBe(false)
+    expect(queue.pending()).toEqual([])
+    expect(await response).toEqual({ action: "deny" })
+  })
+
+  test("duplicate waiters expire together without leaving a queue entry", async () => {
+    const queue = createPermissionQueue(5)
+    const first = queue.waitForResponse("duplicate-timeout")
+    const duplicate = queue.waitForResponse("duplicate-timeout")
+    expect(await Promise.all([first, duplicate])).toEqual([null, null])
+    expect(queue.pending()).toEqual([])
+  })
 })

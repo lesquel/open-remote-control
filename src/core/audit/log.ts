@@ -2,6 +2,7 @@ import type { PluginInput } from "@opencode-ai/plugin"
 import { appendFileSync } from "fs"
 import { join } from "path"
 import { rotateIfNeeded } from "./rotation"
+import { redactRecord, redactSecrets } from "../../infra/logging/redact"
 
 export interface AuditLog {
   log(action: string, details: Record<string, unknown>): void
@@ -21,10 +22,12 @@ export function createAuditLog(ctx: PluginInput): AuditLog {
   let writeCount = 0
 
   function log(action: string, details: Record<string, unknown>): void {
+    const safeAction = String(redactSecrets(action))
+    const safeDetails = redactRecord(details)
     const entry = {
       timestamp: new Date().toISOString(),
-      action,
-      ...details,
+      action: safeAction,
+      ...safeDetails,
     }
 
     // Throttled rotation check
@@ -52,8 +55,8 @@ export function createAuditLog(ctx: PluginInput): AuditLog {
           body: {
             service: "opencode-pilot",
             level: "warn",
-            message: `[audit] disk write failed for action "${action}": ${reason}`,
-            extra: { action, path: logPath, error: reason },
+            message: `[audit] disk write failed for action "${safeAction}"`,
+            extra: redactRecord({ action: safeAction, path: logPath, error: reason }),
           },
         })
         .catch(() => {})
@@ -68,8 +71,8 @@ export function createAuditLog(ctx: PluginInput): AuditLog {
             service: "opencode-pilot",
             level:
               action.includes("error") || action.includes("failed") ? "warn" : "debug",
-            message: `[audit] ${action}`,
-            extra: details,
+            message: `[audit] ${safeAction}`,
+            extra: safeDetails,
           },
         })
         .catch(() => {})

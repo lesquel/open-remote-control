@@ -28,7 +28,7 @@ import { createEventBus } from "../../../core/events/bus"
 import { createPermissionQueue } from "../../../core/permissions/queue"
 import { createTelegramChannel } from "../../../notifications/channels/telegram/index"
 import { createPushService } from "../../../notifications/channels/push/service"
-import { rotateAuthToken } from "./system"
+import { getHealth, rotateAuthToken } from "./system"
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -159,6 +159,40 @@ function buildDeps(
   }
   return deps
 }
+
+describe("getHealth — public process probe", () => {
+  test("does not call the SDK or Telegram network from an unauthenticated probe", async () => {
+    const dir = tempDir()
+    try {
+      const deps = buildDeps(dir, buildConfig({
+        telegram: { token: "token", chatId: "123" },
+      }), createSpyAudit(), createSpyLogger())
+      let sdkCalls = 0
+      let telegramCalls = 0
+      deps.client.session.list = async () => {
+        sdkCalls += 1
+        throw new Error("must not be called")
+      }
+      deps.telegram.testConnection = async () => {
+        telegramCalls += 1
+        return { ok: true }
+      }
+
+      const req = new Request("http://test/health")
+      const res = await getHealth({ req, url: new URL(req.url), params: {}, deps })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        status: "ok",
+        telegram_ok: null,
+        services: { sdk: "unknown", telegram: "configured" },
+      })
+      expect(sdkCalls).toBe(0)
+      expect(telegramCalls).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 

@@ -10,6 +10,7 @@ export interface ErrorBody {
   error: {
     code: string
     message: string
+    requestId?: string
   }
 }
 
@@ -34,7 +35,10 @@ export function jsonError(
   message: string,
   status: number,
   extraHeaders: Record<string, string> = {},
+  requestId?: string,
 ): Response {
-  const body: ErrorBody = { error: { code, message } }
+  const body: ErrorBody = {
+    error: { code, message, ...(requestId ? { requestId } : {}) },
+  }
   return json(body, status, extraHeaders)
 }

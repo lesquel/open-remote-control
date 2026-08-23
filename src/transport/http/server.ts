@@ -1,9 +1,17 @@
-import { validateToken, getIP } from "./middlewares/auth"
+import { getBearerToken, getIP } from "../../infra/http/auth"
 import { CORS_HEADERS, corsPreflightResponse } from "./middlewares/cors"
 import { jsonError } from "./middlewares/json"
 import { matchRoute, routes } from "./routes"
 import type { RouteDeps, Route } from "./routes"
 import { MAX_REQUEST_BODY_BYTES } from "../../infra/http/constants"
+import { readBoundedBytes } from "../../infra/http/text"
+import {
+  applyBrowserResponseHeaders,
+  validateBrowserBoundary,
+} from "../../infra/http/browser-security"
+import { randomUUID } from "node:crypto"
+import { createRateLimiter, type RateLimitPolicy } from "../../infra/http/rate-limit"
+import { authenticateCredential, hasCapabilities, type RoutePrincipal } from "./authentication"
 
 export interface RemoteServer {
   /**
@@ -45,7 +53,11 @@ function isEaddrInUse(err: unknown): boolean {
  * Returns a Response to send back on violation, or null when the request is
  * within limits.
  */
-export function checkBodySize(req: Request, maxBytes = MAX_REQUEST_BODY_BYTES): Response | null {
+export function checkBodySize(
+  req: Request,
+  maxBytes = MAX_REQUEST_BODY_BYTES,
+  requestId?: string,
+): Response | null {
   const cl = req.headers.get("content-length")
   if (cl !== null) {
     const len = Number(cl)
@@ -55,6 +67,7 @@ export function checkBodySize(req: Request, maxBytes = MAX_REQUEST_BODY_BYTES): 
         `Request body exceeds the ${maxBytes}-byte limit`,
         413,
         CORS_HEADERS,
+        requestId,
       )
     }
   }
@@ -67,6 +80,18 @@ export { readBoundedText } from "../../infra/http/text"
 
 export function createRemoteServer(deps: RouteDeps): RemoteServer {
   let server: ReturnType<typeof Bun.serve> | null = null
+  const rateLimiter = createRateLimiter()
+  const authFailurePolicy = { limit: 10, windowMs: 60_000 }
+
+  function mutationPolicy(path: string): RateLimitPolicy {
+    if (path === "/auth/rotate" || path.startsWith("/pair")) return { limit: 10, windowMs: 60_000 }
+    if (path.includes("/prompt")) return { limit: 60, windowMs: 60_000 }
+    if (path.startsWith("/permissions/")) return { limit: 120, windowMs: 60_000 }
+    if (path === "/settings") return { limit: 30, windowMs: 60_000 }
+    if (path.startsWith("/push/")) return { limit: 60, windowMs: 60_000 }
+    if (path.startsWith("/codex/hooks/")) return { limit: 1_000, windowMs: 60_000 }
+    return { limit: 300, windowMs: 60_000 }
+  }
 
   // Dynamic routes registered after server construction (e.g. by codexIntegration)
   const dynamicRoutes: Route[] = []
@@ -83,12 +108,52 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
       idleTimeout: 255, // seconds — max Bun allows; prevents SSE connections from being killed
 
       async fetch(req: Request): Promise<Response> {
+        const requestId = randomUUID()
         const url = new URL(req.url)
         const path = url.pathname
+        const boundary = validateBrowserBoundary(req, {
+          host: deps.config.host,
+          port: deps.config.port,
+          tunnelUrl: deps.tunnelUrl,
+          allowedHosts: deps.config.allowedHosts,
+          allowedOrigins: deps.config.allowedOrigins,
+        })
+        const respond = (response: Response): Response => {
+          const secured = applyBrowserResponseHeaders(response, boundary.ok ? boundary.origin : null)
+          const headers = new Headers(secured.headers)
+          headers.set("X-Request-ID", requestId)
+          return new Response(secured.body, {
+            status: secured.status,
+            statusText: secured.statusText,
+            headers,
+          })
+        }
+        const requestError = (code: string, message: string, status: number): Response =>
+          jsonError(code, message, status, CORS_HEADERS, requestId)
+        const rateError = (retryAfterSeconds: number): Response =>
+          jsonError(
+            "RATE_LIMITED",
+            "Too many requests. Retry later.",
+            429,
+            { ...CORS_HEADERS, "Retry-After": String(retryAfterSeconds) },
+            requestId,
+          )
+        const clientKey = getIP(req).slice(0, 128)
+
+        if (!boundary.ok) {
+          deps.audit.log("request.rejected", {
+            reason: boundary.code,
+            method: req.method,
+            path,
+            ip: getIP(req),
+            requestId,
+          })
+          return respond(requestError("FORBIDDEN", "Forbidden", 403))
+        }
 
         // CORS preflight
         if (req.method === "OPTIONS") {
-          return corsPreflightResponse()
+          return respond(corsPreflightResponse())
         }
 
         // Check static routes first, then dynamically-registered routes
@@ -105,17 +170,30 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
         }
 
         if (!matched) {
-          deps.audit.log("request.notfound", { method: req.method, path, ip: getIP(req) })
-          return jsonError("NOT_FOUND", "Not found", 404, CORS_HEADERS)
+          deps.audit.log("request.notfound", { method: req.method, path, ip: getIP(req), requestId })
+          return respond(requestError("NOT_FOUND", "Not found", 404))
         }
 
         const { route, params } = matched
 
-        // Auth check — "optional" is handled per-handler (SSE)
-        if (route.auth === "required") {
-          if (!validateToken(req, deps.token)) {
+        let principal: RoutePrincipal | undefined
+        if (route.auth !== "none") {
+          const headerCredential = getBearerToken(req)
+          const queryCredential = route.auth === "optional" ? url.searchParams.get("token") : null
+          principal = authenticateCredential(headerCredential ?? queryCredential, deps) ?? undefined
+          if (!principal) {
             const ip = getIP(req)
-            deps.audit.log("auth.failed", { path, ip })
+            const perClient = rateLimiter.consume(`auth:client:${clientKey}`, authFailurePolicy)
+            const global = rateLimiter.consume("auth:global", {
+              limit: authFailurePolicy.limit * 10,
+              windowMs: authFailurePolicy.windowMs,
+            })
+            deps.audit.log("auth.failed", { path, ip, requestId })
+            if (!perClient.allowed || !global.allowed) {
+              const retryAfter = Math.max(perClient.retryAfterSeconds, global.retryAfterSeconds)
+              deps.audit.log("auth.rate_limited", { path, ip, requestId, retryAfter })
+              return respond(rateError(retryAfter))
+            }
             // Also surface via ctx.client.app.log so the user sees 401
             // storms in OpenCode's log panel (not only in the audit log
             // which most users never open). This is the signal that
@@ -123,27 +201,78 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
             // that hasn't noticed the server restart.
             // Introduced in 1.13.15 for issue #1 "token inválido" follow-up.
             deps.logger.warn(
-              `Auth rejected on ${req.method} ${path} — the client sent a token that does not match the current server token. ` +
-              `Usually: a dashboard tab from before the last OpenCode restart. Have the user re-open via /remote.`,
-              { path, method: req.method, ip },
+              `Auth rejected on ${req.method} ${path} — the client sent a missing, stale, revoked, or invalid credential.`,
+              { path, method: req.method, ip, requestId },
             )
-            return jsonError("UNAUTHORIZED", "Unauthorized", 401, CORS_HEADERS)
+            return respond(requestError("UNAUTHORIZED", "Unauthorized", 401))
           }
-          deps.audit.log("request", { method: req.method, path, ip: getIP(req) })
+          if (route.requiredCapabilities && !hasCapabilities(principal, route.requiredCapabilities)) {
+            deps.audit.log("auth.forbidden", {
+              path,
+              principalKind: principal.kind,
+              principalId: principal.id,
+              requiredCapabilities: route.requiredCapabilities,
+              requestId,
+            })
+            return respond(requestError("FORBIDDEN", "Insufficient device capability", 403))
+          }
+          deps.audit.log("request", {
+            method: req.method,
+            path,
+            ip: getIP(req),
+            principalKind: principal.kind,
+            principalId: principal.id,
+            requestId,
+          })
         }
 
-        // Reject oversized bodies before they reach any handler that calls
-        // req.json() / req.arrayBuffer(). SSE and GET routes are unaffected.
+        if (req.method === "POST" || req.method === "PATCH" || req.method === "PUT" || req.method === "DELETE") {
+          const policy = mutationPolicy(path)
+          const routeKey = route.pattern.source
+          const perClient = rateLimiter.consume(`mutation:${routeKey}:client:${clientKey}`, policy)
+          const global = rateLimiter.consume(`mutation:${routeKey}:global`, {
+            limit: policy.limit * 10,
+            windowMs: policy.windowMs,
+          })
+          if (!perClient.allowed || !global.allowed) {
+            const retryAfter = Math.max(perClient.retryAfterSeconds, global.retryAfterSeconds)
+            deps.audit.log("request.rate_limited", { method: req.method, path, requestId, retryAfter })
+            return respond(rateError(retryAfter))
+          }
+        }
+
+        let handlerRequest = req
+        // Buffer mutation bodies through a streaming hard limit, then rebuild
+        // the request so handlers can safely call json()/text(). This also
+        // covers chunked requests and dishonest Content-Length headers.
         if (req.method === "POST" || req.method === "PATCH" || req.method === "PUT") {
-          const sizeError = checkBodySize(req)
-          if (sizeError) return sizeError
+          const sizeError = checkBodySize(req, MAX_REQUEST_BODY_BYTES, requestId)
+          if (sizeError) return respond(sizeError)
+          let body: Uint8Array<ArrayBuffer> | null
+          try {
+            body = await readBoundedBytes(req, MAX_REQUEST_BODY_BYTES)
+          } catch (err) {
+            deps.audit.log("request.body_read_failed", { path, error: String(err), requestId })
+            return respond(requestError("INVALID_BODY", "Failed to read request body", 400))
+          }
+          if (body === null) {
+            return respond(jsonError(
+              "PAYLOAD_TOO_LARGE",
+              `Request body exceeds the ${MAX_REQUEST_BODY_BYTES}-byte limit`,
+              413,
+              CORS_HEADERS,
+              requestId,
+            ))
+          }
+          handlerRequest = new Request(req, { body: body.byteLength > 0 ? body.buffer : undefined })
         }
 
         try {
-          return await route.handler({ req, url, params, deps })
+          return respond(await route.handler({ req: handlerRequest, url, params, deps, requestId, principal }))
         } catch (err) {
-          deps.audit.log("error", { path, error: String(err) })
-          return jsonError("INTERNAL_ERROR", "Internal server error", 500, CORS_HEADERS)
+          deps.audit.log("error", { path, error: String(err), requestId })
+          deps.logger.error("HTTP handler failed", { path, requestId, error: String(err) })
+          return respond(requestError("INTERNAL_ERROR", "Internal server error", 500))
         }
       },
       })

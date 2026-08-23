@@ -6,17 +6,20 @@ This is the **execution** checklist for shipping a new version. First-time npm-a
 
 ---
 
-## The three places version lives
+## The two release version sources
 
-Every release must bump **all three of these in a single commit**. The asset-sanity test (`src/server/dashboard/__tests__/asset-sanity.test.ts`) fails the build if they drift.
+Every release must bump **both** of these in a single commit. The asset-sanity test (`src/dashboard/__tests__/asset-sanity.test.ts`) fails the build if they drift.
 
 | File | Line to change | Notes |
 |------|---------------|-------|
 | `package.json` | `"version": "X.Y.Z"` | Canonical — npm reads this one. |
 | `src/server/constants.ts` | `export const PILOT_VERSION = "X.Y.Z"` | Served from `/health` so the dashboard + TUI show the live version. |
-| `src/server/dashboard/index.html` | `var GEN = "X.Y.Z"` | Bumps the self-heal marker so browsers purge the old service worker + localStorage. |
+The dashboard self-heal marker is not a third source: the local server and the GitHub Pages workflow replace `__PILOT_ASSET_GENERATION__` from the current version automatically. If you forget either release source, `bun test` fails before anything leaves your machine.
 
-If you forget any of them, `bun test` fails with a clear diff, which is the whole point — CI catches it before anything leaves your machine.
+The release workflow also refuses to publish when the pushed tag differs from
+the package version prefixed with `v`, or its commit is not reachable from
+`origin/main`. This prevents a valid-looking tag from publishing the wrong
+package version or an unmerged branch.
 
 ---
 
@@ -27,8 +30,9 @@ git push origin vX.Y.Z
   │
   └──►  .github/workflows/release.yml
          ├─ bun install --frozen-lockfile
+         ├─ verify tag == package version and commit is on main
          ├─ bun run typecheck            # tsc --noEmit
-         ├─ bun test                     # 228+ tests
+         ├─ bun test                     # complete current suite
          ├─ npm publish --access public --provenance
          └─ softprops/action-gh-release  # GitHub Release from CHANGELOG.md
 ```
@@ -47,13 +51,12 @@ Semver, applied to a user-facing plugin:
 - **Minor (Y)** — new optional features, new endpoints, new slash commands. No breaking change to `opencode.json::plugin` spec, `PilotState` shape, or HTTP route table.
 - **Major (X)** — break any of the above. Plan a deprecation cycle first. Major bumps are rare for plugins because every user must restart OpenCode.
 
-### 2. Bump the three version strings
+### 2. Bump the two version strings
 
 ```bash
 # Use your editor or a quick sd/sed pass:
 sd '"version": "[^"]*"'              '"version": "X.Y.Z"'          package.json
 sd 'PILOT_VERSION = "[^"]*"'         'PILOT_VERSION = "X.Y.Z"'     src/server/constants.ts
-sd 'var GEN = "[^"]*";'              'var GEN = "X.Y.Z";'          src/server/dashboard/index.html
 ```
 
 ### 3. Write the CHANGELOG entry
@@ -90,7 +93,7 @@ Template:
 ```bash
 bun scripts/prepublish-guard.ts   # asset sanity, file manifest, etc
 bun run typecheck                 # tsc --noEmit
-bun test                          # 228+ tests
+bun test                          # complete current suite
 ```
 
 If anything fails, fix it before commit — never commit and then patch on top, the history becomes noisy.
@@ -193,7 +196,7 @@ These run in `.github/workflows/release.yml` — local is a fast-feedback dress 
 
 - `bun install --frozen-lockfile` — `bun.lock` must be clean.
 - `bun run typecheck` — zero type errors.
-- `bun test` — all tests pass (228+ as of 1.13.13).
+- `bun test` — all tests pass. Do not document a fixed test count; the suite changes continuously.
 - `npm publish --access public --provenance` — signed publish.
 
 Things CI **does not** check:

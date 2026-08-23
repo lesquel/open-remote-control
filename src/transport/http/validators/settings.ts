@@ -199,6 +199,25 @@ export function validateSettingsPatch(
     out.projectStateMode = b.projectStateMode
   }
 
+  if (b.notificationPreferences !== undefined) {
+    if (!b.notificationPreferences || typeof b.notificationPreferences !== "object" || Array.isArray(b.notificationPreferences)) {
+      return { ok: false, error: "notificationPreferences must be an object" }
+    }
+    const source = b.notificationPreferences as Record<string, unknown>
+    const allowed = new Set(["permissionRequired", "agentFinished", "errors"])
+    for (const key of Object.keys(source)) {
+      if (!allowed.has(key)) return { ok: false, error: `notificationPreferences.${key} is not supported` }
+      if (typeof source[key] !== "boolean") {
+        return { ok: false, error: `notificationPreferences.${key} must be a boolean` }
+      }
+    }
+    out.notificationPreferences = {
+      permissionRequired: source.permissionRequired as boolean | undefined,
+      agentFinished: source.agentFinished as boolean | undefined,
+      errors: source.errors as boolean | undefined,
+    }
+  }
+
   if (b.hookToken !== undefined) {
     if (b.hookToken === null) {
       // null means "clear the token" — we'll store undefined/remove

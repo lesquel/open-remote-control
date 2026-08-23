@@ -15,13 +15,13 @@
 
 ## Key files
 - `index.ts` — THE composition root; 7 named sections (ENV+CONFIG → CORE → NOTIFICATIONS → STATE+BANNER → TRANSPORT → INTEGRATIONS → START → PLUGIN HANDLE); shutdown order is documented here
-- `lifecycle.ts` — process-global error handlers installed exactly once per process (`installGlobalErrorHandlersOnce`) + the re-entrant shutdown guard that also closes SSE clients (`createShutdownGuard`); consumed only by `index.ts`
+- `lifecycle.ts` — process-global error/signal ownership, multi-instance shutdown fan-out, the re-entrant SSE shutdown guard, and observable sequential cleanup steps; consumed only by `index.ts`
 - `config.ts` — `loadConfigSafe`, `mergeStoredSettings`, `resolveSources`; config priority: shell env > `~/.opencode-pilot/config.json` > `.env` > defaults
 - `constants.ts` — `PILOT_VERSION`, `DEFAULT_PORT`, all magic numbers; **path is hard-referenced by the release script — do NOT move or rename this file**
 - `config.test.ts` — unit tests for config parsing and merging
 
 ## Conventions specific to this folder
-- `PILOT_VERSION` in `constants.ts` must be bumped in sync with `package.json::version` and `dashboard/index.html` `var GEN` on every release (enforced by `__tests__/asset-sanity.test.ts`).
+- `PILOT_VERSION` in `constants.ts` must be bumped in sync with `package.json::version` on every release. Dashboard generation markers are injected from that version at serve/deploy time.
 - Shutdown order in `index.ts` is non-negotiable: integrations → server → tunnel → notifications → clearState.
 
 ## DO NOT
@@ -31,4 +31,4 @@
 
 ## See also
 - `docs/ARCHITECTURE.md` — composition root section (7 named phases) and shutdown order
-- `AGENTS.md` §4 — the three-file version bump rule for releases
+- `AGENTS.md` §4 — the two-file version bump rule for releases

@@ -14,11 +14,11 @@
 // Schema version intentionally omitted for v1 — we'll add one the first time
 // we need to rename or remove a field.
 //
-// No external deps — plain node:fs + node:os + node:path.
+// Sensitive writes use the shared private atomic-file helper from infra/.
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
-import { dirname } from "node:path"
+import { existsSync, readFileSync, unlinkSync } from "node:fs"
 import type { Logger } from "../../infra/logger/index"
+import { writePrivateFile } from "../../infra/fs/private-file"
 import { configFile } from "../../infra/paths/index"
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -34,6 +34,12 @@ import { configFile } from "../../infra/paths/index"
  *   - wire it into config.ts::mergeStoredSettings()
  *   - add a source entry in handlers.ts::getEffectiveSettings()
  */
+export interface NotificationPreferences {
+  permissionRequired?: boolean
+  agentFinished?: boolean
+  errors?: boolean
+}
+
 export interface PilotSettings {
   port?: number
   host?: string
@@ -49,6 +55,8 @@ export interface PilotSettings {
   projectStateMode?: "off" | "auto" | "always"
   /** Optional token accepted on POST /codex/hooks/* endpoints (in addition to main token). */
   hookToken?: string
+  /** Global outbound-channel event preferences. Missing values default to enabled. */
+  notificationPreferences?: NotificationPreferences
 }
 
 /** Whitelist of keys we actually write to disk. Unknown keys are dropped. */
@@ -66,6 +74,7 @@ const PERSISTED_KEYS: ReadonlyArray<keyof PilotSettings> = [
   "fetchTimeoutMs",
   "projectStateMode",
   "hookToken",
+  "notificationPreferences",
 ]
 
 // ─── Store ───────────────────────────────────────────────────────────────────
@@ -111,6 +120,16 @@ function sanitize(raw: unknown): PilotSettings {
       case "enableGlobOpener":
         if (typeof v === "boolean") out[key] = v
         break
+      case "notificationPreferences":
+        if (typeof v === "object" && !Array.isArray(v)) {
+          const source = v as Record<string, unknown>
+          const preferences: NotificationPreferences = {}
+          for (const preference of ["permissionRequired", "agentFinished", "errors"] as const) {
+            if (typeof source[preference] === "boolean") preferences[preference] = source[preference]
+          }
+          out.notificationPreferences = preferences
+        }
+        break
       case "tunnel":
         if (v === "off" || v === "cloudflared" || v === "ngrok") out[key] = v
         break
@@ -149,47 +168,28 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
     }
   }
 
-  function ensureDir(): void {
-    const dir = dirname(path)
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true })
-      // Best-effort: restrict the config directory to the owner only.
-      // chmod is effectively a no-op on Windows — the call is safe there.
-      try {
-        chmodSync(dir, 0o700)
-      } catch (err) {
-        logger.debug("settings-store: could not chmod config dir (non-critical)", {
-          dir,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    }
-  }
-
   function save(patch: Partial<PilotSettings>): PilotSettings {
-    ensureDir()
     const current = load()
     const clean = sanitize(patch)
     const merged: PilotSettings = { ...current, ...clean }
-    // Remove keys that the patch explicitly set to undefined (not possible via
-    // sanitize, but future-proofs us). For now sanitize already drops them.
-    const tmp = path + ".tmp"
-    // Write with mode 0600 so the file is owner-readable only from the start.
-    // This matters because config.json contains VAPID private keys and Telegram
-    // tokens. On Windows the mode argument is ignored — that's acceptable.
-    writeFileSync(tmp, JSON.stringify(merged, null, 2), { encoding: "utf-8", mode: 0o600 })
-    renameSync(tmp, path)
-    // After rename, normalise permissions in case the file existed previously
-    // with broader permissions (e.g. created by an earlier version of the plugin).
-    // Best-effort: skip on Windows where chmod is a no-op or may throw EPERM.
-    try {
-      chmodSync(path, 0o600)
-    } catch (err) {
-      logger.debug("settings-store: could not chmod config file (non-critical)", {
-        path,
-        error: err instanceof Error ? err.message : String(err),
-      })
+    if (clean.notificationPreferences) {
+      merged.notificationPreferences = {
+        ...current.notificationPreferences,
+        ...clean.notificationPreferences,
+      }
     }
+    for (const key of PERSISTED_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(patch, key) && patch[key] === undefined) {
+        delete merged[key]
+      }
+    }
+    // The HTTP validator maps hookToken:null to an empty-string clear sentinel.
+    // sanitize() intentionally refuses to persist it, so deletion must happen
+    // against the merged object rather than silently resurrecting the old value.
+    if (Object.prototype.hasOwnProperty.call(patch, "hookToken") && patch.hookToken === "") {
+      delete merged.hookToken
+    }
+    writePrivateFile(path, `${JSON.stringify(merged, null, 2)}\n`)
     return merged
   }
 

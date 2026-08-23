@@ -17,13 +17,14 @@
 import { DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PROJECT_STATE_MODE, MAX_CODEX_PERMISSION_TIMEOUT_MS } from "./constants"
 import { DEFAULT_HOST, DEFAULT_PORT, VAPID_DEFAULT_SUBJECT } from "../infra/http/constants"
 import type { PilotSettings } from "../core/settings/store"
+import { DEFAULT_PWA_URL } from "../infra/banner/constants"
 
 // Re-export types from their canonical locations in core/ and infra/.
 // server/config.ts is the composition root area — these types belong in the
 // layers they describe, not here. Re-exports keep backward compatibility for
 // anything that still imports from server/config.
 export type { Config, TelegramConfig, VapidConfig, TunnelProvider, ProjectStateMode, ConfigSource } from "../core/types/config"
-import type { Config, TelegramConfig, VapidConfig, TunnelProvider, ProjectStateMode } from "../core/types/config"
+import type { Config, TelegramConfig, VapidConfig, TunnelProvider, ProjectStateMode, SettingsSnapshot } from "../core/types/config"
 
 /** Provenance map: for each UI-editable setting, where did its effective value
  *  come from? Used by the Settings UI to badge inputs and disable fields whose
@@ -59,11 +60,44 @@ function parseProjectStateMode(raw: string | undefined): ProjectStateMode {
   )
 }
 
+function parseAllowedHosts(raw: string | undefined): string[] {
+  if (!raw) return []
+  const hosts = raw.split(",").map((host) => host.trim()).filter(Boolean)
+  for (const host of hosts) {
+    if (host.length > 253 || /[\s/@?#]/.test(host) || host.includes("://")) {
+      throw new ConfigError(
+        `Invalid PILOT_ALLOWED_HOSTS entry "${host}". Use comma-separated hostnames without schemes, paths, or ports.`,
+      )
+    }
+  }
+  return [...new Set(hosts.map((host) => host.toLowerCase().replace(/\.$/, "")))]
+}
+
+function parseWebOrigin(value: string, variable: string): string {
+  try {
+    const url = new URL(value)
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
+      throw new Error("unsupported origin")
+    }
+    return url.origin
+  } catch {
+    throw new ConfigError(`Invalid ${variable} URL "${value}". Use an absolute HTTP(S) URL.`)
+  }
+}
+
+function parseAllowedOrigins(env: NodeJS.ProcessEnv): string[] {
+  const origins = [parseWebOrigin(env.PILOT_PWA_URL ?? DEFAULT_PWA_URL, "PILOT_PWA_URL")]
+  for (const value of (env.PILOT_ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()).filter(Boolean)) {
+    origins.push(parseWebOrigin(value, "PILOT_ALLOWED_ORIGINS"))
+  }
+  return [...new Set(origins)]
+}
+
 // ─── Mapping: env var name ↔ PilotSettings key ───────────────────────────────
 // Used to both (a) detect whether a value came from the shell-env and (b)
 // translate stored settings into the env-var shape that loadConfig understands.
 
-const ENV_KEY_MAP: Record<keyof PilotSettings, string> = {
+const ENV_KEY_MAP: Partial<Record<keyof PilotSettings, string>> = {
   port: "PILOT_PORT",
   host: "PILOT_HOST",
   permissionTimeoutMs: "PILOT_PERMISSION_TIMEOUT",
@@ -80,7 +114,7 @@ const ENV_KEY_MAP: Record<keyof PilotSettings, string> = {
 }
 
 export function envKeyFor(field: keyof PilotSettings): string {
-  return ENV_KEY_MAP[field]
+  return ENV_KEY_MAP[field] ?? ""
 }
 
 /**
@@ -106,7 +140,7 @@ export function mergeStoredSettings(
 ): NodeJS.ProcessEnv {
   const out = { ...baseEnv }
   for (const key of Object.keys(ENV_KEY_MAP) as Array<keyof PilotSettings>) {
-    const envKey = ENV_KEY_MAP[key]
+    const envKey = ENV_KEY_MAP[key]!
     const storedValue = stored[key]
     if (storedValue === undefined || storedValue === null) continue
     if (shellEnv[envKey] !== undefined && shellEnv[envKey] !== "") continue
@@ -122,6 +156,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const host = env.PILOT_HOST ?? DEFAULT_HOST
+  const allowedHosts = parseAllowedHosts(env.PILOT_ALLOWED_HOSTS)
+  const allowedOrigins = parseAllowedOrigins(env)
   const permissionTimeoutMs = parseIntOrDefault(env.PILOT_PERMISSION_TIMEOUT, DEFAULT_PERMISSION_TIMEOUT_MS)
   const tunnel = parseTunnelProvider(env.PILOT_TUNNEL)
 
@@ -179,6 +215,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     port,
     host,
+    allowedHosts,
+    allowedOrigins,
     permissionTimeoutMs,
     tunnel,
     telegram,
@@ -233,7 +271,7 @@ export function resolveSources(
   const out = {} as ConfigSources
   const envFileSet = new Set(envFileApplied)
   for (const key of Object.keys(ENV_KEY_MAP) as Array<keyof PilotSettings>) {
-    const envKey = ENV_KEY_MAP[key]
+    const envKey = ENV_KEY_MAP[key]!
     if (shellEnv[envKey] !== undefined && shellEnv[envKey] !== "") {
       out[key] = "shell-env"
     } else if (stored[key] !== undefined && stored[key] !== null) {
@@ -251,7 +289,7 @@ export function resolveSources(
  * Project the effective Config down to the PilotSettings shape the UI expects.
  * Used by GET /settings so the client can display a single structured object.
  */
-export function projectConfigToSettings(config: Config): Omit<Required<PilotSettings>, "hookToken"> & { hookTokenConfigured: boolean } {
+export function projectConfigToSettings(config: Config): SettingsSnapshot {
   return {
     port: config.port,
     host: config.host,
@@ -267,6 +305,11 @@ export function projectConfigToSettings(config: Config): Omit<Required<PilotSett
     projectStateMode: config.projectStateMode,
     // hookToken is intentionally omitted — raw token must never leave this module
     hookTokenConfigured: Boolean(config.hookToken && config.hookToken.length > 0),
+    notificationPreferences: {
+      permissionRequired: true,
+      agentFinished: true,
+      errors: true,
+    },
   }
 }
 

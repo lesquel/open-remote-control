@@ -13,6 +13,85 @@
 import type { EventBus } from "../core/events/bus"
 import { getSharedEventBus } from "../core/events/bus"
 
+type ShutdownSignal = "SIGINT" | "SIGTERM"
+
+interface SignalSource {
+  once(event: ShutdownSignal, listener: () => void): unknown
+}
+
+export interface ShutdownCoordinator {
+  register(handler: () => Promise<void>): () => void
+}
+
+export interface ShutdownStep {
+  name: string
+  run: () => void | Promise<void>
+}
+
+/** Run cleanup sequentially while making every failure observable and isolated. */
+export async function runShutdownSteps(
+  steps: ReadonlyArray<ShutdownStep>,
+  onError: (step: string, error: unknown) => void,
+): Promise<void> {
+  for (const step of steps) {
+    try {
+      await step.run()
+    } catch (error) {
+      onError(step.name, error)
+    }
+  }
+}
+
+/**
+ * Own process signals once while allowing every plugin instance to register
+ * independent cleanup. A failing instance is isolated from the remaining
+ * handlers, and SIGINT followed by SIGTERM can never replay cleanup.
+ */
+export function createShutdownCoordinator(
+  signals: SignalSource,
+  onError: (error: unknown) => void,
+): ShutdownCoordinator {
+  const handlers = new Set<() => Promise<void>>()
+  let installed = false
+  let shuttingDown = false
+
+  async function runAll(): Promise<void> {
+    if (shuttingDown) return
+    shuttingDown = true
+    const pending = [...handlers]
+    handlers.clear()
+    const results = await Promise.allSettled(pending.map((handler) => handler()))
+    for (const result of results) {
+      if (result.status === "rejected") onError(result.reason)
+    }
+  }
+
+  function register(handler: () => Promise<void>): () => void {
+    if (shuttingDown) {
+      void handler().catch(onError)
+      return () => {}
+    }
+    handlers.add(handler)
+    if (!installed) {
+      installed = true
+      signals.once("SIGINT", () => void runAll())
+      signals.once("SIGTERM", () => void runAll())
+    }
+    return () => { handlers.delete(handler) }
+  }
+
+  return { register }
+}
+
+const processShutdownCoordinator = createShutdownCoordinator(process, () => {
+  // Each registered instance wraps its cleanup with its own structured logger.
+  // This fallback is intentionally silent because stdout/stderr corrupts the TUI.
+})
+
+export function registerProcessShutdown(handler: () => Promise<void>): () => void {
+  return processShutdownCoordinator.register(handler)
+}
+
 // ─── D1 guard — module-scoped, lives for the lifetime of the process ──────────
 //
 // `process.on("uncaughtException", …)` accumulates per call. Every plugin-factory

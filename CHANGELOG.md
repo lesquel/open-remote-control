@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.22.0] - 2026-08-23
+
+Local-first production hardening tracked in [#46](https://github.com/lesquel/open-remote-control/issues/46). This release adds device-scoped access and operator tooling while preserving existing local and legacy bearer-token workflows. It does not introduce hosted storage, telemetry, or a cloud dependency.
+
+### Added
+
+- **Per-device trust and authorization.** Short-lived local pairing now issues individually revocable device credentials with named roles and explicit capabilities. The dashboard can pair, list, rename, re-role, and revoke devices without rotating every other device.
+- **Local operations center.** A bounded Activity Center highlights pending permissions, failures, and recent completions. Notification preferences control permission, completion, and error delivery without sending configuration or activity to a hosted service.
+- **Local diagnostics.** The protected diagnostics panel and `opencode-pilot diagnostics` expose sanitized versions, health, integrations, client counts, configuration sources, and bounded error metadata. Support bundles exclude prompts, source code, credentials, device identifiers, and the full environment.
+- **Agent capability contract.** OpenCode and Codex declare their actual features through a shared integration port, and the dashboard adapts instead of assuming provider parity.
+- **Safe update discovery.** `opencode-pilot update` compares the installed version with npm and prints an explicit upgrade command without modifying the user's installation.
+
+### Security
+
+- Credential and settings files use collision-safe atomic writes and owner-private permissions. Raw secrets and prompts are centrally redacted from structured and audit logs.
+- Browser-facing requests enforce Host and Origin boundaries, security headers, bounded bodies, authenticated mutation rate limits, and request correlation identifiers.
+- Local attachments are confined through canonical path and symlink checks. Remote attachments use public-address classification, DNS pinning, redirect rejection, size limits, and HTTPS-only fetching.
+- Authentication failures, pairing attempts, prompts, permissions, settings, and other mutations are rate-limited without throttling SSE streaming.
+- Added [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and [`docs/PRIVACY.md`](docs/PRIVACY.md) with explicit trust boundaries, accepted risks, and where data goes.
+
+### Reliability
+
+- Permission decisions are serialized in the dashboard and resolved exactly once in the core, including duplicate, timeout, stale, and cross-integration cases.
+- SSE clients have bounded queues, stable event IDs, replay windows, host-generation detection, cleanup, and jittered reconnection. Stale transcript responses can no longer overwrite the active session.
+- Push subscriptions persist locally. Completion and error notifications are deduplicated, configurable, and drained with a bounded shutdown timeout.
+- Process shutdown is coordinated once across integrations, HTTP, SSE, tunnels, notifications, state, and timers. Every failed cleanup step is logged instead of being silently swallowed.
+- Public `/health` remains a minimal local process probe; detailed diagnostics require authentication.
+
+### Accessibility and product
+
+- Restored keyboard operation, focus state, ARIA relationships, and screen-reader labels across session navigation, permissions, dialogs, the command palette, message disclosures, and live connection state.
+- Added explicit protocol compatibility handling so an old dashboard stops reconnecting and requests a reload instead of speaking an incompatible event protocol.
+- Documented safe uninstall behavior and clarified Pilot's role alongside OpenCode's built-in web UI ([#45](https://github.com/lesquel/open-remote-control/issues/45)).
+
+### Testing and release safety
+
+- Added Playwright Chromium journeys for dashboard prompt delivery and exactly-once permission approval through the real local HTTP server and a fake agent boundary.
+- Added reproducible SSE load testing, architecture import guards, documentation staleness checks, package smoke installation, dependency review, release-tag identity checks, and pinned GitHub Actions.
+- Final verification: 949 Bun tests, TypeScript strict checking, package smoke, and 2 browser E2E journeys.
+
 ## [1.21.1] - 2026-05-17
 
 A hardening + correctness release: two systematic audit passes of `main` plus the latent bugs their characterization tests surfaced. No new endpoints, no slash commands, no change to the `opencode.json` plugin spec / `PilotState` shape / HTTP route table — hence a patch. Tracked in #25 and #33.
@@ -2027,7 +2067,7 @@ Patch release fixing four issues reported after v1.11.0 + three new docs for npm
 
 ### Fixed
 
-- **Tab labels showed full path or wrong project name** — `applyProjectChoice` derived the label using `shortenPath()` which returned multi-segment paths like `~/proyectos/zimna-app`. Now uses true basename (`zimna-app`) via `path.split('/').filter(Boolean).pop()`. Falls back to picker label, then `shortenPath`, in that order.
+- **Tab labels showed full path or wrong project name** — `applyProjectChoice` derived the label using `shortenPath()` which returned multi-segment paths like `~/projects/project-app`. Now uses the true basename (`project-app`) via `path.split('/').filter(Boolean).pop()`. Falls back to the picker label, then `shortenPath`, in that order.
 - **Switching tabs felt frozen — messages pane stuck on previous tab's content** — `switchProjectTab()` only re-rendered when `!tab.loaded`. For previously-loaded tabs, sync happened but no DOM refresh. Added `else` branch that calls `renderSessions()`, `updateHeaderSession()`, `updateInfoBar()`, and `loadMessages(activeSession)` so loaded tabs also get a fresh paint.
 - **SSE appeared to buffer until end of conversation** — root cause was `MESSAGE_CREATED` for assistant messages calling `loadMessages()` which wiped the messages pane to "Loading…", destroying the `[data-part-id]` DOM elements. Subsequent `MESSAGE_PART_UPDATED` events couldn't find their target nodes and silently dropped deltas. Now `MESSAGE_CREATED` shows a typing indicator (3-dot bounce) without wiping the DOM; `MESSAGE_UPDATED` (the final event) triggers the full re-render.
 - **Mobile tab bar appeared to only show "default"** — actually all tabs rendered but the active tab could be off-screen with no visual cue. Added `requestAnimationFrame(() => activeEl?.scrollIntoView(...))` after every render and explicit `overflow-x: auto` + `-webkit-overflow-scrolling: touch` on mobile.

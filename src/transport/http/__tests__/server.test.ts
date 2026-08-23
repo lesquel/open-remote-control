@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type { PluginInput } from "@opencode-ai/plugin"
 import type { Config } from "../../../core/types/config"
 import type { AuditLog } from "../../../core/audit/log"
@@ -9,6 +12,9 @@ import { createPushService } from "../../../notifications/channels/push/service"
 import type { Logger } from "../../../infra/logger/index"
 import type { RouteDeps } from "../routes"
 import { createRemoteServer, type RemoteServer } from "../server"
+import { createDeviceStore, type DeviceStore } from "../../../core/devices/store"
+import { opencodeIntegration } from "../../../integrations/opencode"
+import { codexIntegration } from "../../../integrations/codex"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -133,7 +139,7 @@ function createClientMock(): PluginInput["client"] {
   return mock as unknown as PluginInput["client"]
 }
 
-function buildDeps(port: number): RouteDeps {
+function buildDeps(port: number, deviceStore?: DeviceStore): RouteDeps {
   const config: Config = {
     port,
     host: "127.0.0.1",
@@ -169,6 +175,8 @@ function buildDeps(port: number): RouteDeps {
     worktree: "/tmp/test" as unknown as PluginInput["worktree"],
     config,
     token: TOKEN,
+    deviceStore,
+    integrations: [opencodeIntegration, codexIntegration],
     rotateToken(newToken: string) {
       deps.token = newToken
     },
@@ -216,10 +224,28 @@ function buildDeps(port: number): RouteDeps {
 describe("HTTP server integration", () => {
   let server: RemoteServer
   let baseUrl: string
+  let deviceStore: DeviceStore
+  let deviceStateRoot: string
+  let readOnlyCredential: string
+  let interactiveCredential: string
+  let operatorCredential: string
+  let adminCredential: string
+  let adminDeviceId: string
 
   beforeAll(() => {
     const port = findFreePort()
-    const deps = buildDeps(port)
+    deviceStateRoot = mkdtempSync(join(tmpdir(), "pilot-device-server-test-"))
+    deviceStore = createDeviceStore({
+      filePath: join(deviceStateRoot, "devices.json"),
+      logger: createNoopLogger(),
+    })
+    readOnlyCredential = deviceStore.issue({ name: "Read only", role: "read-only" }).credential
+    interactiveCredential = deviceStore.issue({ name: "Interactive", role: "interactive" }).credential
+    operatorCredential = deviceStore.issue({ name: "Operator", role: "operator" }).credential
+    const admin = deviceStore.issue({ name: "Admin", role: "admin" })
+    adminCredential = admin.credential
+    adminDeviceId = admin.device.id
+    const deps = buildDeps(port, deviceStore)
     server = createRemoteServer(deps)
     server.start()
     baseUrl = `http://127.0.0.1:${port}`
@@ -227,6 +253,7 @@ describe("HTTP server integration", () => {
 
   afterAll(() => {
     server.stop()
+    rmSync(deviceStateRoot, { recursive: true, force: true })
   })
 
   test("GET /status without token returns 401", async () => {
@@ -245,6 +272,205 @@ describe("HTTP server integration", () => {
     expect(body).toHaveProperty("pilot")
     expect(body).toHaveProperty("sessions")
     expect(body).toHaveProperty("clients")
+  })
+
+  test("read-only device credentials can read status but cannot mutate sessions", async () => {
+    const read = await fetch(`${baseUrl}/status`, {
+      headers: { Authorization: `Bearer ${readOnlyCredential}` },
+    })
+    expect(read.status).toBe(200)
+
+    const mutation = await fetch(`${baseUrl}/sessions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${readOnlyCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    })
+    expect(mutation.status).toBe(403)
+    expect((await mutation.json() as { error: { code: string } }).error.code).toBe("FORBIDDEN")
+  })
+
+  test("protected diagnostics reports local runtime state without credentials", async () => {
+    const response = await fetch(`${baseUrl}/diagnostics`, {
+      headers: { Authorization: `Bearer ${readOnlyCredential}` },
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as {
+      pilot: { version: string; runtime: { name: string; version: string } }
+      authentication: { kind: string; role: string; deviceId: string | null }
+      runtime: { integrations: string[]; sseClients: number; pendingPermissions: number }
+      recentErrors: unknown[]
+    }
+    expect(body.pilot.runtime.name).toBe("Bun")
+    expect(body.authentication).toMatchObject({ kind: "device", role: "read-only" })
+    expect(body.runtime.integrations).toEqual(["opencode", "codex"])
+    expect(body.runtime.sseClients).toBeGreaterThanOrEqual(0)
+    expect(body.runtime.pendingPermissions).toBe(0)
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain(TOKEN)
+    expect(serialized).not.toContain(readOnlyCredential)
+  })
+
+  test("protected integrations endpoint exposes provider capability metadata", async () => {
+    const response = await fetch(`${baseUrl}/integrations`, {
+      headers: { Authorization: `Bearer ${readOnlyCredential}` },
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as {
+      protocolVersion: number
+      integrations: Array<{ id: string; capabilities: Record<string, boolean> }>
+    }
+    expect(body.protocolVersion).toBe(1)
+    expect(body.integrations.map((integration) => integration.id)).toEqual(["opencode", "codex"])
+    expect(body.integrations.find((integration) => integration.id === "codex")?.capabilities).toMatchObject({
+      permissions: true,
+      sessions: false,
+      streaming: false,
+    })
+  })
+
+  test("interactive devices can create sessions but cannot approve permissions", async () => {
+    const create = await fetch(`${baseUrl}/sessions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${interactiveCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    })
+    expect(create.status).toBe(201)
+
+    const permission = await fetch(`${baseUrl}/permissions/missing`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${interactiveCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "allow" }),
+    })
+    expect(permission.status).toBe(403)
+  })
+
+  test("operator devices may reach permission resolution but cannot retrieve the legacy token", async () => {
+    const permission = await fetch(`${baseUrl}/permissions/missing`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${operatorCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "allow" }),
+    })
+    expect(permission.status).toBe(404)
+
+    const connectInfo = await fetch(`${baseUrl}/connect-info`, {
+      headers: { Authorization: `Bearer ${operatorCredential}` },
+    })
+    expect(connectInfo.status).toBe(403)
+  })
+
+  test("admin devices retain management access", async () => {
+    const response = await fetch(`${baseUrl}/connect-info`, {
+      headers: { Authorization: `Bearer ${adminCredential}` },
+    })
+    expect(response.status).toBe(200)
+  })
+
+  test("pairs, names, lists, updates, and individually revokes a device", async () => {
+    const start = await fetch(`${baseUrl}/pairing`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${adminCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ role: "operator" }),
+    })
+    expect(start.status).toBe(201)
+    const pairing = await start.json() as { pairingToken: string; expiresAt: number }
+    expect(pairing.pairingToken).toStartWith("pp1.")
+    expect(pairing.expiresAt).toBeGreaterThan(Date.now())
+
+    const redeem = await fetch(`${baseUrl}/pairing/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pairingToken: pairing.pairingToken, name: "Kitchen tablet" }),
+    })
+    expect(redeem.status).toBe(201)
+    const issued = await redeem.json() as {
+      credential: string
+      device: { id: string; name: string; role: string; tokenHash?: string }
+    }
+    expect(issued.device.name).toBe("Kitchen tablet")
+    expect(issued.device.tokenHash).toBeUndefined()
+
+    const replay = await fetch(`${baseUrl}/pairing/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pairingToken: pairing.pairingToken, name: "Replay" }),
+    })
+    expect(replay.status).toBe(401)
+
+    const update = await fetch(`${baseUrl}/devices/${issued.device.id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${adminCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "Desk tablet", role: "read-only" }),
+    })
+    expect(update.status).toBe(200)
+
+    const list = await fetch(`${baseUrl}/devices`, {
+      headers: { Authorization: `Bearer ${adminCredential}` },
+    })
+    const listed = await list.json() as {
+      devices: Array<{ id: string; name: string; role: string }>
+      currentDeviceId: string | null
+    }
+    expect(listed.currentDeviceId).toBe(adminDeviceId)
+    expect(listed.devices).toContainEqual(expect.objectContaining({
+      id: issued.device.id,
+      name: "Desk tablet",
+      role: "read-only",
+    }))
+
+    const read = await fetch(`${baseUrl}/status`, {
+      headers: { Authorization: `Bearer ${issued.credential}` },
+    })
+    expect(read.status).toBe(200)
+
+    const revoke = await fetch(`${baseUrl}/devices/${issued.device.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminCredential}` },
+    })
+    expect(revoke.status).toBe(200)
+    const rejected = await fetch(`${baseUrl}/status`, {
+      headers: {
+        Authorization: `Bearer ${issued.credential}`,
+        "X-Forwarded-For": "192.0.2.43",
+      },
+    })
+    expect(rejected.status).toBe(401)
+  })
+
+  test("device credentials authenticate query-only SSE clients", async () => {
+    const response = await fetch(`${baseUrl}/events?token=${encodeURIComponent(readOnlyCredential)}`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    await response.body?.cancel()
+  })
+
+  test("an individually revoked device credential is rejected", async () => {
+    const issued = deviceStore.issue({ name: "Stolen phone", role: "operator" })
+    expect(deviceStore.revoke(issued.device.id)).toBe(true)
+    const response = await fetch(`${baseUrl}/status`, {
+      headers: {
+        Authorization: `Bearer ${issued.credential}`,
+        "X-Forwarded-For": "192.0.2.42",
+      },
+    })
+    expect(response.status).toBe(401)
   })
 
   test("GET /sessions returns sessions array", async () => {
@@ -322,6 +548,8 @@ describe("HTTP server integration", () => {
     expect(res.headers.get("content-type")).toContain("text/html")
     const body = await res.text()
     expect(body.length).toBeGreaterThan(0)
+    expect(body).not.toContain("__PILOT_ASSET_GENERATION__")
+    expect(body).toContain('var GEN = "1.0.0"')
   })
 
   test("GET /sw.js substitutes CACHE_NAME placeholder with versioned value (1.13.15)", async () => {
@@ -365,12 +593,38 @@ describe("HTTP server integration", () => {
     }
   })
 
-  test("OPTIONS / preflight returns CORS headers", async () => {
-    const res = await fetch(`${baseUrl}/`, { method: "OPTIONS" })
+  test("OPTIONS / preflight reflects only the same authority origin", async () => {
+    const res = await fetch(`${baseUrl}/`, {
+      method: "OPTIONS",
+      headers: { Origin: baseUrl },
+    })
     expect(res.status).toBe(204)
-    expect(res.headers.get("access-control-allow-origin")).toBe("*")
+    expect(res.headers.get("access-control-allow-origin")).toBe(baseUrl)
     expect(res.headers.get("access-control-allow-methods")).toContain("GET")
     expect(res.headers.get("access-control-allow-headers")).toContain("Authorization")
+  })
+
+  test("rejects cross-origin browser requests before authentication", async () => {
+    const res = await fetch(`${baseUrl}/status`, {
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        Origin: "https://attacker.example",
+      },
+    })
+    expect(res.status).toBe(403)
+    expect(res.headers.get("access-control-allow-origin")).toBeNull()
+  })
+
+  test("adds browser hardening headers to dashboard and API responses", async () => {
+    for (const path of ["/", "/status"]) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        headers: path === "/status" ? { Authorization: `Bearer ${TOKEN}` } : undefined,
+      })
+      expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'")
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff")
+      expect(res.headers.get("referrer-policy")).toBe("no-referrer")
+      expect(res.headers.get("access-control-allow-origin")).toBeNull()
+    }
   })
 
   // ─── R5: /health endpoint ─────────────────────────────────────────────
@@ -382,15 +636,17 @@ describe("HTTP server integration", () => {
       status: string
       uptimeMs: number
       version: string
+      protocols: { http: number; sse: number }
       services: { tunnel: string; telegram: string; sdk: string }
     }
-    expect(body.status === "ok" || body.status === "degraded").toBe(true)
+    expect(body.status).toBe("ok")
     expect(typeof body.uptimeMs).toBe("number")
     expect(typeof body.version).toBe("string")
+    expect(body.protocols).toEqual({ http: 1, sse: 1 })
     expect(body.services).toBeDefined()
     expect(["up", "down", "disabled"]).toContain(body.services.tunnel)
-    expect(["up", "down", "disabled"]).toContain(body.services.telegram)
-    expect(["up", "down"]).toContain(body.services.sdk)
+    expect(["configured", "disabled"]).toContain(body.services.telegram)
+    expect(body.services.sdk).toBe("unknown")
   })
 
   test("GET /health reports tunnel=disabled when tunnel=off", async () => {
@@ -628,9 +884,14 @@ describe("HTTP server integration", () => {
 // ─── Route isolation: Codex routes must NOT be in the central static table ───
 // Codex now self-registers via codexIntegration.setup({ registerRoute }) —
 // the central matchRoute should NOT find codex paths (regression guard).
-import { matchRoute } from "../routes"
+import { matchRoute, routes } from "../routes"
 
 describe("Route isolation — Codex must not be in central routes table", () => {
+  test("every authenticated static route declares explicit capabilities", () => {
+    const unscoped = routes.filter((route) => route.auth !== "none" && !route.requiredCapabilities?.length)
+    expect(unscoped).toEqual([])
+  })
+
   test("POST /codex/hooks/SessionStart is NOT in the central static routes table", () => {
     const match = matchRoute("POST", "/codex/hooks/SessionStart")
     expect(match).toBeNull()

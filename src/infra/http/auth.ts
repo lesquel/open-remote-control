@@ -19,14 +19,15 @@ function safeEqual(actual: string, expected: string): boolean {
 }
 
 export function validateToken(request: Request, expectedToken: string): boolean {
+  const token = getBearerToken(request)
+  return token !== null && safeEqual(token, expectedToken)
+}
+
+export function getBearerToken(request: Request): string | null {
   const authHeader = request.headers.get("Authorization")
-  if (!authHeader) return false
-
-  const [scheme, token] = authHeader.split(" ")
-  if (scheme !== "Bearer") return false
-  if (token === undefined) return false
-
-  return safeEqual(token, expectedToken)
+  if (!authHeader) return null
+  const match = /^Bearer ([^\s]+)$/.exec(authHeader)
+  return match?.[1] ?? null
 }
 
 export { safeEqual }

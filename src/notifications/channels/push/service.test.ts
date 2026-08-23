@@ -3,6 +3,9 @@ import type { Config } from "../../../core/types/config"
 import type { AuditLog } from "../../../core/audit/log"
 import type { Logger } from "../../../infra/logger/index"
 import { createPushService } from "./service"
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 function makeDeps(vapid: Config["vapid"] = null) {
   const audit: AuditLog = { log: () => {} }
@@ -25,7 +28,12 @@ function makeDeps(vapid: Config["vapid"] = null) {
     projectStateMode: "auto",
     codexPermissionTimeoutMs: 300_000,
   }
-  return { config, audit, logger }
+  return {
+    config,
+    audit,
+    logger,
+    subscriptionFilePath: join(mkdtempSync(join(tmpdir(), "pilot-push-service-")), "subscriptions.json"),
+  }
 }
 
 const SUB_A = {
@@ -78,6 +86,35 @@ describe("push service", () => {
     svc.addSubscription(SUB_A)
     svc.addSubscription({ ...SUB_A, keys: { p256dh: "x", auth: "y" } })
     expect(svc.count()).toBe(1)
+  })
+
+  test("subscriptions survive service recreation", () => {
+    const deps = makeDeps()
+    const first = createPushService(deps)
+    first.addSubscription(SUB_A)
+
+    expect(createPushService(deps).count()).toBe(1)
+  })
+
+  test("unsafe persisted endpoints are ignored", () => {
+    const deps = makeDeps()
+    writeFileSync(deps.subscriptionFilePath, JSON.stringify({
+      version: 1,
+      subscriptions: [{
+        endpoint: "https://127.0.0.1/internal",
+        keys: { p256dh: "key", auth: "auth" },
+      }],
+    }))
+
+    expect(createPushService(deps).count()).toBe(0)
+  })
+
+  test("addSubscription fails closed when state cannot be persisted", () => {
+    const deps = makeDeps()
+    mkdirSync(deps.subscriptionFilePath)
+    const result = createPushService(deps).addSubscription(SUB_A)
+
+    expect(result).toEqual({ ok: false, reason: "subscription persistence failed" })
   })
 
   test("addSubscription rejects invalid shape", () => {
