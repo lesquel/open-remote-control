@@ -91,6 +91,17 @@ describe("createDeviceStore", () => {
     expect(store.revoke("missing")).toBe(false)
   })
 
+  test("renames and changes the role without rotating the credential", () => {
+    const store = createDeviceStore({ filePath: tempFile(), logger: logger() })
+    const issued = store.issue({ name: "Phone", role: "read-only" })
+
+    const updated = store.update(issued.device.id, { name: "Travel phone", role: "operator" })
+    expect(updated?.name).toBe("Travel phone")
+    expect(updated?.capabilities).toContain("permissions.approve")
+    expect(store.authenticate(issued.credential)?.role).toBe("operator")
+    expect(store.update("missing", { name: "Nope" })).toBeNull()
+  })
+
   test("rejects malformed, unknown, and expired credentials", () => {
     let now = 1_000
     const store = createDeviceStore({ filePath: tempFile(), logger: logger(), now: () => now })

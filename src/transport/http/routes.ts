@@ -128,6 +128,13 @@ import {
   listProjects,
   getCurrentProject,
 } from "./handlers/projects"
+import {
+  listDevices,
+  updateDevice,
+  revokeDevice,
+  createPairing,
+  redeemPairing,
+} from "./handlers/devices"
 
 /**
  * Central route table. Order matters only when patterns could overlap —
@@ -249,6 +256,12 @@ export const routes: Route[] = [
   { method: "GET", pattern: /^\/health$/, auth: "none", handler: getHealth },
   // Token rotation — auth required with the CURRENT token
   { method: "POST", pattern: /^\/auth\/rotate$/, auth: "required", requiredCapabilities: ["auth.rotate"], handler: rotateAuthToken },
+  // Per-device auth lifecycle. Pairing secrets are short-lived and one-time.
+  { method: "GET", pattern: /^\/devices$/, auth: "required", requiredCapabilities: ["devices.manage"], handler: listDevices },
+  { method: "PATCH", pattern: /^\/devices\/(?<id>[^/]+)$/, auth: "required", requiredCapabilities: ["devices.manage"], handler: updateDevice },
+  { method: "DELETE", pattern: /^\/devices\/(?<id>[^/]+)$/, auth: "required", requiredCapabilities: ["devices.manage"], handler: revokeDevice },
+  { method: "POST", pattern: /^\/pairing$/, auth: "required", requiredCapabilities: ["devices.manage"], handler: createPairing },
+  { method: "POST", pattern: /^\/pairing\/redeem$/, auth: "none", handler: redeemPairing },
   // SDK proxy endpoints — dashboard data
   { method: "GET", pattern: /^\/agents$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listAgents },
   { method: "GET", pattern: /^\/providers$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listProviders },

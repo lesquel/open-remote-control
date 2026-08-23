@@ -45,10 +45,14 @@ The browser, OpenCode/Codex process, optional tunnel, Telegram, push service, LA
 | Reconnect gaps | Versioned generation/sequence IDs, bounded replay, deduplication, and canonical snapshot fallback |
 | Local secret leakage | Atomic owner-only files on POSIX and centralized bounded log/audit redaction |
 | Slow SSE clients | Fixed stream high-water mark and deterministic listener/timer cleanup |
+| Stolen paired device | Per-device hashed credential, expiry, last activity, and individual revocation |
+| Over-privileged browser | Server-enforced read-only, interactive, operator, and admin capability tiers |
+| Pairing replay | 256-bit in-memory pairing secret, five-minute expiry, one-time redemption, and rate limiting |
 
 ## Accepted risks and limitations
 
-- **One bearer token grants broad control.** Device identity, individual revocation, and capabilities are not implemented yet. Treat every authenticated browser as an operator.
+- **The legacy bearer remains an admin migration credential.** Existing URLs and installed clients continue to work, so disclosure of that token still grants broad control. New device credentials have individual identity, expiry/revocation, and server-enforced capability roles; custom per-capability grants are not implemented.
+- **Pairing authenticates a device but does not add E2EE.** Pairing secrets are short-lived and one-time, but subsequent HTTP/SSE confidentiality still depends on the selected LAN or tunnel transport.
 - **Tokens appear in selected URLs.** EventSource and image requests cannot set bearer headers. URLs can leak through screenshots, history, extensions, and copied QR codes; no-referrer policy reduces but does not remove this risk.
 - **Tunnel operators terminate public TLS.** cloudflared/ngrok-style tunnels can observe application traffic at their edge. Current tunnel mode is not end-to-end encrypted above the tunnel.
 - **Local compromise wins.** Malware running as the user can read process memory, browser storage, files, and agent APIs. POSIX modes do not defend against the owning account or provide Windows ACL guarantees.

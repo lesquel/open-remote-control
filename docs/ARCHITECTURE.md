@@ -167,6 +167,12 @@ Zero changes to `pipeline.ts`. Zero changes to `core/`. The port does the work.
 
 ---
 
+## Local device identity
+
+`core/devices/store.ts` owns versioned device state and capability roles. Raw device credentials are returned once, only their SHA-256 hashes are persisted through the owner-private atomic writer, and short-lived pairing secrets stay in memory. `transport/http/authentication.ts` maps either the backwards-compatible legacy bearer or a device credential to a request principal; the HTTP server enforces each route's declared capabilities before invoking its handler.
+
+The legacy bearer intentionally remains an admin migration path for existing installations. It is not a device credential and cannot be individually revoked. A future E2EE relay must build on reviewed endpoint key identities rather than treating these bearer credentials as an encryption protocol.
+
 ## Web Push subsystem (special case)
 
 Web Push has three concerns beyond a fire-and-forget channel:

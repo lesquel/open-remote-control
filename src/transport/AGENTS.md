@@ -32,6 +32,7 @@
 - `http/handlers/sdk-proxy.ts` — SDK proxy endpoints: `/tools`, `/project`, `/agents`, `/providers`, `/mcp/status`, `/lsp/status`
 - `http/handlers/filesystem.ts` — file-browser endpoints: `/file/list`, `/file/content`, `/fs/glob`, `/fs/read`
 - `http/handlers/projects.ts` — `/projects`, `/project/current`
+- `http/handlers/devices.ts` — `/devices*` management plus short-lived one-time `/pairing*` exchange
 - `http/middlewares/auth.ts` — re-exports `validateToken`, `getIP`, `safeEqual` from `infra/http/auth`
 - `http/middlewares/cors.ts` — re-exports CORS helpers from `infra/http/cors`
 - `http/middlewares/json.ts` — re-exports `json`, `jsonError` from `infra/http/json`

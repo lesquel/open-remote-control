@@ -112,6 +112,7 @@ export interface DeviceStore {
   issue(input: { name: string; role: DeviceRole; expiresAt?: number | null }): IssuedDevice
   authenticate(credential: string): Device | null
   list(): Device[]
+  update(id: string, patch: { name?: string; role?: DeviceRole }): Device | null
   revoke(id: string): boolean
   createPairing(input: { role: DeviceRole; ttlMs: number }): { token: string; expiresAt: number }
   redeemPairing(input: { token: string; name: string }): IssuedDevice | null
@@ -329,6 +330,24 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
     }
   }
 
+  function update(id: string, patch: { name?: string; role?: DeviceRole }): Device | null {
+    const device = devices.get(id)
+    if (!device || device.revokedAt !== null) return null
+    const previous = { ...device }
+    if (patch.name !== undefined) device.name = sanitizeName(patch.name)
+    if (patch.role !== undefined) {
+      if (!isRole(patch.role)) throw new PilotError("INVALID_DEVICE_ROLE", "Invalid device role", 400)
+      device.role = patch.role
+    }
+    try {
+      persist()
+      return publicDevice(device)
+    } catch (error) {
+      devices.set(id, previous)
+      throw error
+    }
+  }
+
   function prunePairings(timestamp: number): void {
     for (const [key, pairing] of pairings) {
       if (pairing.expiresAt <= timestamp) pairings.delete(key)
@@ -371,5 +390,5 @@ export function createDeviceStore(deps: DeviceStoreDeps): DeviceStore {
   }
 
   load()
-  return { issue, authenticate, list, revoke, createPairing, redeemPairing, filePath }
+  return { issue, authenticate, list, update, revoke, createPairing, redeemPairing, filePath }
 }

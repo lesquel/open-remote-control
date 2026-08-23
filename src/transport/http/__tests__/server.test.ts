@@ -332,6 +332,79 @@ describe("HTTP server integration", () => {
     expect(response.status).toBe(200)
   })
 
+  test("pairs, names, lists, updates, and individually revokes a device", async () => {
+    const start = await fetch(`${baseUrl}/pairing`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${adminCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ role: "operator" }),
+    })
+    expect(start.status).toBe(201)
+    const pairing = await start.json() as { pairingToken: string; expiresAt: number }
+    expect(pairing.pairingToken).toStartWith("pp1.")
+    expect(pairing.expiresAt).toBeGreaterThan(Date.now())
+
+    const redeem = await fetch(`${baseUrl}/pairing/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pairingToken: pairing.pairingToken, name: "Kitchen tablet" }),
+    })
+    expect(redeem.status).toBe(201)
+    const issued = await redeem.json() as {
+      credential: string
+      device: { id: string; name: string; role: string; tokenHash?: string }
+    }
+    expect(issued.device.name).toBe("Kitchen tablet")
+    expect(issued.device.tokenHash).toBeUndefined()
+
+    const replay = await fetch(`${baseUrl}/pairing/redeem`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pairingToken: pairing.pairingToken, name: "Replay" }),
+    })
+    expect(replay.status).toBe(401)
+
+    const update = await fetch(`${baseUrl}/devices/${issued.device.id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${adminCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "Desk tablet", role: "read-only" }),
+    })
+    expect(update.status).toBe(200)
+
+    const list = await fetch(`${baseUrl}/devices`, {
+      headers: { Authorization: `Bearer ${adminCredential}` },
+    })
+    const listed = await list.json() as { devices: Array<{ id: string; name: string; role: string }> }
+    expect(listed.devices).toContainEqual(expect.objectContaining({
+      id: issued.device.id,
+      name: "Desk tablet",
+      role: "read-only",
+    }))
+
+    const read = await fetch(`${baseUrl}/status`, {
+      headers: { Authorization: `Bearer ${issued.credential}` },
+    })
+    expect(read.status).toBe(200)
+
+    const revoke = await fetch(`${baseUrl}/devices/${issued.device.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${adminCredential}` },
+    })
+    expect(revoke.status).toBe(200)
+    const rejected = await fetch(`${baseUrl}/status`, {
+      headers: {
+        Authorization: `Bearer ${issued.credential}`,
+        "X-Forwarded-For": "192.0.2.43",
+      },
+    })
+    expect(rejected.status).toBe(401)
+  })
+
   test("device credentials authenticate query-only SSE clients", async () => {
     const response = await fetch(`${baseUrl}/events?token=${encodeURIComponent(readOnlyCredential)}`)
     expect(response.status).toBe(200)
