@@ -245,10 +245,10 @@ function renderSessionRow(id, ctx) {
   const modelProviderHtml = (meta.lastModel || meta.lastProvider)
     ? `<span class="session-model-meta">${esc(meta.lastModel ?? '')}${meta.lastModel && meta.lastProvider ? ' · ' : ''}${esc(meta.lastProvider ?? '')}</span>`
     : ''
-  return `<div class="session-item ${cls}" data-id="${id}"${inMV}>
+  return `<div class="session-item ${cls}" data-id="${id}" role="button" tabindex="0" aria-label="Open session: ${esc(title)}"${id === activeSession ? ' aria-current="true"' : ''}${inMV}>
     <div class="session-title">
       <span class="session-title-text">${esc(title)}</span>
-      <button class="session-delete-btn" data-del-id="${id}" title="Delete session" aria-label="Delete session">✕</button>
+      <button class="session-delete-btn" data-del-id="${id}" title="Delete session" aria-label="Delete session: ${esc(title)}">✕</button>
     </div>
     <div class="session-meta">
       ${agentBadge}
@@ -277,15 +277,14 @@ function renderSessionGroup(folder, collapsed, ctx) {
   const accentBorder = folder.hasActive ? ' folder-row--active' : ''
   const count = folder.ids.length
 
-  const folderRow = `<div class="folder-row${accentBorder}" data-folder-dir="${esc(folder.dir)}" data-collapsed="${isCollapsed}">
+  const folderRow = `<div class="folder-row${accentBorder}" data-folder-dir="${esc(folder.dir)}" data-collapsed="${isCollapsed}" role="button" tabindex="0" aria-expanded="${!isCollapsed}" aria-label="${isCollapsed ? 'Expand' : 'Collapse'} project: ${esc(folder.label)}">
     <span class="folder-chevron${isCollapsed ? ' folder-chevron--collapsed' : ''}">${chevron}</span>
     <span class="folder-label" title="${esc(folder.dir)}">${esc(folder.label)}</span>
     <span class="folder-count">${count}</span>
   </div>`
 
   const childrenHtml = folder.ids.map(id => renderSessionRow(id, ctx)).join('')
-  const childrenStyle = isCollapsed ? 'display:none' : ''
-  return `${folderRow}<div class="folder-children" style="${childrenStyle}">${childrenHtml}</div>`
+  return `${folderRow}<div class="folder-children"${isCollapsed ? ' hidden' : ''}>${childrenHtml}</div>`
 }
 
 /**
@@ -293,15 +292,27 @@ function renderSessionGroup(folder, collapsed, ctx) {
  * Called once by renderSessions() after setting list.innerHTML.
  */
 function wireSessionEvents(list) {
+  function activateWithKeyboard(el, action) {
+    el.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return
+      if (event.target && event.target.closest?.('.session-delete-btn')) return
+      event.preventDefault()
+      action()
+    })
+  }
+
   // Wire folder toggle
   list.querySelectorAll('.folder-row').forEach(el => {
-    el.addEventListener('click', () => {
+    const toggle = () => {
       const dir = el.dataset.folderDir
       const wasCollapsed = el.dataset.collapsed === 'true'
       const nowCollapsed = !wasCollapsed
       setFolderCollapsed(dir, nowCollapsed)
       // Update DOM directly (no full re-render to preserve scroll)
       el.dataset.collapsed = String(nowCollapsed)
+      el.setAttribute('aria-expanded', String(!nowCollapsed))
+      const label = el.querySelector('.folder-label')?.textContent ?? 'project'
+      el.setAttribute('aria-label', `${nowCollapsed ? 'Expand' : 'Collapse'} project: ${label}`)
       const chevronEl = el.querySelector('.folder-chevron')
       if (chevronEl) {
         chevronEl.textContent = nowCollapsed ? '▸' : '▾'
@@ -309,23 +320,29 @@ function wireSessionEvents(list) {
       }
       const children = el.nextElementSibling
       if (children && children.classList.contains('folder-children')) {
-        children.style.display = nowCollapsed ? 'none' : ''
+        children.hidden = nowCollapsed
       }
-    })
+    }
+    el.addEventListener('click', toggle)
+    activateWithKeyboard(el, toggle)
   })
 
   // Wire session clicks
   list.querySelectorAll('.session-item').forEach(el => {
-    el.addEventListener('click', (e) => {
-      // If the click came from the delete button, don't activate.
-      if (e.target && e.target.closest?.('.session-delete-btn')) return
+    const activate = () => {
       const { multiviewActive } = getState()
       if (multiviewActive) {
         addToMultiview(el.dataset.id)
       } else {
         selectSession(el.dataset.id)
       }
+    }
+    el.addEventListener('click', (e) => {
+      // If the click came from the delete button, don't activate.
+      if (e.target && e.target.closest?.('.session-delete-btn')) return
+      activate()
     })
+    activateWithKeyboard(el, activate)
   })
 
   // Wire per-row delete buttons
