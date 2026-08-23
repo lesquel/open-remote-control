@@ -6,6 +6,7 @@ import type { PushService } from "./channels/push/service"
 import type { AuditLog } from "../core/audit/log"
 import type { NotificationChannel, NotificationEvent } from "./ports"
 import type { NotificationService } from "../core/types/notification-service"
+import { createHash } from "node:crypto"
 
 // Re-export the NotificationService type from core/ so both notifications/ and
 // integrations/ can reference it without a cross-sibling import.
@@ -58,6 +59,8 @@ export interface NotificationServiceDeps {
  * override it via the second parameter of createNotificationService.
  */
 export const FLUSH_TIMEOUT_MS = 5_000
+export const NOTIFICATION_DEDUP_WINDOW_MS = 30_000
+const NOTIFICATION_DEDUP_MAX_ENTRIES = 1_024
 
 export interface NotificationServiceOptions {
   /**
@@ -65,6 +68,10 @@ export interface NotificationServiceOptions {
    * Defaults to FLUSH_TIMEOUT_MS (5 000 ms).
    */
   flushTimeoutMs?: number
+  /** Suppress repeated external deliveries for the same local event key. */
+  dedupWindowMs?: number
+  /** Clock override for deterministic tests. */
+  now?: () => number
 }
 
 export function createNotificationService(
@@ -73,6 +80,9 @@ export function createNotificationService(
 ): NotificationService {
   const { eventBus, telegram, audit, push, channels = [] } = deps
   const flushTimeoutMs = options.flushTimeoutMs ?? FLUSH_TIMEOUT_MS
+  const dedupWindowMs = options.dedupWindowMs ?? NOTIFICATION_DEDUP_WINDOW_MS
+  const now = options.now ?? Date.now
+  const recentDeliveries = new Map<string, number>()
 
   // ─── In-flight tracking ───────────────────────────────────────────────────
   // Keeps a live set of every fire-and-forget dispatch currently outstanding.
@@ -83,6 +93,27 @@ export function createNotificationService(
   function track<T>(p: Promise<T>): void {
     inFlight.add(p)
     p.finally(() => inFlight.delete(p))
+  }
+
+  function isDuplicateDelivery(key: string): boolean {
+    const current = now()
+    const previous = recentDeliveries.get(key)
+    if (previous !== undefined && current - previous < dedupWindowMs) return true
+
+    recentDeliveries.set(key, current)
+    if (recentDeliveries.size > NOTIFICATION_DEDUP_MAX_ENTRIES) {
+      for (const [entry, timestamp] of recentDeliveries) {
+        if (current - timestamp >= dedupWindowMs || recentDeliveries.size > NOTIFICATION_DEDUP_MAX_ENTRIES) {
+          recentDeliveries.delete(entry)
+        }
+        if (recentDeliveries.size <= NOTIFICATION_DEDUP_MAX_ENTRIES) break
+      }
+    }
+    return false
+  }
+
+  function privateFingerprint(value: string): string {
+    return createHash("sha256").update(value).digest("hex").slice(0, 16)
   }
 
   function emit(event: BusEvent): void {
@@ -105,46 +136,50 @@ export function createNotificationService(
     const telegramReachable = telegram.enabled()
     const pushReachable = push.isEnabled() && push.count() > 0
     const sseReachable = eventBus.hasClients()
+    const externalReachable = telegramReachable || pushReachable || channels.some((ch) => ch.enabled())
+    const suppressExternal = externalReachable && isDuplicateDelivery(`permission.pending:${permissionID}`)
 
-    // Fire-and-forget — keep the existing .catch(audit) intact;
-    // track the non-rejecting post-.catch() promise so flush() can drain it.
-    track(
-      telegram
-        .sendPermissionRequest(permissionID, title, sessionID)
-        .catch((err) => audit.log("telegram.send_failed", { error: String(err) })),
-    )
-
-    if (push.isEnabled()) {
+    if (!suppressExternal) {
+      // Fire-and-forget — keep the existing .catch(audit) intact;
+      // track the non-rejecting post-.catch() promise so flush() can drain it.
       track(
-        push
-          .broadcast({
-            title: "Permission request",
-            body: title,
-            data: {
-              kind: "permission",
-              id: permissionID,
-              sessionID,
-              url: "/",
-            },
-          })
-          .catch((err) => audit.log("push.send_failed", { error: String(err) })),
+        telegram
+          .sendPermissionRequest(permissionID, title, sessionID)
+          .catch((err) => audit.log("telegram.send_failed", { error: String(err) })),
       )
-    }
 
-    // Fan-out to additional channels (e.g. future Slack, Discord, webhook channels).
-    // Each channel decides independently whether it is enabled; disabled channels
-    // are skipped. Failures are isolated — one failing channel does not prevent others.
-    const channelEvent: NotificationEvent = {
-      kind: "permission.pending",
-      payload: { permissionID, title, sessionID, permissionType, pattern, metadata },
-    }
-    for (const ch of channels) {
-      if (!ch.enabled()) continue
-      track(
-        ch.send(channelEvent).catch((err) =>
-          audit.log("channel.send_failed", { channel: ch.name, error: String(err) }),
-        ),
-      )
+      if (push.isEnabled()) {
+        track(
+          push
+            .broadcast({
+              title: "Permission request",
+              body: title,
+              data: {
+                kind: "permission",
+                id: permissionID,
+                sessionID,
+                url: "/",
+              },
+            })
+            .catch((err) => audit.log("push.send_failed", { error: String(err) })),
+        )
+      }
+
+      // Fan-out to additional channels (e.g. future Slack, Discord, webhook channels).
+      const channelEvent: NotificationEvent = {
+        kind: "permission.pending",
+        payload: { permissionID, title, sessionID, permissionType, pattern, metadata },
+      }
+      for (const ch of channels) {
+        if (!ch.enabled()) continue
+        track(
+          ch.send(channelEvent).catch((err) =>
+            audit.log("channel.send_failed", { channel: ch.name, error: String(err) }),
+          ),
+        )
+      }
+    } else {
+      audit.log("notifications.duplicate_suppressed", { kind: "permission.pending" })
     }
 
     if (sseReachable) {
@@ -171,6 +206,10 @@ export function createNotificationService(
     client: PluginInput["client"],
     sessionID: string,
   ): Promise<void> {
+    if (isDuplicateDelivery(`session.idle:${sessionID}`)) {
+      audit.log("notifications.duplicate_suppressed", { kind: "session.idle" })
+      return
+    }
     let title = "Untitled"
     try {
       const session = await client.session.get({ path: { id: sessionID } })
@@ -180,6 +219,15 @@ export function createNotificationService(
       await telegram.sendSessionIdle(sessionID, title)
     } catch (err) {
       audit.log("telegram.send_failed", { error: String(err), kind: "session_idle" })
+    }
+    if (push.isEnabled()) {
+      track(
+        push.broadcast({
+          title: "Agent finished",
+          body: title,
+          data: { kind: "session", sessionID, url: "/" },
+        }).catch((err) => audit.log("push.send_failed", { error: String(err) })),
+      )
     }
     // Fan-out to additional channels — fire-and-forget; track each dispatch.
     const channelEvent: NotificationEvent = {
@@ -201,6 +249,10 @@ export function createNotificationService(
     sessionID: string,
     error: string,
   ): Promise<void> {
+    if (isDuplicateDelivery(`session.error:${sessionID}:${privateFingerprint(error)}`)) {
+      audit.log("notifications.duplicate_suppressed", { kind: "session.error" })
+      return
+    }
     let title = "Untitled"
     try {
       const session = await client.session.get({ path: { id: sessionID } })
@@ -210,6 +262,15 @@ export function createNotificationService(
       await telegram.sendSessionError(sessionID, title, error)
     } catch (err) {
       audit.log("telegram.send_failed", { error: String(err), kind: "session_error" })
+    }
+    if (push.isEnabled()) {
+      track(
+        push.broadcast({
+          title: "Agent error",
+          body: title,
+          data: { kind: "session", sessionID, url: "/" },
+        }).catch((err) => audit.log("push.send_failed", { error: String(err) })),
+      )
     }
     // Fan-out to additional channels — fire-and-forget; track each dispatch.
     const channelEvent: NotificationEvent = {

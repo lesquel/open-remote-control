@@ -18,7 +18,7 @@
 
 ## Key files
 - `ports.ts` — `NotificationChannel`, `NotificationEvent`, `NotificationResult`
-- `pipeline.ts` — `createNotificationService`; integrations invoke it, and it emits local events plus calls `channel.send()` for each enabled additional channel; also the barrel for public types
+- `pipeline.ts` — `createNotificationService`; integrations invoke it, and it emits local events plus deduplicated bounded external delivery to Push, Telegram, and enabled additional channels; also the barrel for public types
 - `channels/telegram/index.ts` — `createTelegramChannel`; circuit-breaker wrapped Telegram Bot API
 - `channels/telegram/constants.ts` — `TELEGRAM_ERROR_MAX_CHARS` (telegram-specific limit)
 - `channels/push/service.ts` — `createPushService`; returns `{ channel, generateVapid, addSubscription, ... }`

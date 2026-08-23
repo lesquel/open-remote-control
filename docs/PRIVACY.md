@@ -10,7 +10,7 @@ OpenCode Pilot has **no telemetry by default**. Agent state stays on the user's 
 | LAN access | Devices and network path selected by the user | The same authenticated HTTP/SSE traffic |
 | cloudflared/ngrok tunnel | Tunnel operator and connected device | Connection metadata and traffic handled by the tunnel; current mode is not application-level E2EE |
 | Telegram | Telegram Bot API | Bot credential plus the notification/permission content Pilot sends |
-| Web Push | Browser push service | Subscription endpoint, delivery metadata, and an encrypted Web Push payload |
+| Web Push | Browser push service | Subscription endpoint, delivery metadata, and an encrypted payload containing a permission/session title plus local identifiers needed to open the dashboard |
 | Hosted PWA | Static hosting provider | Requests for static dashboard assets; agent API traffic goes to the Pilot URL selected in the browser |
 | npm/GitHub | Registry/repository during install/update | Normal package download and repository metadata; no runtime agent telemetry |
 
