@@ -3,6 +3,9 @@ import { describe, expect, test } from "bun:test"
 import type { RouteDeps, RouteContext } from "../routes"
 import { getSessionAttachment } from "./sessions"
 import type { Logger } from "../../../infra/logger/index"
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 const silentLogger: Logger = {
   debug: () => {},
@@ -46,11 +49,12 @@ function makeMockClient(opts?: {
 function makeAttachmentDeps(opts?: {
   client?: RouteDeps["client"]
   token?: string
+  directory?: string
 }): RouteDeps {
   return {
     client: opts?.client ?? makeMockClient(),
     project: {} as RouteDeps["project"],
-    directory: "/tmp",
+    directory: opts?.directory ?? "/tmp",
     worktree: "/tmp",
     config: {
       port: 4097,
@@ -289,6 +293,14 @@ describe("getSessionAttachment — MIME safelist", () => {
     const res = await getSessionAttachment(ctx)
     expect(res.status).toBe(415)
   })
+
+  test("415 for SVG so active documents are never served inline on the Pilot origin", async () => {
+    const deps = makeAttachmentDeps({
+      client: makeMockClient({ partOverride: { ...FILE_PART, mime: "image/svg+xml" } }),
+    })
+    const res = await getSessionAttachment(makeAttachmentCtx(deps))
+    expect(res.status).toBe(415)
+  })
 })
 
 // ─── Scheme dispatch ──────────────────────────────────────────────────────────
@@ -386,7 +398,7 @@ describe("getSessionAttachment — happy path", () => {
   })
 
   test("allows all MIME safelist types through the MIME check", async () => {
-    const safelistMimes = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]
+    const safelistMimes = ["image/png", "image/jpeg", "image/gif", "image/webp"]
     for (const mime of safelistMimes) {
       const mimeFilePart = { ...FILE_PART, mime, url: "ftp://no-scheme" }
       const deps = makeAttachmentDeps({
@@ -396,6 +408,61 @@ describe("getSessionAttachment — happy path", () => {
       const res = await getSessionAttachment(ctx)
       // Should NOT be 415 — mime check passed. URL scheme is unrecognized → 502.
       expect(res.status).not.toBe(415)
+    }
+  })
+})
+
+describe("getSessionAttachment — local project boundary", () => {
+  test("403 when an SDK file part points outside the selected project", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "pilot-attachment-boundary-"))
+    const root = join(sandbox, "project")
+    const outside = join(sandbox, "secret.png")
+    try {
+      await Bun.write(join(root, "placeholder"), "root")
+      writeFileSync(outside, "secret")
+      const deps = makeAttachmentDeps({
+        directory: root,
+        client: makeMockClient({ partOverride: { ...FILE_PART, url: outside } }),
+      })
+      expect((await getSessionAttachment(makeAttachmentCtx(deps))).status).toBe(403)
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
+  test("403 for a symlink inside the project that targets an outside file", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "pilot-attachment-symlink-"))
+    const root = join(sandbox, "project")
+    const outside = join(sandbox, "secret.png")
+    try {
+      await Bun.write(join(root, "placeholder"), "root")
+      writeFileSync(outside, "secret")
+      const link = join(root, "image.png")
+      symlinkSync(outside, link)
+      const deps = makeAttachmentDeps({
+        directory: root,
+        client: makeMockClient({ partOverride: { ...FILE_PART, url: link } }),
+      })
+      expect((await getSessionAttachment(makeAttachmentCtx(deps))).status).toBe(403)
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
+    }
+  })
+
+  test("403 for percent-encoded file URL traversal", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "pilot-attachment-encoded-"))
+    const root = join(sandbox, "project")
+    try {
+      await Bun.write(join(root, "placeholder"), "root")
+      writeFileSync(join(sandbox, "secret.png"), "secret")
+      const encodedEscape = `file://${root}/%2e%2e/secret.png`
+      const deps = makeAttachmentDeps({
+        directory: root,
+        client: makeMockClient({ partOverride: { ...FILE_PART, url: encodedEscape } }),
+      })
+      expect((await getSessionAttachment(makeAttachmentCtx(deps))).status).toBe(403)
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true })
     }
   })
 })

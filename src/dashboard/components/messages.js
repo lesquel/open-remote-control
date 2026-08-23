@@ -114,20 +114,14 @@ function buildAttachmentUrl(part) {
  * Unknown mimes fall back to a text link — defensive for any future SDK extension.
  */
 const ATTACHMENT_MIME_SAFELIST = new Set([
-  'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
+  'image/png', 'image/jpeg', 'image/gif', 'image/webp',
 ])
 
 /**
  * Render a FilePart as an <img> element.
  *
- * SVG SECURITY NOTE:
- *   SVGs are rendered ONLY via <img src="...">, never via innerHTML, <object>,
- *   or <iframe>. When a browser loads SVG via <img>, it sandboxes the SVG
- *   context — inline <script> tags, event handlers, and external resource loads
- *   inside the SVG are all blocked. Rendering SVG via innerHTML would execute
- *   those scripts in the page context, enabling XSS.
- *   DO NOT "improve" this to use innerHTML or <object>, even if the SVG
- *   "looks safe" — the server does not sanitize SVG content.
+ * Active document formats such as SVG are excluded by both client and server
+ * safelists. Do not add them without sanitization and dedicated security tests.
  *
  * @param {object} part  FilePart from the SDK
  * @returns {string}     HTML string

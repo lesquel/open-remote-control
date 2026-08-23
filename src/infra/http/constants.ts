@@ -37,12 +37,10 @@ export const DEFAULT_HOST = "0.0.0.0"
 export const ATTACHMENT_MAX_BYTES = 2 * 1024 * 1024
 
 /** MIME types allowed through the attachment proxy endpoint.
- *  SVG is allowed only via <img> (never injected as innerHTML — see dashboard renderer).
- *  Video, audio, PDF etc. are explicitly excluded for this v1 surface. */
+ *  Active document formats such as SVG and PDF are deliberately excluded. */
 export const MIME_SAFELIST = [
   "image/png",
   "image/jpeg",
   "image/gif",
   "image/webp",
-  "image/svg+xml",
 ] as const

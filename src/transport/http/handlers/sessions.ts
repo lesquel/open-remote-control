@@ -11,6 +11,9 @@ import { validateToken, safeEqual } from "../middlewares/auth"
 import { validateEndpoint } from "../../../infra/network/ssrf"
 import { ATTACHMENT_MAX_BYTES, MIME_SAFELIST } from "../../../infra/http/constants"
 import type { FilePart } from "@opencode-ai/sdk"
+import { fileURLToPath } from "node:url"
+import { isAbsolute } from "node:path"
+import { resolveContainedFile } from "../../../infra/fs/contained-file"
 
 // ─── Shared SDK error inspector ───────────────────────────────────────────────
 
@@ -319,6 +322,7 @@ type Bytes = { ok: true; body: Uint8Array }
 async function fetchAttachmentBytes(
   part: FilePart,
   deps: RouteContext["deps"],
+  root: string,
 ): Promise<Bytes | StructuredError> {
   const url = part.url
 
@@ -327,12 +331,16 @@ async function fetchAttachmentBytes(
   }
 
   if (url.startsWith("file://")) {
-    return readLocalFile(url.slice(7))
+    try {
+      return readLocalFile(fileURLToPath(url), root)
+    } catch {
+      return { ok: false, error: "FORBIDDEN", detail: "invalid local attachment url", httpStatus: 403 }
+    }
   }
 
   // Bare absolute path (Unix or Windows)
-  if (url.startsWith("/") || /^[A-Z]:\\/i.test(url)) {
-    return readLocalFile(url)
+  if (isAbsolute(url) || /^[A-Z]:\\/i.test(url)) {
+    return readLocalFile(url, root)
   }
 
   if (url.startsWith("opencode://")) {
@@ -390,13 +398,19 @@ async function fetchHttp(
   }
 }
 
-async function readLocalFile(path: string): Promise<Bytes | StructuredError> {
-  // Reject path traversal
-  if (path.includes("..")) {
-    return { ok: false, error: "FORBIDDEN", detail: "path traversal rejected", httpStatus: 403 }
+async function readLocalFile(path: string, root: string): Promise<Bytes | StructuredError> {
+  const contained = resolveContainedFile(root, path)
+  if (!contained.ok) {
+    const missing = contained.reason === "not-found"
+    return {
+      ok: false,
+      error: missing ? "ATTACHMENT_NOT_FOUND" : "FORBIDDEN",
+      detail: missing ? "local file not found" : "local attachment escaped project boundary",
+      httpStatus: missing ? 404 : 403,
+    }
   }
   try {
-    const file = Bun.file(path)
+    const file = Bun.file(contained.path)
     const size = file.size
     if (size > ATTACHMENT_MAX_BYTES) {
       return { ok: false, error: "PAYLOAD_TOO_LARGE", detail: "attachment exceeds 2 MiB limit", httpStatus: 413 }
@@ -522,7 +536,8 @@ export async function getSessionAttachment({
   }
 
   // Fetch bytes via scheme-dispatched proxy
-  const result = await fetchAttachmentBytes(filePart, deps)
+  const attachmentRoot = "directory" in dirParam ? dirParam.directory : deps.directory
+  const result = await fetchAttachmentBytes(filePart, deps, attachmentRoot)
   if (!result.ok) {
     deps.logger.error("attachment fetch failed", {
       sessionID,
