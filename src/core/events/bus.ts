@@ -1,8 +1,9 @@
 import type { BusEvent } from "./types"
+import { randomUUID } from "node:crypto"
 
 export interface EventBus {
   emit(event: BusEvent): void
-  createSSEResponse(extraHeaders?: Record<string, string>): Response
+  createSSEResponse(extraHeaders?: Record<string, string>, lastEventId?: string | null): Response
   hasClients(): boolean
   clientCount(): number
   closeAll(): void
@@ -19,9 +20,21 @@ interface SSEClient {
 }
 
 const SSE_MAX_PENDING_CHUNKS = 32
+const SSE_REPLAY_CAPACITY = 256
+const SSE_MAX_REPLAY_PER_CONNECTION = 24
+export const SSE_PROTOCOL_VERSION = 1
+
+interface ReplayFrame {
+  id: string
+  bytes: Uint8Array
+}
 
 export function createEventBus(): EventBus {
   const clients = new Set<SSEClient>()
+  const generation = randomUUID()
+  const encoder = new TextEncoder()
+  const replay: ReplayFrame[] = []
+  let sequence = 0
 
   function removeClient(client: SSEClient, close: boolean): void {
     clients.delete(client)
@@ -51,7 +64,11 @@ export function createEventBus(): EventBus {
       }
     }
 
-    const data = `data: ${JSON.stringify(event)}\n\n`
+    sequence += 1
+    const id = `${generation}:${sequence}`
+    const bytes = encoder.encode(`id: ${id}\ndata: ${JSON.stringify(event)}\n\n`)
+    replay.push({ id, bytes })
+    if (replay.length > SSE_REPLAY_CAPACITY) replay.shift()
     const dead: SSEClient[] = []
 
     for (const client of clients) {
@@ -60,7 +77,7 @@ export function createEventBus(): EventBus {
           dead.push(client)
           continue
         }
-        client.controller.enqueue(new TextEncoder().encode(data))
+        client.controller.enqueue(bytes)
       } catch {
         dead.push(client)
       }
@@ -71,15 +88,37 @@ export function createEventBus(): EventBus {
     }
   }
 
-  function createSSEResponse(extraHeaders: Record<string, string> = {}): Response {
+  function createSSEResponse(
+    extraHeaders: Record<string, string> = {},
+    lastEventId: string | null = null,
+  ): Response {
     let pingInterval: ReturnType<typeof setInterval> | null = null
     let client: SSEClient | null = null
-    const encoder = new TextEncoder()
 
     const stream = new ReadableStream({
       start(controller) {
         client = { controller, connectedAt: Date.now() }
         clients.add(client)
+
+        let replayStatus = "not_requested"
+        let replayFrames: ReplayFrame[] = []
+        if (lastEventId) {
+          if (!lastEventId.startsWith(`${generation}:`)) {
+            replayStatus = "generation_changed"
+          } else if (lastEventId === `${generation}:${sequence}`) {
+            replayStatus = "replayed"
+          } else {
+            const index = replay.findIndex((frame) => frame.id === lastEventId)
+            if (index < 0 || replay.length - index - 1 > SSE_MAX_REPLAY_PER_CONNECTION) {
+              replayStatus = "unavailable"
+            } else {
+              replayStatus = "replayed"
+              replayFrames = replay.slice(index + 1)
+            }
+          }
+        }
+
+        for (const frame of replayFrames) controller.enqueue(frame.bytes)
 
         // Send initial connection event + a padding/comment chunk immediately.
         // Bun's HTTP/1.1 streaming can buffer small chunks until the next enqueue
@@ -90,7 +129,12 @@ export function createEventBus(): EventBus {
         // any intermediate proxy's SSE buffering.
         const welcome: BusEvent = {
           type: "pilot.connected",
-          properties: { timestamp: Date.now() },
+          properties: {
+            timestamp: Date.now(),
+            generation,
+            protocolVersion: SSE_PROTOCOL_VERSION,
+            replay: { status: replayStatus, count: replayFrames.length },
+          },
         }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(welcome)}\n\n`))
         controller.enqueue(encoder.encode(`: ${" ".repeat(2048)}\n\n`))

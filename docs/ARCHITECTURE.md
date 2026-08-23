@@ -216,6 +216,16 @@ flowchart LR
 
 ---
 
+## SSE event delivery
+
+- Each process generation has a random identifier and monotonically increasing event sequence.
+- SSE frames carry IDs in the form `<generation>:<sequence>` while their JSON payload remains backward-compatible.
+- The event protocol version is currently `1` and is advertised by the `pilot.connected` event independently of the npm package version.
+- The server retains the latest 256 events and replays at most 24 per reconnect. The dashboard sends its last accepted ID, deduplicates replays, and falls back to canonical HTTP snapshots when the cursor is too old or the host generation changed.
+- Replay is an availability feature, not durable history: the local agent remains the source of truth.
+
+---
+
 ## Security model
 
 - **Auth token** — `crypto.randomBytes(32).toString("hex")` — 64 hex chars generated at startup. Rotatable via `POST /auth/rotate`. Persisted in `pilot-state.json` only for the TUI to display.

@@ -8,7 +8,7 @@
 
 ## Public API (what other modules consume from here)
 - `createPermissionQueue(): PermissionQueue` — exactly-once pending permission requests with duplicate-ID coalescing and timeouts
-- `getSharedEventBus() / createEventBus(): EventBus` — bounded in-process SSE fan-out with deterministic client cleanup
+- `getSharedEventBus() / createEventBus(): EventBus` — bounded in-process SSE fan-out with event IDs, bounded reconnect replay, and deterministic client cleanup
 - `createAuditLog(): AuditLog` — appends JSON-Lines audit records to `.opencode/pilot-audit.log`
 - `rotateIfNeeded()` — rotates the audit log file when it exceeds the size limit
 - `createSettingsStore(): SettingsStore` — reads/writes `~/.opencode-pilot/config.json`
@@ -22,7 +22,7 @@ All of the above re-exported from `core/index.ts`.
 ## Key files
 - `index.ts` — barrel; the only file other modules should import from
 - `permissions/queue.ts` — `createPermissionQueue`; manages pending approvals
-- `events/bus.ts` — `getSharedEventBus`; singleton EventEmitter wrapper
+- `events/bus.ts` — `getSharedEventBus`; process-wide SSE bus, protocol generation/sequence IDs, bounded replay, and client lifecycle
 - `events/types.ts` — `PilotEvent` discriminated union (all event shapes)
 - `audit/log.ts` — `createAuditLog`; append-only audit trail
 - `audit/rotation.ts` — size-based log rotation

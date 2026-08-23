@@ -11,7 +11,10 @@ const silentLogger: Logger = {
   error: () => {},
 }
 
-function makeEventsDeps(token = "valid-token"): RouteDeps {
+function makeEventsDeps(
+  token = "valid-token",
+  onCreateSSE?: (lastEventId: string | null | undefined) => void,
+): RouteDeps {
   return {
     client: {} as RouteDeps["client"],
     project: {} as RouteDeps["project"],
@@ -35,11 +38,13 @@ function makeEventsDeps(token = "valid-token"): RouteDeps {
     tunnelUrl: null,
     audit: { log: () => {} } as RouteDeps["audit"],
     eventBus: {
-      createSSEResponse: (_headers?: Record<string, string>) =>
-        new Response("data: ping\n\n", {
+      createSSEResponse: (_headers?: Record<string, string>, lastEventId?: string | null) => {
+        onCreateSSE?.(lastEventId)
+        return new Response("data: ping\n\n", {
           status: 200,
           headers: { "Content-Type": "text/event-stream" },
-        }),
+        })
+      },
       emit: () => {},
       hasClients: () => false,
       clientCount: () => 0,
@@ -147,5 +152,18 @@ describe("streamEvents — ?token= query auth (V1 timing-safe)", () => {
     const ctx = makeEventsCtx(deps, { bearerToken: "wrong" })
     const res = await streamEvents(ctx)
     expect(res.status).toBe(401)
+  })
+
+  test("forwards the dashboard replay cursor to the event bus", async () => {
+    let received: string | null | undefined
+    const deps = makeEventsDeps("my-secret-token", (lastEventId) => {
+      received = lastEventId
+    })
+    const ctx = makeEventsCtx(deps, { queryToken: "my-secret-token" })
+    ctx.url.searchParams.set("lastEventId", "host-generation:17")
+
+    const res = await streamEvents(ctx)
+    expect(res.status).toBe(200)
+    expect(received).toBe("host-generation:17")
   })
 })

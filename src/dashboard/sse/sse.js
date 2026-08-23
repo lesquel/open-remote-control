@@ -32,6 +32,12 @@ const BACKOFF_MAX = LIMITS.SSE_BACKOFF_MAX_MS
 // Tooltip metadata for the SSE dot
 let _lastConnectTime = null
 let _reconnectAttempts = 0
+let _lastEventId = ''
+let _serverGeneration = null
+let _hostRestartTimer = null
+const _seenEventIds = new Set()
+const _seenEventOrder = []
+const SEEN_EVENT_LIMIT = 256
 
 // OpenCode's `message.part.delta` payload intentionally carries only
 // { messageID, partID, field, delta } in current SDK builds. Older versions of
@@ -90,7 +96,7 @@ const SSE_EVENTS = [
 
 /**
  * Update the connection indicator in the header.
- * status: 'connected' | 'reconnecting' | 'disconnected'
+ * status: 'connected' | 'reconnecting' | 'disconnected' | 'host-restarted'
  */
 function setConnectionStatus(status) {
   const dot = document.getElementById('conn-dot')
@@ -105,6 +111,9 @@ function setConnectionStatus(status) {
       label.className = 'conn-label'
     } else if (status === 'reconnecting') {
       label.textContent = 'reconnecting…'
+      label.className = 'conn-label reconnecting'
+    } else if (status === 'host-restarted') {
+      label.textContent = 'host restarted · synced'
       label.className = 'conn-label reconnecting'
     } else {
       label.textContent = 'offline'
@@ -140,6 +149,48 @@ export function closeEventSource() {
   _closeEventSource()
 }
 
+function rememberEventId(id) {
+  if (!id) return true
+  if (_seenEventIds.has(id)) return false
+  _lastEventId = id
+  _seenEventIds.add(id)
+  _seenEventOrder.push(id)
+  if (_seenEventOrder.length > SEEN_EVENT_LIMIT) {
+    _seenEventIds.delete(_seenEventOrder.shift())
+  }
+  return true
+}
+
+function refreshCanonicalSnapshots() {
+  const { activeSession, multiviewActive, mvPanels } = getState()
+  if (activeSession && !multiviewActive) {
+    loadMessages(activeSession).catch(() => {})
+  }
+  for (const sessionId of mvPanels ?? []) {
+    loadMVMessages(sessionId).catch(() => {})
+  }
+}
+
+function handleConnectionMetadata(event) {
+  const properties = event?.properties ?? {}
+  const generation = properties.generation
+  const replayStatus = properties.replay?.status
+  const hostRestarted = _serverGeneration && generation && generation !== _serverGeneration
+  if (generation) _serverGeneration = generation
+
+  if (hostRestarted || replayStatus === 'generation_changed') {
+    setConnectionStatus('host-restarted')
+    refreshCanonicalSnapshots()
+    if (_hostRestartTimer) clearTimeout(_hostRestartTimer)
+    _hostRestartTimer = setTimeout(() => {
+      _hostRestartTimer = null
+      if (eventSource?.readyState === 1) setConnectionStatus('connected')
+    }, 4_000)
+  } else if (replayStatus === 'unavailable') {
+    refreshCanonicalSnapshots()
+  }
+}
+
 // Opt-in boot-time SSE tracing. Set localStorage['pilot:debug:sse']='1' to
 // revive the [sse-boot] markers that helped diagnose the pre-v1.16.9 bug.
 function _sseBootDebug() {
@@ -169,7 +220,10 @@ export function connect() {
   // and serverUrl (tunnel) is respected. Then append the token.
   const base = buildApiUrl('/events')
   const sep = base.includes('?') ? '&' : '?'
-  const url = `${base}${sep}token=${encodeURIComponent(token)}`
+  const replayCursor = _lastEventId
+    ? `&lastEventId=${encodeURIComponent(_lastEventId)}`
+    : ''
+  const url = `${base}${sep}token=${encodeURIComponent(token)}${replayCursor}`
   if (_sseBootDebug()) console.info('[sse-boot] opening EventSource →', url.replace(/token=[^&]+/, 'token=***'))
   eventSource = new EventSource(url)
 
@@ -183,17 +237,9 @@ export function connect() {
     setState({ sse: { connected: true } })
     loadSessions(true)
     if (wasReconnect) {
-      const { activeSession, multiviewActive, mvPanels } = getState()
-      // SSE has no replay buffer. Any message/tool events emitted while the
-      // browser was reconnecting are gone, so pull the canonical snapshot once
-      // the stream is healthy again. This is the difference between "the
-      // connection hiccuped" and "I have to refresh the whole page to catch up".
-      if (activeSession && !multiviewActive) {
-        loadMessages(activeSession).catch(() => {})
-      }
-      for (const sessionId of mvPanels ?? []) {
-        loadMVMessages(sessionId).catch(() => {})
-      }
+      // The server replays a bounded event window. Pull the canonical snapshot
+      // as well because a longer outage can exceed that window.
+      refreshCanonicalSnapshots()
     }
   }
 
@@ -219,8 +265,10 @@ export function connect() {
 
   function onMessage(e) {
     try {
+      if (!rememberEventId(e.lastEventId)) return
       const parsed = JSON.parse(e.data)
       if (_sseDebug()) console.debug('[sse] onmessage', parsed.type ?? '(untyped)', parsed)
+      if (parsed.type === 'pilot.connected') handleConnectionMetadata(parsed)
       handleEvent(parsed)
     } catch (err) {
       if (_sseDebug()) console.error('[sse] onmessage parse/handle error', err, e.data)
@@ -232,6 +280,7 @@ export function connect() {
   SSE_EVENTS.forEach(name => {
     function onNamedEvent(e) {
       try {
+        if (!rememberEventId(e.lastEventId)) return
         const data = JSON.parse(e.data)
         if (_sseDebug()) console.debug('[sse] event', name, data)
         handleEvent({ type: name, data })

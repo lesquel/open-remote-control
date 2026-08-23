@@ -22,5 +22,8 @@ export async function streamEvents({ req, url, deps }: RouteContext): Promise<Re
   }
 
   deps.audit.log("sse.connected", { ip: getIP(req) })
-  return deps.eventBus.createSSEResponse(CORS_HEADERS)
+  return deps.eventBus.createSSEResponse(
+    CORS_HEADERS,
+    url.searchParams.get("lastEventId"),
+  )
 }
