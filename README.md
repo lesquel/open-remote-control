@@ -300,6 +300,7 @@ Pilot is local-first and has no telemetry by default. Read [where data goes](doc
 - [`AGENTS.md`](AGENTS.md) — strict workflow for AI agents and humans editing the repo (hard rules, release process, debugging playbook, Engram protocol)
 - [`CLAUDE.md`](CLAUDE.md) — codebase overview, file map, routes, event types
 - [Architecture](docs/ARCHITECTURE.md) — design decisions with rationale
+- [Performance checks](docs/PERFORMANCE.md) — reproducible local SSE load baselines
 - [Add an agent](docs/ADDING_AN_AGENT.md) — adapter contract, capability rules, security, and tests
 - [Add a notification channel](docs/ADDING_NOTIFICATION_CHANNEL.md) — delivery contract, privacy, and registration
 - [Release checklist](docs/RELEASE.md) — step-by-step execution guide for shipping a new version

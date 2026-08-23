@@ -35,6 +35,7 @@
     "lint": "oxlint .",
     "format": "prettier --write 'src/**/*.ts'",
     "test": "bun test",
+    "load:sse": "bun scripts/load-sse.ts",
     "prepublishOnly": "bun scripts/prepublish-guard.ts && tsc --noEmit && bun test"
   },
   "repository": {
