@@ -289,6 +289,27 @@ describe("HTTP server integration", () => {
     expect((await mutation.json() as { error: { code: string } }).error.code).toBe("FORBIDDEN")
   })
 
+  test("protected diagnostics reports local runtime state without credentials", async () => {
+    const response = await fetch(`${baseUrl}/diagnostics`, {
+      headers: { Authorization: `Bearer ${readOnlyCredential}` },
+    })
+    expect(response.status).toBe(200)
+    const body = await response.json() as {
+      pilot: { version: string; runtime: { name: string; version: string } }
+      authentication: { kind: string; role: string; deviceId: string | null }
+      runtime: { integrations: string[]; sseClients: number; pendingPermissions: number }
+      recentErrors: unknown[]
+    }
+    expect(body.pilot.runtime.name).toBe("Bun")
+    expect(body.authentication).toMatchObject({ kind: "device", role: "read-only" })
+    expect(body.runtime.integrations).toEqual(["opencode", "codex"])
+    expect(body.runtime.sseClients).toBeGreaterThanOrEqual(0)
+    expect(body.runtime.pendingPermissions).toBe(0)
+    const serialized = JSON.stringify(body)
+    expect(serialized).not.toContain(TOKEN)
+    expect(serialized).not.toContain(readOnlyCredential)
+  })
+
   test("interactive devices can create sessions but cannot approve permissions", async () => {
     const create = await fetch(`${baseUrl}/sessions`, {
       method: "POST",

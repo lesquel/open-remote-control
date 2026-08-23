@@ -21,7 +21,7 @@
 - `writePrivateFile()` — (`fs/private-file.ts`) atomic owner-private credential file replacement
 - `resolveContainedFile()` — (`fs/contained-file.ts`) canonical project-boundary proof for local files
 - `RouteContext<TDeps> / Route<TDeps> / AuthRequirement / RouteParams` — (`http/types.ts`) generic HTTP types, including the server-assigned request ID
-- `createLogger(): Logger` — (`logger/index.ts`) wraps `ctx.client.app.log` and recursively redacts messages/structured extras
+- `createLogger(): Logger` — (`logger/index.ts`) wraps `ctx.client.app.log`, recursively redacts values, and retains 20 sanitized recent errors for local diagnostics
 - `logging/redact.ts` — bounded, cycle-safe secret and URL redaction shared by logs and audit persistence
 - `http/rate-limit.ts` — bounded in-memory fixed-window limiter used for auth failures and mutation routes
 - `getLocalIP(): string` — (`network/ip.ts`)

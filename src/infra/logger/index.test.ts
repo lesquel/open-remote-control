@@ -33,4 +33,16 @@ describe("createLogger redaction", () => {
       },
     }])
   })
+
+  test("keeps a bounded redacted local error snapshot for diagnostics", () => {
+    const client = { app: { log: async () => ({ data: {}, error: null }) } } as unknown as PluginInput["client"]
+    const logger = createLogger(client, "test")
+    for (let index = 0; index < 25; index += 1) {
+      logger.error(`failure ${index} Bearer secret-${index}`, { token: `secret-${index}` })
+    }
+    const errors = logger.recentErrors?.() ?? []
+    expect(errors).toHaveLength(20)
+    expect(JSON.stringify(errors)).not.toContain("secret-24")
+    expect(String(errors.at(-1)?.message)).toContain("failure 24")
+  })
 })

@@ -135,6 +135,7 @@ import {
   createPairing,
   redeemPairing,
 } from "./handlers/devices"
+import { getDiagnostics } from "./handlers/diagnostics"
 
 /**
  * Central route table. Order matters only when patterns could overlap —
@@ -166,6 +167,7 @@ export const routes: Route[] = [
     handler: serveDashboardRootStatic,
   },
   { method: "GET", pattern: /^\/status$/, auth: "required", requiredCapabilities: ["status.read"], handler: getStatus },
+  { method: "GET", pattern: /^\/diagnostics$/, auth: "required", requiredCapabilities: ["status.read"], handler: getDiagnostics },
   { method: "GET", pattern: /^\/sessions$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listSessions },
   { method: "POST", pattern: /^\/sessions$/, auth: "required", requiredCapabilities: ["sessions.write"], handler: createSession },
   {
