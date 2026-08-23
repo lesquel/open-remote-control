@@ -2,6 +2,8 @@
 
 Material crudo en español para armar la landing del plugin. Todos los datos son reales al día de v1.14.1. Usalo como fuente para cualquier framework (Astro, Next, Nuxt, HTML plano) — el contenido está estructurado por secciones y con sus CTAs.
 
+> **Borrador histórico:** no publiques estas cifras sin verificarlas contra `package.json`, `README.md`, `docs/ARCHITECTURE.md` y `docs/THREAT_MODEL.md`.
+
 ---
 
 ## 0. Metadatos base
@@ -10,7 +12,7 @@ Material crudo en español para armar la landing del plugin. Todos los datos son
 |-------|-------|
 | Nombre | OpenCode Pilot |
 | Paquete npm | `@lesquel/opencode-pilot` |
-| Versión actual | `1.14.1` |
+| Versión del snapshot | `1.14.1` |
 | Licencia | MIT |
 | Repositorio | `https://github.com/lesquel/open-remote-control` |
 | Issues | `https://github.com/lesquel/open-remote-control/issues` |
@@ -311,7 +313,7 @@ Bot de Telegram conectado a un canal del equipo. Cada vez que un agente termina 
 
 ### Versión actual
 
-`v1.14.1` — release audit-driven (ver `CHANGELOG.md`). 232 tests verdes, tipos estrictos, zero breaking changes desde `v1.13.x`.
+Snapshot `v1.14.1` — release audit-driven (ver `CHANGELOG.md`). Las cifras de tests y compatibilidad deben recalcularse antes de publicar.
 
 ### Lo que trajo 1.14.0 y 1.14.1
 

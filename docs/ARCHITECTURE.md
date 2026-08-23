@@ -2,7 +2,7 @@
 
 opencode-pilot is an OpenCode plugin that adds a remote-control layer on top of the OpenCode SDK. It exposes sessions, prompts, permissions, and live events over HTTP + Server-Sent Events so you can monitor and drive OpenCode from a phone, another machine, or a public URL — without changing how OpenCode itself works.
 
-**Current version:** v1.18.0. The internal structure was fully reorganized in this version — see `docs/REFACTOR-2026-04-architecture.md` for the full migration history and rationale.
+The current architecture was introduced in v1.18.0 and continues to evolve. `package.json` is the only source of truth for the installed product version; see `docs/REFACTOR-2026-04-architecture.md` for migration history and rationale.
 
 ---
 

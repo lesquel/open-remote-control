@@ -1,5 +1,7 @@
 # Production Readiness Assessment — opencode-pilot v1.5.0
 
+> **Historical assessment.** This document records the v1.5.0 review and is not a statement of current readiness. Use `docs/THREAT_MODEL.md`, `docs/ARCHITECTURE.md`, and the current code/tests for present-day status.
+
 **Date:** 2026-04-17
 **Scope:** Honest evaluation of whether opencode-pilot is ready for production, public deployment, or SaaS-style multi-tenant hosting, with prioritized recommendations.
 

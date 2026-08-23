@@ -37,6 +37,8 @@ jobs:
 
       - run: bun test scripts/architecture.test.ts
 
+      - run: bun test scripts/docs-staleness.test.ts
+
       - run: bun run lint
 
       - run: bun scripts/package-smoke.ts

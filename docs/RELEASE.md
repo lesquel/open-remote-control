@@ -34,7 +34,7 @@ git push origin vX.Y.Z
          ├─ bun install --frozen-lockfile
          ├─ verify tag == package version and commit is on main
          ├─ bun run typecheck            # tsc --noEmit
-         ├─ bun test                     # 228+ tests
+         ├─ bun test                     # complete current suite
          ├─ npm publish --access public --provenance
          └─ softprops/action-gh-release  # GitHub Release from CHANGELOG.md
 ```
@@ -96,7 +96,7 @@ Template:
 ```bash
 bun scripts/prepublish-guard.ts   # asset sanity, file manifest, etc
 bun run typecheck                 # tsc --noEmit
-bun test                          # 228+ tests
+bun test                          # complete current suite
 ```
 
 If anything fails, fix it before commit — never commit and then patch on top, the history becomes noisy.
@@ -199,7 +199,7 @@ These run in `.github/workflows/release.yml` — local is a fast-feedback dress 
 
 - `bun install --frozen-lockfile` — `bun.lock` must be clean.
 - `bun run typecheck` — zero type errors.
-- `bun test` — all tests pass (228+ as of 1.13.13).
+- `bun test` — all tests pass. Do not document a fixed test count; the suite changes continuously.
 - `npm publish --access public --provenance` — signed publish.
 
 Things CI **does not** check:
