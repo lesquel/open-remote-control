@@ -42,6 +42,16 @@ export type {
 
 export { PilotError } from "./errors"
 
+export { createDeviceStore, capabilitiesForRole } from "./devices/store"
+export type {
+  DeviceStore,
+  DeviceStoreDeps,
+  Device,
+  DeviceRole,
+  DeviceCapability,
+  IssuedDevice,
+} from "./devices/store"
+
 export type {
   PilotEvent,
   BusEvent,

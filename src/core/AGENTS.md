@@ -12,6 +12,7 @@
 - `createAuditLog(): AuditLog` — appends recursively redacted JSON-Lines audit records to `.opencode/pilot-audit.log`
 - `rotateIfNeeded()` — rotates the audit log file when it exceeds the size limit
 - `createSettingsStore(): SettingsStore` — reads/writes `~/.opencode-pilot/config.json`
+- `createDeviceStore(): DeviceStore` — issues hashed per-device credentials, one-time pairing tokens, capability roles, expiry, and individual revocation
 - `writeState / clearState / updateStateToken / globalStatePath` — pilot-state.json lifecycle
 - `PilotError` — base error class for the whole project
 - `interface NotificationService` — (`types/notification-service.ts`) consumed by integrations
@@ -27,6 +28,7 @@ All of the above re-exported from `core/index.ts`.
 - `audit/log.ts` — `createAuditLog`; append-only audit trail
 - `audit/rotation.ts` — size-based log rotation
 - `settings/store.ts` — `createSettingsStore`; atomic JSON writes with chmod
+- `devices/store.ts` — versioned owner-private device identities and ephemeral pairing lifecycle
 - `state/store.ts` — `writeState/clearState`; pilot-state.json + project-state logic
 - `errors.ts` — `PilotError` base class
 - `strings.ts` — `MSG` dictionary (all user-facing strings live here)
