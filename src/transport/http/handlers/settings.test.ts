@@ -545,5 +545,20 @@ describe("V3 hookToken live-update (mutable container)", () => {
 
     // After clearing, hookToken must be undefined in memory
     expect(deps.config.hookToken).toBeUndefined()
+    expect(deps.settingsStore.load().hookToken).toBeUndefined()
+    const response = await res.json() as { settings: { hookTokenConfigured: boolean } }
+    expect(response.settings.hookTokenConfigured).toBe(false)
+  })
+
+  test("POST /settings/reset clears a store-sourced hook token in memory", async () => {
+    const configPath = join(dir, "config.json")
+    writeFileSync(configPath, JSON.stringify({ hookToken: "old-token" }), "utf-8")
+    const config = loadConfig({})
+    config.hookToken = "old-token"
+    const deps = makeDeps({ configPath, config })
+    const res = await resetSettings(makeCtx(deps))
+    expect(res.status).toBe(200)
+    expect(deps.config.hookToken).toBeUndefined()
+    expect(deps.settingsStore.load().hookToken).toBeUndefined()
   })
 })

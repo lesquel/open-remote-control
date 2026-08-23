@@ -104,4 +104,12 @@ describe("settings-store", () => {
     store.save({ port: 5050 })
     expect(existsSync(path + ".tmp")).toBe(false)
   })
+
+  test("save removes an explicitly cleared hook token instead of merging the old value back", async () => {
+    const store = createSettingsStore({ logger: silentLogger, filePath: path })
+    store.save({ port: 5050, hookToken: "old-secret" })
+    store.save({ hookToken: "" })
+    expect(store.load()).toEqual({ port: 5050 })
+    await expect(Bun.file(path).text()).resolves.not.toContain("old-secret")
+  })
 })

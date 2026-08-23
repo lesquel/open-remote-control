@@ -171,8 +171,17 @@ export function createSettingsStore(deps: SettingsStoreDeps): SettingsStore {
     const current = load()
     const clean = sanitize(patch)
     const merged: PilotSettings = { ...current, ...clean }
-    // Remove keys that the patch explicitly set to undefined (not possible via
-    // sanitize, but future-proofs us). For now sanitize already drops them.
+    for (const key of PERSISTED_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(patch, key) && patch[key] === undefined) {
+        delete merged[key]
+      }
+    }
+    // The HTTP validator maps hookToken:null to an empty-string clear sentinel.
+    // sanitize() intentionally refuses to persist it, so deletion must happen
+    // against the merged object rather than silently resurrecting the old value.
+    if (Object.prototype.hasOwnProperty.call(patch, "hookToken") && patch.hookToken === "") {
+      delete merged.hookToken
+    }
     const tmp = path + ".tmp"
     // Write with mode 0600 so the file is owner-readable only from the start.
     // This matters because config.json contains VAPID private keys and Telegram

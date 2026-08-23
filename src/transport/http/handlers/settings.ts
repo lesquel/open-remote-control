@@ -245,6 +245,7 @@ export async function patchSettings({ req, deps }: RouteContext): Promise<Respon
 
 export async function resetSettings({ deps }: RouteContext): Promise<Response> {
   deps.settingsStore.reset()
+  if (!deps.shellEnv.PILOT_HOOK_TOKEN) deps.config.hookToken = undefined
   deps.audit.log("settings.reset", {})
   return json({ ok: true, configFilePath: deps.settingsStore.filePath() }, 200, CORS_HEADERS)
 }
