@@ -10,7 +10,9 @@ export async function loadPermissions() {
     const perms = await fetchPermissions()
     setState({ pendingPerms: Array.isArray(perms) ? perms : [] })
     showNextPerm()
-  } catch (_) {}
+  } catch (error) {
+    console.warn('[permissions] Could not load pending permissions:', error?.message ?? error)
+  }
 }
 
 function classifyRisk(perm) {
@@ -134,6 +136,7 @@ const respondPerm = createPermissionResponder({
 export function initPermissions() {
   document.getElementById('btn-allow').addEventListener('click', () => respondPerm('allow'))
   document.getElementById('btn-deny').addEventListener('click', () => respondPerm('deny'))
+  window.__loadPermissions = loadPermissions
 }
 
 export function handlePermissionRequested(data) {

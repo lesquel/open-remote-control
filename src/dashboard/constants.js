@@ -23,6 +23,7 @@ export const EVENTS = Object.freeze({
   SESSION_UPDATED:      'session.updated',
   SESSION_CREATED:      'session.created',
   SESSION_DELETED:      'session.deleted',
+  SESSION_STATUS:       'session.status',
   // Message lifecycle
   MESSAGE_CREATED:      'message.created',
   MESSAGE_UPDATED:      'message.updated',

@@ -59,8 +59,6 @@ export function buildApiUrl(path) {
 }
 
 function isDirectoryExempt(path) {
-  // Also exempt /permissions/* paths
-  if (path.startsWith('/permissions')) return true
   return DIRECTORY_EXEMPT.some(p => path === p || path.startsWith(p + '?'))
 }
 

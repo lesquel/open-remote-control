@@ -20,7 +20,7 @@ import {
 } from './auth/connect.js'
 import { createFilesChangedPanel } from './components/files-changed.js'
 import { registerFilesChangedPanel } from './components/files-changed-bridge.js'
-import { init as initReferences, refresh as refreshReferences } from './components/references.js'
+import { init as initReferences, refresh as refreshReferences, getCurrentProject } from './components/references.js'
 import { createLabelStrip } from './components/label-strip.js'
 import { createUsageIndicator } from './components/usage-indicator.js'
 import { createAgentPanel } from './components/agent-panel.js'
@@ -32,7 +32,7 @@ import { createFileBrowser } from './components/file-browser.js'
 import { createCostPanel } from './components/cost-panel.js'
 import { createPinnedTodos } from './components/pinned-todos.js'
 import { initConnectModal, openConnectModal } from './modals/connect-modal.js'
-import { createProjectTabs, restoreTabsFromStorage, addProjectTab as ptAddProjectTab, switchProjectTab as ptSwitchProjectTab } from './components/project-tabs.js'
+import { createProjectTabs, restoreTabsFromStorage, ensureCurrentProjectTab, addProjectTab as ptAddProjectTab, switchProjectTab as ptSwitchProjectTab } from './components/project-tabs.js'
 import { resolveDirFromHash, resolveTabAction } from './routing/hash-dir-router.js'
 import { initActivityCenter } from './components/activity-center.js'
 
@@ -181,7 +181,7 @@ async function bootstrap() {
   // 3.5 Restore project tabs + active directory from localStorage (v1.11).
   //     This MUST happen before any API call so api.js appends the right
   //     ?directory= on initial /agents, /providers, /sessions fetches.
-  const _restoredActiveTabId = restoreTabsFromStorage()
+  restoreTabsFromStorage()
 
   // 3.6 Auto-focus project tab from #dir= hash fragment (v1.13.12).
   //     When the user runs /remote from a project directory, the TUI appends
@@ -220,6 +220,7 @@ async function bootstrap() {
   // 4. Init references FIRST (agents, models, MCP servers, project) — must
   //    complete before any module that uses getAgent/getModel/getMcpServers.
   await initReferences()
+  ensureCurrentProjectTab(getCurrentProject())
 
   // 5. Init all modules
   initMarkdown()
@@ -570,18 +571,13 @@ async function bootstrap() {
   })
 
   // 6. Load initial data.
-  //    If a tab was restored from storage, its state.activeDirectory is already
-  //    set; loadSessions() will fetch for that tab. If no tab was restored,
-  //    we first create a "default" tab so that state.activeProjectId is set
-  //    before loadSessions writes results into state — that way setState
-  //    correctly mirrors into the tab's cache.
+  //    The concrete current-project tab was established after references
+  //    loaded. Never create a null-directory "default" tab: omitting the
+  //    directory makes OpenCode return sessions from unrelated projects.
   const stateMod = await import('./state/state.js')
-  if (!_restoredActiveTabId && !stateMod.getActiveProjectTab?.()) {
-    // Fresh install / no legacy data: open a "default" tab synchronously
-    // (stateAddTab + stateSwitchTab, not the async project-tabs wrapper)
-    // so loadSessions below writes into it via the setState mirroring.
-    const defaultTab = stateMod.addProjectTab(null, 'default')
-    stateMod.switchProjectTab(defaultTab.id)
+  if (!stateMod.getActiveProjectTab?.()) {
+    toast("Couldn't determine the current OpenCode project. Reopen the dashboard from that project.")
+    return
   }
 
   await loadSessions(true)
