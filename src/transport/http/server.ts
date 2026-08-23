@@ -4,6 +4,10 @@ import { jsonError } from "./middlewares/json"
 import { matchRoute, routes } from "./routes"
 import type { RouteDeps, Route } from "./routes"
 import { MAX_REQUEST_BODY_BYTES } from "../../infra/http/constants"
+import {
+  applyBrowserResponseHeaders,
+  validateBrowserBoundary,
+} from "../../infra/http/browser-security"
 
 export interface RemoteServer {
   /**
@@ -85,10 +89,29 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
       async fetch(req: Request): Promise<Response> {
         const url = new URL(req.url)
         const path = url.pathname
+        const boundary = validateBrowserBoundary(req, {
+          host: deps.config.host,
+          port: deps.config.port,
+          tunnelUrl: deps.tunnelUrl,
+          allowedHosts: deps.config.allowedHosts,
+          allowedOrigins: deps.config.allowedOrigins,
+        })
+        const respond = (response: Response): Response =>
+          applyBrowserResponseHeaders(response, boundary.ok ? boundary.origin : null)
+
+        if (!boundary.ok) {
+          deps.audit.log("request.rejected", {
+            reason: boundary.code,
+            method: req.method,
+            path,
+            ip: getIP(req),
+          })
+          return respond(jsonError("FORBIDDEN", "Forbidden", 403, CORS_HEADERS))
+        }
 
         // CORS preflight
         if (req.method === "OPTIONS") {
-          return corsPreflightResponse()
+          return respond(corsPreflightResponse())
         }
 
         // Check static routes first, then dynamically-registered routes
@@ -106,7 +129,7 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
 
         if (!matched) {
           deps.audit.log("request.notfound", { method: req.method, path, ip: getIP(req) })
-          return jsonError("NOT_FOUND", "Not found", 404, CORS_HEADERS)
+          return respond(jsonError("NOT_FOUND", "Not found", 404, CORS_HEADERS))
         }
 
         const { route, params } = matched
@@ -127,7 +150,7 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
               `Usually: a dashboard tab from before the last OpenCode restart. Have the user re-open via /remote.`,
               { path, method: req.method, ip },
             )
-            return jsonError("UNAUTHORIZED", "Unauthorized", 401, CORS_HEADERS)
+            return respond(jsonError("UNAUTHORIZED", "Unauthorized", 401, CORS_HEADERS))
           }
           deps.audit.log("request", { method: req.method, path, ip: getIP(req) })
         }
@@ -136,14 +159,14 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
         // req.json() / req.arrayBuffer(). SSE and GET routes are unaffected.
         if (req.method === "POST" || req.method === "PATCH" || req.method === "PUT") {
           const sizeError = checkBodySize(req)
-          if (sizeError) return sizeError
+          if (sizeError) return respond(sizeError)
         }
 
         try {
-          return await route.handler({ req, url, params, deps })
+          return respond(await route.handler({ req, url, params, deps }))
         } catch (err) {
           deps.audit.log("error", { path, error: String(err) })
-          return jsonError("INTERNAL_ERROR", "Internal server error", 500, CORS_HEADERS)
+          return respond(jsonError("INTERNAL_ERROR", "Internal server error", 500, CORS_HEADERS))
         }
       },
       })

@@ -365,12 +365,38 @@ describe("HTTP server integration", () => {
     }
   })
 
-  test("OPTIONS / preflight returns CORS headers", async () => {
-    const res = await fetch(`${baseUrl}/`, { method: "OPTIONS" })
+  test("OPTIONS / preflight reflects only the same authority origin", async () => {
+    const res = await fetch(`${baseUrl}/`, {
+      method: "OPTIONS",
+      headers: { Origin: baseUrl },
+    })
     expect(res.status).toBe(204)
-    expect(res.headers.get("access-control-allow-origin")).toBe("*")
+    expect(res.headers.get("access-control-allow-origin")).toBe(baseUrl)
     expect(res.headers.get("access-control-allow-methods")).toContain("GET")
     expect(res.headers.get("access-control-allow-headers")).toContain("Authorization")
+  })
+
+  test("rejects cross-origin browser requests before authentication", async () => {
+    const res = await fetch(`${baseUrl}/status`, {
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+        Origin: "https://attacker.example",
+      },
+    })
+    expect(res.status).toBe(403)
+    expect(res.headers.get("access-control-allow-origin")).toBeNull()
+  })
+
+  test("adds browser hardening headers to dashboard and API responses", async () => {
+    for (const path of ["/", "/status"]) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        headers: path === "/status" ? { Authorization: `Bearer ${TOKEN}` } : undefined,
+      })
+      expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'")
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff")
+      expect(res.headers.get("referrer-policy")).toBe("no-referrer")
+      expect(res.headers.get("access-control-allow-origin")).toBeNull()
+    }
   })
 
   // ─── R5: /health endpoint ─────────────────────────────────────────────

@@ -32,6 +32,10 @@ export type ConfigSource = "default" | "env-file" | "settings-store" | "shell-en
 export interface Config {
   port: number
   host: string
+  /** Additional browser Host values accepted behind a user-managed reverse proxy. */
+  allowedHosts?: string[]
+  /** Standalone PWA origins allowed to call the local/tunnel HTTP API. */
+  allowedOrigins?: string[]
   permissionTimeoutMs: number
   tunnel: TunnelProvider
   telegram: TelegramConfig | null

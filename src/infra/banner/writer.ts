@@ -3,6 +3,7 @@ import { writePrivateFile } from "../fs/private-file"
 import { generateQR } from "../qr/index"
 import { stateFile } from "../paths/index"
 import { shouldWriteProjectState, type ProjectStateMode } from "../paths/index"
+import { DEFAULT_PWA_URL } from "./constants"
 
 export function globalBannerPath(): string {
   return stateFile("pilot-banner.txt")
@@ -26,8 +27,6 @@ function safeWrite(path: string, content: string): string | null {
     return err instanceof Error ? err.message : String(err)
   }
 }
-
-const DEFAULT_PWA_URL = "https://lesquel.github.io/open-remote-control/"
 
 export interface BannerOptions {
   localUrl: string

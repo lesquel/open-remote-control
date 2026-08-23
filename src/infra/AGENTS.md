@@ -9,10 +9,12 @@
 ## Public API (what other modules consume from here)
 - `generateToken(): string` — (`auth/token.ts`) 64-hex auth token
 - `writeBanner()` — (`banner/writer.ts`) writes the connection-info banner file
+- `DEFAULT_PWA_URL` — (`banner/constants.ts`) canonical hosted-PWA default
 - `createCircuitBreaker()` — (`circuit-breaker/index.ts`) half-open/open/closed state machine
 - `loadDotEnv()` — (`dotenv/index.ts`) loads `.env` from the project root
 - `validateToken / validateHookToken / getIP / safeEqual` — (`http/auth.ts`) request auth helpers
 - `CORS_HEADERS / corsPreflightResponse` — (`http/cors.ts`)
+- `validateBrowserBoundary / applyBrowserResponseHeaders` — (`http/browser-security.ts`) DNS-rebinding, Origin, CORS, and browser-header boundary
 - `json / jsonError` — (`http/json.ts`) typed JSON response helpers
 - `readBoundedText()` — (`http/text.ts`) bounded body reader
 - `writePrivateFile()` — (`fs/private-file.ts`) atomic owner-private credential file replacement
@@ -29,6 +31,7 @@
 ## Key files
 - `http/types.ts` — `RouteContext<TDeps>`, `Route<TDeps>` — the generic HTTP contract shared by `transport/` and `integrations/`
 - `http/auth.ts` — token validation + IP extraction
+- `http/browser-security.ts` — Host/Origin validation and browser response hardening
 - `fs/private-file.ts` — same-directory atomic writes with private POSIX file/directory modes
 - `paths/index.ts` — XDG-aware path resolution for config and state files
 - `tunnel/index.ts` — cloudflared / ngrok process management

@@ -17,6 +17,7 @@
 import { DEFAULT_CODEX_PERMISSION_TIMEOUT_MS, DEFAULT_PERMISSION_TIMEOUT_MS, DEFAULT_PROJECT_STATE_MODE, MAX_CODEX_PERMISSION_TIMEOUT_MS } from "./constants"
 import { DEFAULT_HOST, DEFAULT_PORT, VAPID_DEFAULT_SUBJECT } from "../infra/http/constants"
 import type { PilotSettings } from "../core/settings/store"
+import { DEFAULT_PWA_URL } from "../infra/banner/constants"
 
 // Re-export types from their canonical locations in core/ and infra/.
 // server/config.ts is the composition root area — these types belong in the
@@ -57,6 +58,39 @@ function parseProjectStateMode(raw: string | undefined): ProjectStateMode {
   throw new ConfigError(
     `Invalid PILOT_PROJECT_STATE value "${raw}". Must be one of: off, auto, always`,
   )
+}
+
+function parseAllowedHosts(raw: string | undefined): string[] {
+  if (!raw) return []
+  const hosts = raw.split(",").map((host) => host.trim()).filter(Boolean)
+  for (const host of hosts) {
+    if (host.length > 253 || /[\s/@?#]/.test(host) || host.includes("://")) {
+      throw new ConfigError(
+        `Invalid PILOT_ALLOWED_HOSTS entry "${host}". Use comma-separated hostnames without schemes, paths, or ports.`,
+      )
+    }
+  }
+  return [...new Set(hosts.map((host) => host.toLowerCase().replace(/\.$/, "")))]
+}
+
+function parseWebOrigin(value: string, variable: string): string {
+  try {
+    const url = new URL(value)
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
+      throw new Error("unsupported origin")
+    }
+    return url.origin
+  } catch {
+    throw new ConfigError(`Invalid ${variable} URL "${value}". Use an absolute HTTP(S) URL.`)
+  }
+}
+
+function parseAllowedOrigins(env: NodeJS.ProcessEnv): string[] {
+  const origins = [parseWebOrigin(env.PILOT_PWA_URL ?? DEFAULT_PWA_URL, "PILOT_PWA_URL")]
+  for (const value of (env.PILOT_ALLOWED_ORIGINS ?? "").split(",").map((item) => item.trim()).filter(Boolean)) {
+    origins.push(parseWebOrigin(value, "PILOT_ALLOWED_ORIGINS"))
+  }
+  return [...new Set(origins)]
 }
 
 // ─── Mapping: env var name ↔ PilotSettings key ───────────────────────────────
@@ -122,6 +156,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const host = env.PILOT_HOST ?? DEFAULT_HOST
+  const allowedHosts = parseAllowedHosts(env.PILOT_ALLOWED_HOSTS)
+  const allowedOrigins = parseAllowedOrigins(env)
   const permissionTimeoutMs = parseIntOrDefault(env.PILOT_PERMISSION_TIMEOUT, DEFAULT_PERMISSION_TIMEOUT_MS)
   const tunnel = parseTunnelProvider(env.PILOT_TUNNEL)
 
@@ -179,6 +215,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     port,
     host,
+    allowedHosts,
+    allowedOrigins,
     permissionTimeoutMs,
     tunnel,
     telegram,
