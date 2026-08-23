@@ -1,4 +1,4 @@
-import { validateToken, getIP } from "./middlewares/auth"
+import { getBearerToken, getIP } from "../../infra/http/auth"
 import { CORS_HEADERS, corsPreflightResponse } from "./middlewares/cors"
 import { jsonError } from "./middlewares/json"
 import { matchRoute, routes } from "./routes"
@@ -11,6 +11,7 @@ import {
 } from "../../infra/http/browser-security"
 import { randomUUID } from "node:crypto"
 import { createRateLimiter, type RateLimitPolicy } from "../../infra/http/rate-limit"
+import { authenticateCredential, hasCapabilities, type RoutePrincipal } from "./authentication"
 
 export interface RemoteServer {
   /**
@@ -175,9 +176,12 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
 
         const { route, params } = matched
 
-        // Auth check — "optional" is handled per-handler (SSE)
-        if (route.auth === "required") {
-          if (!validateToken(req, deps.token)) {
+        let principal: RoutePrincipal | undefined
+        if (route.auth !== "none") {
+          const headerCredential = getBearerToken(req)
+          const queryCredential = route.auth === "optional" ? url.searchParams.get("token") : null
+          principal = authenticateCredential(headerCredential ?? queryCredential, deps) ?? undefined
+          if (!principal) {
             const ip = getIP(req)
             const perClient = rateLimiter.consume(`auth:client:${clientKey}`, authFailurePolicy)
             const global = rateLimiter.consume("auth:global", {
@@ -197,13 +201,29 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
             // that hasn't noticed the server restart.
             // Introduced in 1.13.15 for issue #1 "token inválido" follow-up.
             deps.logger.warn(
-              `Auth rejected on ${req.method} ${path} — the client sent a token that does not match the current server token. ` +
-              `Usually: a dashboard tab from before the last OpenCode restart. Have the user re-open via /remote.`,
+              `Auth rejected on ${req.method} ${path} — the client sent a missing, stale, revoked, or invalid credential.`,
               { path, method: req.method, ip, requestId },
             )
             return respond(requestError("UNAUTHORIZED", "Unauthorized", 401))
           }
-          deps.audit.log("request", { method: req.method, path, ip: getIP(req), requestId })
+          if (route.requiredCapabilities && !hasCapabilities(principal, route.requiredCapabilities)) {
+            deps.audit.log("auth.forbidden", {
+              path,
+              principalKind: principal.kind,
+              principalId: principal.id,
+              requiredCapabilities: route.requiredCapabilities,
+              requestId,
+            })
+            return respond(requestError("FORBIDDEN", "Insufficient device capability", 403))
+          }
+          deps.audit.log("request", {
+            method: req.method,
+            path,
+            ip: getIP(req),
+            principalKind: principal.kind,
+            principalId: principal.id,
+            requestId,
+          })
         }
 
         if (req.method === "POST" || req.method === "PATCH" || req.method === "PUT" || req.method === "DELETE") {
@@ -248,7 +268,7 @@ export function createRemoteServer(deps: RouteDeps): RemoteServer {
         }
 
         try {
-          return respond(await route.handler({ req: handlerRequest, url, params, deps, requestId }))
+          return respond(await route.handler({ req: handlerRequest, url, params, deps, requestId, principal }))
         } catch (err) {
           deps.audit.log("error", { path, error: String(err), requestId })
           deps.logger.error("HTTP handler failed", { path, requestId, error: String(err) })

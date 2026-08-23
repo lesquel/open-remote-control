@@ -7,7 +7,8 @@ import {
   validatePromptBody,
 } from "../validators/sessions"
 import { extractDirectory } from "./system"
-import { validateToken, safeEqual } from "../middlewares/auth"
+import { authenticateCredential } from "../authentication"
+import { getBearerToken } from "../../../infra/http/auth"
 import {
   createSafeHttpsFetcher,
   type SafeHttpsFetcher,
@@ -463,13 +464,13 @@ export async function getSessionAttachment({
   url,
   params,
   deps,
+  principal,
 }: RouteContext): Promise<Response> {
-  // Auth: Bearer header OR ?token= query param (mirrors /events pattern)
-  const queryToken = url.searchParams.get("token")
-  const headerValid = validateToken(req, deps.token)
-  // Timing-safe compare for ?token= path — mirrors the Bearer path in validateToken
-  const queryValid = queryToken !== null && safeEqual(queryToken, deps.token)
-  if (!headerValid && !queryValid) {
+  const authenticated = principal ?? authenticateCredential(
+    getBearerToken(req) ?? url.searchParams.get("token"),
+    deps,
+  )
+  if (!authenticated) {
     deps.audit.log("auth.failed", { path: "/sessions/:id/attachments/:partId" })
     return jsonError("UNAUTHORIZED", "Missing or invalid authorization token", 401, CORS_HEADERS)
   }

@@ -1,8 +1,9 @@
 import type { RouteContext } from "../routes"
 import { jsonError } from "../middlewares/json"
 import { CORS_HEADERS } from "../middlewares/cors"
-import { validateToken, safeEqual } from "../middlewares/auth"
 import { MSG } from "../../../core/strings"
+import { authenticateCredential } from "../authentication"
+import { getBearerToken } from "../../../infra/http/auth"
 
 function getIP(req: Request): string {
   return (
@@ -10,13 +11,12 @@ function getIP(req: Request): string {
   )
 }
 
-export async function streamEvents({ req, url, deps }: RouteContext): Promise<Response> {
-  const queryToken = url.searchParams.get("token")
-  const headerValid = validateToken(req, deps.token)
-  // Timing-safe compare for ?token= path — mirrors the Bearer path in validateToken
-  const queryValid = queryToken !== null && safeEqual(queryToken, deps.token)
-
-  if (!headerValid && !queryValid) {
+export async function streamEvents({ req, url, deps, principal }: RouteContext): Promise<Response> {
+  const authenticated = principal ?? authenticateCredential(
+    getBearerToken(req) ?? url.searchParams.get("token"),
+    deps,
+  )
+  if (!authenticated) {
     deps.audit.log("auth.failed", { path: "/events", ip: getIP(req) })
     return jsonError("UNAUTHORIZED", MSG.UNAUTHORIZED_BANNER, 401, CORS_HEADERS)
   }

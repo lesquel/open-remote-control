@@ -19,7 +19,8 @@
 - `readBoundedText()` — integration-local streaming text reader with size cap
 
 ## Key files
-- `http/server.ts` — `createRemoteServer`; Bun.serve setup, request-ID assignment, bounded-body/auth/rate middleware, and route dispatch
+- `http/server.ts` — `createRemoteServer`; Bun.serve setup, request-ID assignment, bounded-body/auth/capability/rate middleware, and route dispatch
+- `http/authentication.ts` — legacy-token migration principal plus per-device credential authentication and capability checks
 - `http/routes.ts` — core route table, `RouteDeps` type, `matchRoute()`
 - `http/validation.ts` — generic body validation middleware
 - `http/handlers/sessions.ts` — `/sessions*` endpoints

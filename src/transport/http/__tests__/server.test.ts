@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type { PluginInput } from "@opencode-ai/plugin"
 import type { Config } from "../../../core/types/config"
 import type { AuditLog } from "../../../core/audit/log"
@@ -9,6 +12,7 @@ import { createPushService } from "../../../notifications/channels/push/service"
 import type { Logger } from "../../../infra/logger/index"
 import type { RouteDeps } from "../routes"
 import { createRemoteServer, type RemoteServer } from "../server"
+import { createDeviceStore, type DeviceStore } from "../../../core/devices/store"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -133,7 +137,7 @@ function createClientMock(): PluginInput["client"] {
   return mock as unknown as PluginInput["client"]
 }
 
-function buildDeps(port: number): RouteDeps {
+function buildDeps(port: number, deviceStore?: DeviceStore): RouteDeps {
   const config: Config = {
     port,
     host: "127.0.0.1",
@@ -169,6 +173,7 @@ function buildDeps(port: number): RouteDeps {
     worktree: "/tmp/test" as unknown as PluginInput["worktree"],
     config,
     token: TOKEN,
+    deviceStore,
     rotateToken(newToken: string) {
       deps.token = newToken
     },
@@ -216,10 +221,25 @@ function buildDeps(port: number): RouteDeps {
 describe("HTTP server integration", () => {
   let server: RemoteServer
   let baseUrl: string
+  let deviceStore: DeviceStore
+  let deviceStateRoot: string
+  let readOnlyCredential: string
+  let interactiveCredential: string
+  let operatorCredential: string
+  let adminCredential: string
 
   beforeAll(() => {
     const port = findFreePort()
-    const deps = buildDeps(port)
+    deviceStateRoot = mkdtempSync(join(tmpdir(), "pilot-device-server-test-"))
+    deviceStore = createDeviceStore({
+      filePath: join(deviceStateRoot, "devices.json"),
+      logger: createNoopLogger(),
+    })
+    readOnlyCredential = deviceStore.issue({ name: "Read only", role: "read-only" }).credential
+    interactiveCredential = deviceStore.issue({ name: "Interactive", role: "interactive" }).credential
+    operatorCredential = deviceStore.issue({ name: "Operator", role: "operator" }).credential
+    adminCredential = deviceStore.issue({ name: "Admin", role: "admin" }).credential
+    const deps = buildDeps(port, deviceStore)
     server = createRemoteServer(deps)
     server.start()
     baseUrl = `http://127.0.0.1:${port}`
@@ -227,6 +247,7 @@ describe("HTTP server integration", () => {
 
   afterAll(() => {
     server.stop()
+    rmSync(deviceStateRoot, { recursive: true, force: true })
   })
 
   test("GET /status without token returns 401", async () => {
@@ -245,6 +266,89 @@ describe("HTTP server integration", () => {
     expect(body).toHaveProperty("pilot")
     expect(body).toHaveProperty("sessions")
     expect(body).toHaveProperty("clients")
+  })
+
+  test("read-only device credentials can read status but cannot mutate sessions", async () => {
+    const read = await fetch(`${baseUrl}/status`, {
+      headers: { Authorization: `Bearer ${readOnlyCredential}` },
+    })
+    expect(read.status).toBe(200)
+
+    const mutation = await fetch(`${baseUrl}/sessions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${readOnlyCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    })
+    expect(mutation.status).toBe(403)
+    expect((await mutation.json() as { error: { code: string } }).error.code).toBe("FORBIDDEN")
+  })
+
+  test("interactive devices can create sessions but cannot approve permissions", async () => {
+    const create = await fetch(`${baseUrl}/sessions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${interactiveCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    })
+    expect(create.status).toBe(201)
+
+    const permission = await fetch(`${baseUrl}/permissions/missing`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${interactiveCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "allow" }),
+    })
+    expect(permission.status).toBe(403)
+  })
+
+  test("operator devices may reach permission resolution but cannot retrieve the legacy token", async () => {
+    const permission = await fetch(`${baseUrl}/permissions/missing`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${operatorCredential}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "allow" }),
+    })
+    expect(permission.status).toBe(404)
+
+    const connectInfo = await fetch(`${baseUrl}/connect-info`, {
+      headers: { Authorization: `Bearer ${operatorCredential}` },
+    })
+    expect(connectInfo.status).toBe(403)
+  })
+
+  test("admin devices retain management access", async () => {
+    const response = await fetch(`${baseUrl}/connect-info`, {
+      headers: { Authorization: `Bearer ${adminCredential}` },
+    })
+    expect(response.status).toBe(200)
+  })
+
+  test("device credentials authenticate query-only SSE clients", async () => {
+    const response = await fetch(`${baseUrl}/events?token=${encodeURIComponent(readOnlyCredential)}`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+    await response.body?.cancel()
+  })
+
+  test("an individually revoked device credential is rejected", async () => {
+    const issued = deviceStore.issue({ name: "Stolen phone", role: "operator" })
+    expect(deviceStore.revoke(issued.device.id)).toBe(true)
+    const response = await fetch(`${baseUrl}/status`, {
+      headers: {
+        Authorization: `Bearer ${issued.credential}`,
+        "X-Forwarded-For": "192.0.2.42",
+      },
+    })
+    expect(response.status).toBe(401)
   })
 
   test("GET /sessions returns sessions array", async () => {
@@ -654,9 +758,14 @@ describe("HTTP server integration", () => {
 // ─── Route isolation: Codex routes must NOT be in the central static table ───
 // Codex now self-registers via codexIntegration.setup({ registerRoute }) —
 // the central matchRoute should NOT find codex paths (regression guard).
-import { matchRoute } from "../routes"
+import { matchRoute, routes } from "../routes"
 
 describe("Route isolation — Codex must not be in central routes table", () => {
+  test("every authenticated static route declares explicit capabilities", () => {
+    const unscoped = routes.filter((route) => route.auth !== "none" && !route.requiredCapabilities?.length)
+    expect(unscoped).toEqual([])
+  })
+
   test("POST /codex/hooks/SessionStart is NOT in the central static routes table", () => {
     const match = matchRoute("POST", "/codex/hooks/SessionStart")
     expect(match).toBeNull()

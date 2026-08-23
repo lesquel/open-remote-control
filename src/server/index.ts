@@ -5,6 +5,7 @@ import { generateToken } from "../infra/auth/token"
 import { createAuditLog } from "../core/audit/log"
 import { getSharedEventBus } from "../core/events/bus"
 import { createPermissionQueue } from "../core/permissions/queue"
+import { createDeviceStore } from "../core/devices/store"
 import { createTelegramChannel } from "../notifications/channels/telegram/index"
 import { createPushService } from "../notifications/channels/push/service"
 import { createSettingsStore } from "../core/settings/store"
@@ -86,6 +87,7 @@ export default {
     const codexPermissionQueue = createPermissionQueue(config.codexPermissionTimeoutMs)
     const telegram = createTelegramChannel(config.telegram, permissionQueue, codexPermissionQueue, logger)
     const push = createPushService({ config, audit, logger })
+    const deviceStore = createDeviceStore({ logger })
 
     const notifications = createNotificationService({ eventBus, telegram, audit, push })
 
@@ -99,6 +101,7 @@ export default {
       worktree: ctx.worktree,
       config,
       token: currentToken,
+      deviceStore,
       rotateToken(newToken: string): void {
         deps.token = newToken
         currentToken = newToken

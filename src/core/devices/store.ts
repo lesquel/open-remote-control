@@ -24,6 +24,8 @@ export type DeviceCapability =
   | "permissions.approve"
   | "permissions.deny"
   | "files.read"
+  | "diff.read"
+  | "notifications.manage"
   | "settings.read"
   | "settings.write"
   | "devices.manage"
@@ -34,7 +36,9 @@ const READ_ONLY_CAPABILITIES: readonly DeviceCapability[] = [
   "sessions.read",
   "permissions.read",
   "files.read",
+  "diff.read",
   "settings.read",
+  "notifications.manage",
 ]
 
 const INTERACTIVE_CAPABILITIES: readonly DeviceCapability[] = [

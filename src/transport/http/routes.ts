@@ -7,6 +7,8 @@ import type { TelegramChannel, PushService } from "../../core/types/notification
 import type { SettingsStore } from "../../core/settings/store"
 import type { Logger } from "../../infra/logger/index"
 import type { AuthRequirement, RouteParams } from "../../infra/http/types"
+import type { DeviceCapability, DeviceStore } from "../../core/devices/store"
+import type { RoutePrincipal } from "./authentication"
 
 // Re-export infra types so consumers that currently import from routes.ts
 // continue to work without changes.
@@ -20,6 +22,8 @@ export interface RouteDeps {
   worktree: PluginInput["worktree"]
   config: Config
   token: string
+  /** Local device credentials; optional only for backwards-compatible embedders and focused tests. */
+  deviceStore?: DeviceStore
   /** Injected by the composition root so transport/ never imports from server/. */
   pilotVersion: string
   /**
@@ -58,12 +62,15 @@ export interface RouteDeps {
 }
 
 /** Concrete per-request context for the main HTTP server (specialized with RouteDeps). */
-export type RouteContext = import("../../infra/http/types").RouteContext<RouteDeps>
+export type RouteContext = import("../../infra/http/types").RouteContext<RouteDeps> & {
+  principal?: RoutePrincipal
+}
 
 export interface Route {
   method: "GET" | "POST" | "DELETE" | "PUT" | "PATCH"
   pattern: RegExp
   auth: AuthRequirement
+  requiredCapabilities?: readonly DeviceCapability[]
   handler: (ctx: RouteContext) => Promise<Response>
 }
 
@@ -151,13 +158,14 @@ export const routes: Route[] = [
     auth: "none",
     handler: serveDashboardRootStatic,
   },
-  { method: "GET", pattern: /^\/status$/, auth: "required", handler: getStatus },
-  { method: "GET", pattern: /^\/sessions$/, auth: "required", handler: listSessions },
-  { method: "POST", pattern: /^\/sessions$/, auth: "required", handler: createSession },
+  { method: "GET", pattern: /^\/status$/, auth: "required", requiredCapabilities: ["status.read"], handler: getStatus },
+  { method: "GET", pattern: /^\/sessions$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listSessions },
+  { method: "POST", pattern: /^\/sessions$/, auth: "required", requiredCapabilities: ["sessions.write"], handler: createSession },
   {
     method: "GET",
     pattern: /^\/sessions\/(?<id>[^/]+)\/messages$/,
     auth: "required",
+    requiredCapabilities: ["sessions.read"],
     handler: getSessionMessages,
   },
   {
@@ -165,95 +173,105 @@ export const routes: Route[] = [
     method: "GET",
     pattern: /^\/sessions\/(?<id>[^/]+)\/attachments\/(?<partId>[^/]+)$/,
     auth: "optional",
+    requiredCapabilities: ["files.read"],
     handler: getSessionAttachment,
   },
   {
     method: "GET",
     pattern: /^\/sessions\/(?<id>[^/]+)\/diff$/,
     auth: "required",
+    requiredCapabilities: ["diff.read"],
     handler: getSessionDiff,
   },
   {
     method: "GET",
     pattern: /^\/sessions\/(?<id>[^/]+)\/children$/,
     auth: "required",
+    requiredCapabilities: ["sessions.read"],
     handler: getSessionChildren,
   },
   {
     method: "POST",
     pattern: /^\/sessions\/(?<id>[^/]+)\/prompt$/,
     auth: "required",
+    requiredCapabilities: ["prompts.send"],
     handler: postSessionPrompt,
   },
   {
     method: "POST",
     pattern: /^\/sessions\/(?<id>[^/]+)\/abort$/,
     auth: "required",
+    requiredCapabilities: ["sessions.write"],
     handler: abortSession,
   },
   {
     method: "GET",
     pattern: /^\/sessions\/(?<id>[^/]+)$/,
     auth: "required",
+    requiredCapabilities: ["sessions.read"],
     handler: getSession,
   },
   {
     method: "PATCH",
     pattern: /^\/sessions\/(?<id>[^/]+)$/,
     auth: "required",
+    requiredCapabilities: ["sessions.write"],
     handler: updateSession,
   },
   {
     method: "DELETE",
     pattern: /^\/sessions\/(?<id>[^/]+)$/,
     auth: "required",
+    requiredCapabilities: ["sessions.write"],
     handler: deleteSession,
   },
   {
     method: "GET",
     pattern: /^\/permissions$/,
     auth: "required",
+    requiredCapabilities: ["permissions.read"],
     handler: listPermissions,
   },
   {
     method: "POST",
     pattern: /^\/permissions\/(?<id>[^/]+)$/,
     auth: "required",
+    requiredCapabilities: ["permissions.approve", "permissions.deny"],
     handler: respondPermission,
   },
   // SSE: auth via query param allowed
-  { method: "GET", pattern: /^\/events$/, auth: "optional", handler: streamEvents },
-  { method: "GET", pattern: /^\/tools$/, auth: "required", handler: listTools },
-  { method: "GET", pattern: /^\/project$/, auth: "required", handler: getProject },
+  { method: "GET", pattern: /^\/events$/, auth: "optional", requiredCapabilities: ["sessions.read"], handler: streamEvents },
+  { method: "GET", pattern: /^\/tools$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listTools },
+  { method: "GET", pattern: /^\/project$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: getProject },
   // Connect info — returns LAN / tunnel / local URLs for phone access modal
-  { method: "GET", pattern: /^\/connect-info$/, auth: "required", handler: getConnectInfo },
+  { method: "GET", pattern: /^\/connect-info$/, auth: "required", requiredCapabilities: ["devices.manage"], handler: getConnectInfo },
   // Health check — no auth required (monitoring systems, load balancers)
   { method: "GET", pattern: /^\/health$/, auth: "none", handler: getHealth },
   // Token rotation — auth required with the CURRENT token
-  { method: "POST", pattern: /^\/auth\/rotate$/, auth: "required", handler: rotateAuthToken },
+  { method: "POST", pattern: /^\/auth\/rotate$/, auth: "required", requiredCapabilities: ["auth.rotate"], handler: rotateAuthToken },
   // SDK proxy endpoints — dashboard data
-  { method: "GET", pattern: /^\/agents$/, auth: "required", handler: listAgents },
-  { method: "GET", pattern: /^\/providers$/, auth: "required", handler: listProviders },
-  { method: "GET", pattern: /^\/mcp\/status$/, auth: "required", handler: getMcpStatus },
-  { method: "GET", pattern: /^\/projects$/, auth: "required", handler: listProjects },
-  { method: "GET", pattern: /^\/project\/current$/, auth: "required", handler: getCurrentProject },
-  { method: "GET", pattern: /^\/lsp\/status$/, auth: "required", handler: getLspStatus },
+  { method: "GET", pattern: /^\/agents$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listAgents },
+  { method: "GET", pattern: /^\/providers$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listProviders },
+  { method: "GET", pattern: /^\/mcp\/status$/, auth: "required", requiredCapabilities: ["status.read"], handler: getMcpStatus },
+  { method: "GET", pattern: /^\/projects$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: listProjects },
+  { method: "GET", pattern: /^\/project\/current$/, auth: "required", requiredCapabilities: ["sessions.read"], handler: getCurrentProject },
+  { method: "GET", pattern: /^\/lsp\/status$/, auth: "required", requiredCapabilities: ["status.read"], handler: getLspStatus },
   // File browser endpoints — auth required
-  { method: "GET", pattern: /^\/file\/list$/, auth: "required", handler: listFileTree },
-  { method: "GET", pattern: /^\/file\/content$/, auth: "required", handler: readFileContent },
+  { method: "GET", pattern: /^\/file\/list$/, auth: "required", requiredCapabilities: ["files.read"], handler: listFileTree },
+  { method: "GET", pattern: /^\/file\/content$/, auth: "required", requiredCapabilities: ["files.read"], handler: readFileContent },
   // Web Push — auth required on all, subscribe body is a PushSubscriptionJSON
-  { method: "GET", pattern: /^\/push\/public-key$/, auth: "required", handler: getPushPublicKey },
-  { method: "POST", pattern: /^\/push\/subscribe$/, auth: "required", handler: subscribePush },
-  { method: "POST", pattern: /^\/push\/unsubscribe$/, auth: "required", handler: unsubscribePush },
-  { method: "POST", pattern: /^\/push\/test$/, auth: "required", handler: testPush },
+  { method: "GET", pattern: /^\/push\/public-key$/, auth: "required", requiredCapabilities: ["notifications.manage"], handler: getPushPublicKey },
+  { method: "POST", pattern: /^\/push\/subscribe$/, auth: "required", requiredCapabilities: ["notifications.manage"], handler: subscribePush },
+  { method: "POST", pattern: /^\/push\/unsubscribe$/, auth: "required", requiredCapabilities: ["notifications.manage"], handler: unsubscribePush },
+  { method: "POST", pattern: /^\/push\/test$/, auth: "required", requiredCapabilities: ["notifications.manage"], handler: testPush },
   // Glob file opener — gated by config.enableGlobOpener
-  { method: "GET", pattern: /^\/fs\/glob$/, auth: "required", handler: globFiles },
-  { method: "GET", pattern: /^\/fs\/read$/, auth: "required", handler: readFileAbs },
+  { method: "GET", pattern: /^\/fs\/glob$/, auth: "required", requiredCapabilities: ["files.read"], handler: globFiles },
+  { method: "GET", pattern: /^\/fs\/read$/, auth: "required", requiredCapabilities: ["files.read"], handler: readFileAbs },
   // Plugin settings — editable from the dashboard, persisted to ~/.opencode-pilot/config.json
-  { method: "GET", pattern: /^\/settings$/, auth: "required", handler: getSettings },
-  { method: "PATCH", pattern: /^\/settings$/, auth: "required", handler: patchSettings },
-  { method: "POST", pattern: /^\/settings\/reset$/, auth: "required", handler: resetSettings },
-  { method: "POST", pattern: /^\/settings\/vapid\/generate$/, auth: "required", handler: generateVapidKeys },
+  { method: "GET", pattern: /^\/settings$/, auth: "required", requiredCapabilities: ["settings.read"], handler: getSettings },
+  { method: "PATCH", pattern: /^\/settings$/, auth: "required", requiredCapabilities: ["settings.write"], handler: patchSettings },
+  { method: "POST", pattern: /^\/settings\/reset$/, auth: "required", requiredCapabilities: ["settings.write"], handler: resetSettings },
+  { method: "POST", pattern: /^\/settings\/vapid\/generate$/, auth: "required", requiredCapabilities: ["settings.write"], handler: generateVapidKeys },
   // Codex CLI hook bridge routes are self-registered by codexIntegration.setup()
   // in server/index.ts via registerRoute. They no longer live in this central table.
 ]

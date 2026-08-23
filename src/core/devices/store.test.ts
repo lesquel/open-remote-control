@@ -37,7 +37,9 @@ describe("device capability roles", () => {
       "sessions.read",
       "permissions.read",
       "files.read",
+      "diff.read",
       "settings.read",
+      "notifications.manage",
     ])
     expect(capabilitiesForRole("interactive")).toContain("prompts.send")
     expect(capabilitiesForRole("interactive")).not.toContain("permissions.approve")

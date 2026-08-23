@@ -12,7 +12,7 @@
 - `DEFAULT_PWA_URL` — (`banner/constants.ts`) canonical hosted-PWA default
 - `createCircuitBreaker()` — (`circuit-breaker/index.ts`) half-open/open/closed state machine
 - `loadDotEnv()` — (`dotenv/index.ts`) loads `.env` from the project root
-- `validateToken / validateHookToken / getIP / safeEqual` — (`http/auth.ts`) request auth helpers
+- `validateToken / validateHookToken / getBearerToken / getIP / safeEqual` — (`http/auth.ts`) strict request auth helpers
 - `CORS_HEADERS / corsPreflightResponse` — (`http/cors.ts`)
 - `validateBrowserBoundary / applyBrowserResponseHeaders` — (`http/browser-security.ts`) DNS-rebinding, Origin, CORS, and browser-header boundary
 - `json / jsonError` — (`http/json.ts`) typed JSON response helpers with optional diagnostic request IDs
