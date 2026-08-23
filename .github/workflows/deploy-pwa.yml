@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'src/server/dashboard/**'
+      - 'src/dashboard/**'
       - '.github/workflows/deploy-pwa.yml'
   workflow_dispatch:
 
@@ -30,7 +30,7 @@ jobs:
       - name: Prepare dist
         run: |
           mkdir -p dist
-          cp -r src/server/dashboard/. dist/
+          cp -r src/dashboard/. dist/
           echo "Dashboard files:"
           ls -la dist/
           echo "Icons:"

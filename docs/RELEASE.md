@@ -14,7 +14,7 @@ Every release must bump **all three of these in a single commit**. The asset-san
 |------|---------------|-------|
 | `package.json` | `"version": "X.Y.Z"` | Canonical — npm reads this one. |
 | `src/server/constants.ts` | `export const PILOT_VERSION = "X.Y.Z"` | Served from `/health` so the dashboard + TUI show the live version. |
-| `src/server/dashboard/index.html` | `var GEN = "X.Y.Z"` | Bumps the self-heal marker so browsers purge the old service worker + localStorage. |
+| `src/dashboard/index.html` | `var GEN = "X.Y.Z"` | Bumps the self-heal marker so browsers purge the old service worker + localStorage. |
 
 If you forget any of them, `bun test` fails with a clear diff, which is the whole point — CI catches it before anything leaves your machine.
 
@@ -59,7 +59,7 @@ Semver, applied to a user-facing plugin:
 # Use your editor or a quick sd/sed pass:
 sd '"version": "[^"]*"'              '"version": "X.Y.Z"'          package.json
 sd 'PILOT_VERSION = "[^"]*"'         'PILOT_VERSION = "X.Y.Z"'     src/server/constants.ts
-sd 'var GEN = "[^"]*";'              'var GEN = "X.Y.Z";'          src/server/dashboard/index.html
+sd 'var GEN = "[^"]*";'              'var GEN = "X.Y.Z";'          src/dashboard/index.html
 ```
 
 ### 3. Write the CHANGELOG entry

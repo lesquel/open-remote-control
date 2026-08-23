@@ -18,6 +18,15 @@ const PACKAGE_JSON = JSON.parse(
   readFileSync(join(ROOT, "package.json"), "utf-8"),
 ) as { version: string }
 const PILOT_VERSION_RAW = readFileSync(join(ROOT, "src/server/constants.ts"), "utf-8")
+const DEPLOY_WORKFLOW = readFileSync(join(ROOT, ".github/workflows/deploy-pwa.yml"), "utf-8")
+
+describe("PWA deployment source", () => {
+  test("watches and copies the canonical dashboard directory", () => {
+    expect(DEPLOY_WORKFLOW).toContain("'src/dashboard/**'")
+    expect(DEPLOY_WORKFLOW).toContain("cp -r src/dashboard/. dist/")
+    expect(DEPLOY_WORKFLOW).not.toContain("src/server/dashboard")
+  })
+})
 
 describe("dashboard/index.html highlight.js bundle", () => {
   // Bug that shipped in 1.11 through 1.13.8: index.html loaded nine
