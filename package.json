@@ -98,6 +98,6 @@
     "@types/bun": "latest",
     "@types/web-push": "^3.6.4",
     "oxlint": "^1.65.0",
-    "typescript": "^5.8.0"
+    "typescript": "^7.0.2"
   }
 }
