@@ -21,6 +21,7 @@ import { normalizePermissionPending, normalizePermissionResolved } from './permi
 import { playNotifySound } from '../ui/notif-sound.js'
 import { jitteredReconnectDelay } from './backoff.js'
 import { classifySseProtocol } from './protocol.js'
+import { recordActivity, resolveActivity } from '../components/activity-center.js'
 
 let eventSource = null
 let reconnectTimer = null
@@ -555,6 +556,15 @@ async function handleEvent(ev) {
     // Only on final updates — intermediate ones carry partial/stale token counts.
     if (t === EVENTS.MESSAGE_UPDATED && evtSessionId && isFinal) {
       refreshSessionMeta(evtSessionId)
+      if (isAssistant) {
+        recordActivity({
+          key: `completed:${messageId ?? evtSessionId}`,
+          kind: 'completed',
+          title: 'Agent finished',
+          detail: sessions[evtSessionId]?.title ?? 'Response ready',
+          sessionID: evtSessionId,
+        })
+      }
     }
   }
 
@@ -566,6 +576,15 @@ async function handleEvent(ev) {
     // normalizePermissionPending handles both shapes identically.
     const normalized = normalizePermissionPending(ev)
     handlePermissionRequested(normalized)
+    recordActivity({
+      key: `permission:${normalized.permissionID}`,
+      kind: 'permission',
+      title: normalized.title ?? normalized.description ?? 'Permission required',
+      detail: Array.isArray(normalized.pattern) ? normalized.pattern.join(' ') : normalized.pattern,
+      sessionID: normalized.sessionID,
+      project: normalized.metadata?.project ?? normalized.metadata?.directory,
+      attention: true,
+    })
     // Dispatch for push-notifications module
     window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: normalized }))
   }
@@ -574,6 +593,7 @@ async function handleEvent(ev) {
     // Payload may be under .properties (pilot events) or .data (named-event path).
     const resolvedNormalized = normalizePermissionResolved(ev)
     handlePermissionResolved(resolvedNormalized)
+    resolveActivity(`permission:${resolvedNormalized.permissionID}`)
   }
 
   if (t === EVENTS.TODO_UPDATED) {
@@ -609,6 +629,17 @@ async function handleEvent(ev) {
       updateInfoBar(d.sessionId, title, d.status, s)
     }
     updateMVPanelStatus(d.sessionId, d.status)
+    const statusType = typeof d.status === 'string' ? d.status : d.status?.type
+    if (statusType === 'error' || statusType === 'failed') {
+      recordActivity({
+        key: `error:${d.sessionId}:${Math.floor(Date.now() / 30_000)}`,
+        kind: 'error',
+        title: 'Agent failed',
+        detail: sessions[d.sessionId]?.title ?? 'Session error',
+        sessionID: d.sessionId,
+        attention: true,
+      })
+    }
   }
 
   if (t === EVENTS.VCS_BRANCH_UPDATED) {

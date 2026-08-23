@@ -34,6 +34,7 @@ import { createPinnedTodos } from './components/pinned-todos.js'
 import { initConnectModal, openConnectModal } from './modals/connect-modal.js'
 import { createProjectTabs, restoreTabsFromStorage, addProjectTab as ptAddProjectTab, switchProjectTab as ptSwitchProjectTab } from './components/project-tabs.js'
 import { resolveDirFromHash, resolveTabAction } from './routing/hash-dir-router.js'
+import { initActivityCenter } from './components/activity-center.js'
 
 // Expose references refresh globally so command-palette can call it
 window.__refreshReferences = refreshReferences
@@ -232,6 +233,7 @@ async function bootstrap() {
   initShortcuts()
   initMultiView()
   initConnectModal()
+  initActivityCenter()
   // Expose for shortcuts.js and command-palette.js
   window.__openConnectModal = openConnectModal
 
