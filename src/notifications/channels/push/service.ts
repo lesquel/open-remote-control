@@ -66,6 +66,8 @@ export interface PushDeps {
   config: Config
   audit: AuditLog
   logger: Logger
+  /** Override only for isolated tests or alternate local state roots. */
+  subscriptionFilePath?: string
 }
 
 type WebPushModule = {
@@ -76,7 +78,13 @@ type WebPushModule = {
 export function createPushService(deps: PushDeps): PushService {
   const { config, audit, logger } = deps
 
-  const subscriptions = createSubscriptionStore()
+  const subscriptions = createSubscriptionStore({
+    filePath: deps.subscriptionFilePath,
+    accept: (subscription) => isValidSubscription(subscription) && validateEndpoint(subscription.endpoint).ok,
+    onLoadError: (error) => logger.warn("push: could not load persisted subscriptions", {
+      error: error.message,
+    }),
+  })
   const breaker = createCircuitBreaker({ maxFailures: 5, resetMs: 60_000 })
 
   let configured = false
@@ -116,14 +124,29 @@ export function createPushService(deps: PushDeps): PushService {
       })
       return endpointCheck
     }
-    subscriptions.add(sub)
+    try {
+      subscriptions.add(sub)
+    } catch (error) {
+      logger.error("push: could not persist subscription", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      audit.log("push.subscription_persist_failed", { action: "add" })
+      return { ok: false, reason: "subscription persistence failed" }
+    }
     audit.log('push.subscribed', { endpoint: sub.endpoint })
     return { ok: true }
   }
 
   function removeSubscription(endpoint: string): void {
-    if (subscriptions.remove(endpoint)) {
-      audit.log('push.unsubscribed', { endpoint })
+    try {
+      if (subscriptions.remove(endpoint)) {
+        audit.log('push.unsubscribed', { endpoint })
+      }
+    } catch (error) {
+      logger.error("push: could not persist subscription removal", {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      audit.log("push.subscription_persist_failed", { action: "remove" })
     }
   }
 
@@ -143,7 +166,14 @@ export function createPushService(deps: PushDeps): PushService {
           ? Number((err as { statusCode: unknown }).statusCode)
           : 0
       if (status === 404 || status === 410) {
-        subscriptions.remove(sub.endpoint)
+        try {
+          subscriptions.remove(sub.endpoint)
+        } catch (persistError) {
+          logger.error("push: could not persist expired subscription removal", {
+            error: persistError instanceof Error ? persistError.message : String(persistError),
+          })
+          audit.log("push.subscription_persist_failed", { action: "expire" })
+        }
         audit.log('push.subscription_expired', { endpoint: sub.endpoint, status })
         return false
       }

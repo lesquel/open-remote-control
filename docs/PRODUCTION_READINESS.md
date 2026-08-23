@@ -36,7 +36,7 @@ opencode-pilot is an **in-process plugin** loaded by the OpenCode CLI. It runs i
 - **Token rotates on every restart.** Any user-facing URL (QR code, bookmark, PWA) dies when OpenCode restarts. Annoying for the user and prevents stable external links.
 - **CORS is `*`.** Works, but is wider than needed. Should be allowlisted to the configured host/origin or `null`.
 - **No load tests.** We don't know how the SSE bus behaves under 50 / 100 / 500 concurrent clients.
-- **Push subscriptions in-memory.** Survive a tab reload (browser persists them) but the backend forgets all subscriptions on restart, so users have to re-enable push. Acceptable for MVP, not for production.
+- **Push subscription persistence — resolved after this assessment.** Subscriptions are stored locally in a versioned, owner-only, atomically replaced state file and restored after restart; malformed or unsafe entries are ignored.
 
 ---
 
