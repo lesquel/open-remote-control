@@ -7,6 +7,7 @@ import { isPartStreaming } from '../state/state.js'
 // Dynamic agent references — imported lazily to avoid circular-init issues
 import { renderAgentBadge, getMcpServers, sanitizeMcpName } from './references.js'
 import { LIMITS } from '../constants.js'
+import { createLatestRequestGate } from './latest-request.js'
 // TODO (sessions subagent): import renderAgentBadge from './references.js' and use it
 //   for session-list header badges in sessions.js to get consistent dynamic coloring.
 
@@ -790,7 +791,10 @@ export function showTypingIndicator() {
  * erased in-progress deltas and made the UI flash. We now only show the
  * placeholder when the pane is genuinely empty (first load, session switch).
  */
+const messageLoadGate = createLatestRequestGate(() => getState().activeSession)
+
 export async function loadMessages(sessionId) {
+  const requestTicket = messageLoadGate.begin(sessionId)
   const box = document.getElementById('messages')
   const alreadyHasMessages = !!box.querySelector('.message')
   if (!alreadyHasMessages) {
@@ -802,11 +806,15 @@ export async function loadMessages(sessionId) {
   }
   try {
     const raw = await fetchMessages(sessionId)
+    if (!messageLoadGate.isCurrent(requestTicket)) return
     const msgs = Array.isArray(raw) ? raw : []
     console.debug('[pilot:data] loadMessages session=%s raw=%d', sessionId, msgs.length)
     withErrorBoundary('messages', () => renderMessages(msgs, { sessionId }), () => loadMessages(sessionId))
   } catch (_) {
-    if (!alreadyHasMessages) {
+    if (
+      !alreadyHasMessages &&
+      messageLoadGate.isCurrent(requestTicket)
+    ) {
       box.innerHTML = '<div class="panel-error"><span>⚠ Failed to load messages</span></div>'
     }
   }

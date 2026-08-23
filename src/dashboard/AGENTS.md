@@ -19,6 +19,7 @@
 - `auth/` — token management and connect-modal flow
 - `components/` — domain UI components (sessions, permissions, settings, etc.)
 - `components/permission-response.js` — exactly-once client gate that prevents permission double-taps and stale queue removal
+- `components/latest-request.js` — generation gate used to prevent stale asynchronous responses from committing UI state
 - `modals/` — overlay dialogs (connect, debug, help)
 - `ui/` — low-level UI utilities (diff, push notifications, shortcuts, toast, sound)
 - `routing/hash-dir-router.js` — hash-based SPA router
