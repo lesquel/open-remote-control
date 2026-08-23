@@ -7,7 +7,7 @@
 - May NOT import from: `transport/`, `integrations/`, `notifications/`, `server/`
 
 ## Public API (what other modules consume from here)
-- `createPermissionQueue(): PermissionQueue` — manages pending permission requests with timeouts
+- `createPermissionQueue(): PermissionQueue` — exactly-once pending permission requests with duplicate-ID coalescing and timeouts
 - `getSharedEventBus() / createEventBus(): EventBus` — in-process SSE fan-out bus
 - `createAuditLog(): AuditLog` — appends JSON-Lines audit records to `.opencode/pilot-audit.log`
 - `rotateIfNeeded()` — rotates the audit log file when it exceeds the size limit

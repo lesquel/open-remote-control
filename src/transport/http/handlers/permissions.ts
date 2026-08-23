@@ -32,14 +32,18 @@ export async function respondPermission({
     action: body.action,
   })
 
-  // Try main queue first, then codex queue.
-  // resolve() returns true when a live waiter was found, false when the ID is stale/unknown.
-  const resolved =
-    deps.permissionQueue.resolve(params.id, body.action) ||
-    deps.codexPermissionQueue.resolve(params.id, body.action)
-
-  if (!resolved) {
+  const matchingQueues = [deps.permissionQueue, deps.codexPermissionQueue]
+    .filter((queue) => queue.pending().some((permission) => permission.permissionID === params.id))
+  if (matchingQueues.length === 0) {
     return jsonError("PERMISSION_NOT_FOUND", "Permission ID not found or already resolved", 404, CORS_HEADERS)
+  }
+  if (matchingQueues.length > 1) {
+    return jsonError("AMBIGUOUS_PERMISSION_ID", "Permission ID matches multiple integrations", 409, CORS_HEADERS)
+  }
+
+  const queue = matchingQueues[0]
+  if (!queue || !queue.resolve(params.id, body.action)) {
+    return jsonError("PERMISSION_NOT_FOUND", "Permission ID expired before it could be resolved", 404, CORS_HEADERS)
   }
 
   return json({ ok: true }, 200, CORS_HEADERS)

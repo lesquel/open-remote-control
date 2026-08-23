@@ -175,6 +175,37 @@ describe("respondPermission — tries both queues", () => {
     const body = await res.json() as { error: { code: string } }
     expect(body.error.code).toBe("PERMISSION_NOT_FOUND")
   })
+
+  test("returns 409 without resolving when both integrations contain the same ID", async () => {
+    const deps = makePermissionDeps()
+    void deps.permissionQueue.waitForResponse("collision")
+    void deps.codexPermissionQueue.waitForResponse("collision")
+    const req = new Request("http://test/permissions/collision", {
+      method: "POST",
+      body: JSON.stringify({ action: "allow" }),
+    })
+    const res = await respondPermission(makeCtx(deps, req, { id: "collision" }))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ error: { code: "AMBIGUOUS_PERMISSION_ID" } })
+    expect(deps.permissionQueue.pending().map((item) => item.permissionID)).toContain("collision")
+    expect(deps.codexPermissionQueue.pending().map((item) => item.permissionID)).toContain("collision")
+  })
+
+  test("returns 404 when a permission expires between lookup and resolution", async () => {
+    const deps = makePermissionDeps()
+    deps.permissionQueue = {
+      waitForResponse: async () => null,
+      pending: () => [{ permissionID: "expiring", createdAt: Date.now(), resolved: false }],
+      resolve: () => false,
+    }
+    const req = new Request("http://test/permissions/expiring", {
+      method: "POST",
+      body: JSON.stringify({ action: "deny" }),
+    })
+    const res = await respondPermission(makeCtx(deps, req, { id: "expiring" }))
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({ error: { code: "PERMISSION_NOT_FOUND" } })
+  })
 })
 
 // ─── Phase 5: Auth Precedence ────────────────────────────────────────────────

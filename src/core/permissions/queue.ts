@@ -28,41 +28,43 @@ export interface PermissionQueue {
 }
 
 export function createPermissionQueue(timeoutMs: number): PermissionQueue {
-  const waiters = new Map<
-    string,
-    {
-      resolve: (value: { action: "allow" | "deny" } | null) => void
-      createdAt: number
-      timeoutId: ReturnType<typeof setTimeout>
-      meta: PermissionMeta
-    }
-  >()
+  type Response = { action: "allow" | "deny" } | null
+  interface Waiter {
+    resolve: (value: Response) => void
+    promise: Promise<Response>
+    createdAt: number
+    timeoutId: ReturnType<typeof setTimeout>
+    meta: PermissionMeta
+  }
+  const waiters = new Map<string, Waiter>()
+
+  function settle(permissionID: string, waiter: Waiter, value: Response): boolean {
+    if (waiters.get(permissionID) !== waiter) return false
+    clearTimeout(waiter.timeoutId)
+    waiters.delete(permissionID)
+    waiter.resolve(value)
+    return true
+  }
 
   function waitForResponse(
     permissionID: string,
     meta: PermissionMeta = {},
   ): Promise<{ action: "allow" | "deny" } | null> {
-    return new Promise((resolvePromise) => {
-      const timeoutId = setTimeout(() => {
-        const waiter = waiters.get(permissionID)
-        if (waiter) {
-          waiters.delete(permissionID)
-          waiter.resolve(null)
-        }
-      }, timeoutMs)
-      waiters.set(permissionID, { resolve: resolvePromise, createdAt: Date.now(), timeoutId, meta })
-    })
+    const existing = waiters.get(permissionID)
+    if (existing) return existing.promise
+
+    let resolvePromise: (value: Response) => void = () => undefined
+    const promise = new Promise<Response>((resolve) => { resolvePromise = resolve })
+    let waiter: Waiter
+    const timeoutId = setTimeout(() => settle(permissionID, waiter, null), timeoutMs)
+    waiter = { resolve: resolvePromise, promise, createdAt: Date.now(), timeoutId, meta }
+    waiters.set(permissionID, waiter)
+    return promise
   }
 
   function resolve(permissionID: string, action: "allow" | "deny"): boolean {
     const waiter = waiters.get(permissionID)
-    if (waiter) {
-      clearTimeout(waiter.timeoutId)
-      waiters.delete(permissionID)
-      waiter.resolve({ action })
-      return true
-    }
-    return false
+    return waiter ? settle(permissionID, waiter, { action }) : false
   }
 
   function pending(): PendingPermission[] {
