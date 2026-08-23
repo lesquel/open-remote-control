@@ -35,7 +35,7 @@ infra/ ← core/ ← (transport/, integrations/, notifications/) ← server/inde
 - **`transport/`, `integrations/`, and `notifications/` import from `core/` and `infra/`.** Cross-imports between siblings (e.g., `transport/ → notifications/`) are FORBIDDEN except through the two explicit ports below.
 - **`server/index.ts` is the only file that imports across all layers.** It is the composition root by definition — standard hexagonal/clean architecture.
 
-This rule is enforced by convention (documented here, in `AGENTS.md` §3, and in code review). If violations recur, mechanical enforcement via `eslint-plugin-import/no-restricted-paths` is the natural next step.
+This rule is documented here and in `AGENTS.md` §3, and mechanically enforced by `scripts/architecture.test.ts`. The test resolves production relative imports and fails when a top-level module crosses its allowlist; it deliberately excludes tests and declarations, where realistic fixtures may need broader imports.
 
 ---
 
