@@ -287,6 +287,8 @@ The `.env` file is searched in: (1) `process.cwd()/.env` then (2) the plugin's i
 
 ## Documentation
 
+Pilot is local-first and has no telemetry by default. Read [where data goes](docs/PRIVACY.md) and the [threat model](docs/THREAT_MODEL.md) before exposing it through a LAN or tunnel.
+
 **For users**
 - [Troubleshooting runtime issues](docs/TROUBLESHOOTING.md) — start here if `/remote` says "server not running", the dashboard 401s, push/telegram isn't arriving, or the wrong tab opens
 - [Install deep-dive](docs/INSTALL.md) — how OpenCode's two-loader plugin architecture works, every trap we've hit getting a clean install, full troubleshooting matrix
