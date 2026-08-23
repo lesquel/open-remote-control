@@ -13,10 +13,21 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Verify release identity
+        run: |
+          bun scripts/release-guard.ts "$GITHUB_REF_NAME"
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "Release tag must point to a commit reachable from origin/main" >&2
+            exit 1
+          }
 
       - name: Cache Bun install
         uses: actions/cache@v4

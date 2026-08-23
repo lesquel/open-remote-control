@@ -18,6 +18,11 @@ Every release must bump **all three of these in a single commit**. The asset-san
 
 If you forget any of them, `bun test` fails with a clear diff, which is the whole point — CI catches it before anything leaves your machine.
 
+The release workflow also refuses to publish when the pushed tag differs from
+the package version prefixed with `v`, or its commit is not reachable from
+`origin/main`. This prevents a valid-looking tag from publishing the wrong
+package version or an unmerged branch.
+
 ---
 
 ## The only pipeline that ships to users
@@ -27,6 +32,7 @@ git push origin vX.Y.Z
   │
   └──►  .github/workflows/release.yml
          ├─ bun install --frozen-lockfile
+         ├─ verify tag == package version and commit is on main
          ├─ bun run typecheck            # tsc --noEmit
          ├─ bun test                     # 228+ tests
          ├─ npm publish --access public --provenance
