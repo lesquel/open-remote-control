@@ -16,6 +16,10 @@
   },
   "files": [
     "src/",
+    "!src/**/*.test.ts",
+    "!src/**/__tests__/**",
+    "!src/**/AGENTS.md",
+    "!src/**/*.d.ts",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
