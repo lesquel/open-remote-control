@@ -4522,6 +4522,9 @@ body {
 .diagnostics-errors li { padding-left: 4px; }
 .diagnostics-errors strong, .diagnostics-errors span { display: block; overflow-wrap: anywhere; }
 .diagnostics-errors span, .diagnostics-empty { color: var(--fg-dim); }
+.diagnostics-integrations { display: grid; gap: 8px; }
+.diagnostics-integrations article { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: 12px; }
+.diagnostics-integrations span { color: var(--fg-dim); overflow-wrap: anywhere; text-align: right; }
 .diagnostics-error { display: grid; gap: 6px; padding: 16px; border: 1px solid var(--danger); border-radius: var(--radius); }
 .diagnostics-error span { color: var(--fg-dim); }
 

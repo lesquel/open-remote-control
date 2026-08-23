@@ -30,6 +30,19 @@ describe("diagnostics view", () => {
     expect(html).not.toContain("undefined")
   })
 
+  test("renders provider-specific capabilities instead of assuming parity", () => {
+    const html = renderDiagnostics(snapshot(), {
+      integrations: [
+        { id: "opencode", displayName: "OpenCode", capabilities: { sessions: true, streaming: true } },
+        { id: "codex", displayName: "Codex", capabilities: { sessions: false, permissions: true, tools: true } },
+      ],
+    })
+    expect(html).toContain("OpenCode")
+    expect(html).toContain("sessions, streaming")
+    expect(html).toContain("Codex")
+    expect(html).toContain("permissions, tools")
+  })
+
   test("escapes diagnostic error text before rendering", () => {
     const data = snapshot()
     data.recentErrors = [{ component: '<img src=x onerror="boom">', message: "<script>alert(1)</script>" }]

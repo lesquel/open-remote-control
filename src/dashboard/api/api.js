@@ -47,6 +47,7 @@ function authHeaders() {
 const DIRECTORY_EXEMPT = [
   '/health',
   '/diagnostics',
+  '/integrations',
   '/auth/rotate',
   '/status',
   '/projects',
@@ -214,6 +215,10 @@ export async function fetchHealth() {
 
 export async function fetchDiagnostics() {
   return request('GET', '/diagnostics', undefined, { directory: null })
+}
+
+export async function fetchIntegrations() {
+  return request('GET', '/integrations', undefined, { directory: null })
 }
 
 // ── Dynamic config fetchers (Deliverable 8) ───────────────────────────────

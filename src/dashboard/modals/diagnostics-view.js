@@ -32,6 +32,7 @@ export function renderDiagnostics(snapshot, client = {}) {
   const notifications = runtime.notifications ?? {}
   const errors = Array.isArray(snapshot?.recentErrors) ? snapshot.recentErrors : []
   const integrations = Array.isArray(runtime.integrations) ? runtime.integrations.join(', ') : 'Unknown'
+  const descriptors = Array.isArray(client.integrations) ? client.integrations : []
 
   const cards = [
     section('Pilot', [
@@ -72,13 +73,25 @@ export function renderDiagnostics(snapshot, client = {}) {
         return `<li><strong>${esc(item.component ?? 'pilot')}</strong><span>${esc(item.message ?? 'Unknown error')}</span></li>`
       }).join('')}</ol>`
 
-  return `<div class="diagnostics-grid">${cards.join('')}</div><section class="diagnostics-card diagnostics-card--wide"><h3>Recent errors</h3>${errorHtml}</section>`
+  const integrationHtml = descriptors.length === 0
+    ? '<p class="diagnostics-empty">Capability metadata unavailable.</p>'
+    : `<div class="diagnostics-integrations">${descriptors.map((descriptor) => {
+        const capabilities = descriptor && typeof descriptor.capabilities === 'object'
+          ? Object.entries(descriptor.capabilities).filter(([, supported]) => supported === true).map(([name]) => name)
+          : []
+        return `<article><strong>${esc(descriptor?.displayName ?? descriptor?.id)}</strong><span>${esc(capabilities.length ? capabilities.join(', ') : 'Monitoring only')}</span></article>`
+      }).join('')}</div>`
+
+  return `<div class="diagnostics-grid">${cards.join('')}</div><section class="diagnostics-card diagnostics-card--wide"><h3>Agent capabilities</h3>${integrationHtml}</section><section class="diagnostics-card diagnostics-card--wide"><h3>Recent errors</h3>${errorHtml}</section>`
 }
 
 export function diagnosticsCopyPayload(snapshot, client = {}) {
   return JSON.stringify({
     generatedAt: new Date().toISOString(),
-    dashboard: { connected: Boolean(client.connected) },
+    dashboard: {
+      connected: Boolean(client.connected),
+      integrations: Array.isArray(client.integrations) ? client.integrations : [],
+    },
     diagnostics: snapshot,
   }, null, 2)
 }

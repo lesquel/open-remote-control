@@ -1,6 +1,6 @@
 // debug-modal.js — Secret-free local diagnostics panel.
 import { getState } from '../state/state.js'
-import { fetchDiagnostics } from '../api/api.js'
+import { fetchDiagnostics, fetchIntegrations } from '../api/api.js'
 import { openModal } from './modal-helper.js'
 import { diagnosticsCopyPayload, renderDiagnostics } from './diagnostics-view.js'
 
@@ -36,8 +36,14 @@ async function refreshDiagnostics() {
   body.textContent = 'Loading diagnostics…'
   if (refresh) refresh.disabled = true
   try {
-    const snapshot = await fetchDiagnostics()
-    const client = { connected: Boolean(getState().sse?.connected) }
+    const [snapshot, catalog] = await Promise.all([
+      fetchDiagnostics(),
+      fetchIntegrations().catch(() => ({ integrations: [] })),
+    ])
+    const client = {
+      connected: Boolean(getState().sse?.connected),
+      integrations: Array.isArray(catalog?.integrations) ? catalog.integrations : [],
+    }
     body.innerHTML = renderDiagnostics(snapshot, client)
     copyPayload = diagnosticsCopyPayload(snapshot, client)
   } catch (error) {
