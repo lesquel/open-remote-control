@@ -14,7 +14,6 @@ const ATTACHMENT_MIME_SAFELIST = new Set([
   "image/jpeg",
   "image/gif",
   "image/webp",
-  "image/svg+xml",
 ])
 
 // Minimal state shape needed for URL construction
@@ -83,7 +82,6 @@ describe("renderFilePart — safelist mime types produce <img>", () => {
     "image/jpeg",
     "image/gif",
     "image/webp",
-    "image/svg+xml",
   ] as const
 
   for (const mime of safelistMimes) {
@@ -98,16 +96,13 @@ describe("renderFilePart — safelist mime types produce <img>", () => {
   }
 })
 
-describe("renderFilePart — SVG goes through <img>, not innerHTML", () => {
-  it("SVG mime type produces an <img> element, not an object or raw HTML injection", () => {
+describe("renderFilePart — active SVG documents are not rendered inline", () => {
+  it("SVG mime type produces only the unsupported attachment link", () => {
     const part = { ...BASE_PART, mime: "image/svg+xml", filename: "diagram.svg" }
     const html = renderFilePart(part, DEFAULT_STATE)
 
-    // MUST produce an <img> tag
-    expect(html).toContain("<img ")
-
-    // MUST NOT contain any pattern that would inject SVG directly into the DOM.
-    // These patterns would allow inline scripts inside SVG to run in the page context.
+    expect(html).toContain("<a ")
+    expect(html).not.toContain("<img ")
     expect(html).not.toMatch(/<object/)
     expect(html).not.toMatch(/<embed/)
     expect(html).not.toMatch(/<iframe/)
@@ -116,7 +111,7 @@ describe("renderFilePart — SVG goes through <img>, not innerHTML", () => {
     expect(html).not.toMatch(/<svg/)
   })
 
-  it("SVG filename is escaped in the alt attribute", () => {
+  it("SVG filename is escaped in link text", () => {
     const part = { ...BASE_PART, mime: "image/svg+xml", filename: '<script>alert(1)</script>' }
     const html = renderFilePart(part, DEFAULT_STATE)
     expect(html).not.toContain("<script>")
@@ -131,6 +126,7 @@ describe("renderFilePart — unknown / unsupported mime falls back to text link"
     "audio/mpeg",
     "text/plain",
     "application/octet-stream",
+    "image/svg+xml",
     "",
   ]
 
