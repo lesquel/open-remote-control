@@ -15,7 +15,7 @@
 - `api/api.js` — REST client against the pilot HTTP server
 - `api/api-fetch.js` — fetch wrapper with auth headers
 - `state/state.js` — reactive client-side state
-- `sse/sse.js` — reconnecting `/events` client; forwards the last event ID, deduplicates bounded replay, detects host generations, and reconciles canonical snapshots
+- `sse/sse.js` — reconnecting `/events` client; forwards the last event ID, deduplicates bounded replay, detects host generations/offline state, applies jittered backoff, and reconciles canonical snapshots
 - `auth/` — token management and connect-modal flow
 - `components/` — domain UI components (sessions, permissions, settings, etc.)
 - `components/permission-response.js` — exactly-once client gate that prevents permission double-taps and stale queue removal

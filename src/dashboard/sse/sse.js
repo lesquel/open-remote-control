@@ -19,6 +19,7 @@ import { buildApiUrl } from '../api/api.js'
 import { EVENTS, LIMITS } from '../constants.js'
 import { normalizePermissionPending, normalizePermissionResolved } from './permission-normalize.js'
 import { playNotifySound } from '../ui/notif-sound.js'
+import { jitteredReconnectDelay } from './backoff.js'
 
 let eventSource = null
 let reconnectTimer = null
@@ -249,7 +250,9 @@ export function connect() {
       reconnectAttempts: _reconnectAttempts,
       backoffMs,
     })
-    setConnectionStatus('reconnecting')
+    setConnectionStatus(typeof navigator !== 'undefined' && navigator.onLine === false
+      ? 'disconnected'
+      : 'reconnecting')
     setState({ sse: { connected: false } })
     _closeEventSource()
     scheduleReconnect()
@@ -331,12 +334,13 @@ function scheduleReconnect() {
   if (reconnectTimer) return
   _reconnectAttempts++
   setConnectionStatus('reconnecting')  // update tooltip with new attempt count
+  const delayMs = jitteredReconnectDelay(backoffMs)
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     connect()
     // Double the backoff for next failure, capped at BACKOFF_MAX
     backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX)
-  }, backoffMs)
+  }, delayMs)
 }
 
 async function handleEvent(ev) {
@@ -609,5 +613,10 @@ export function startSseWatchdog() {
 // appears; then the watchdog picks it up on its next tick. This makes SSE
 // recovery automatic regardless of bootstrap call order.
 if (typeof window !== 'undefined') {
+  window.addEventListener('offline', () => setConnectionStatus('disconnected'))
+  window.addEventListener('online', () => {
+    setConnectionStatus('reconnecting')
+    connect()
+  })
   startSseWatchdog()
 }
