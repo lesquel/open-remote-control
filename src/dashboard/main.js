@@ -8,6 +8,7 @@ import { loadMVState, initMultiView, showMultiview } from './components/multi-vi
 import { loadSessions, initSessions } from './components/sessions.js'
 import { toast } from './ui/toast.js'
 import { loadPermissions, initPermissions } from './components/permissions.js'
+import { loadQuestions, initQuestions } from './components/questions.js'
 import { initSettings } from './components/settings.js'
 import { initShortcuts } from './ui/shortcuts.js'
 import { connect as sseConnect } from './sse/sse.js'
@@ -229,6 +230,7 @@ async function bootstrap() {
 
   initSessions()
   initPermissions()
+  initQuestions()
   initSettings()
   initCommandPalette()
   initShortcuts()
@@ -597,6 +599,7 @@ async function bootstrap() {
   }
 
   await loadPermissions()
+  await loadQuestions()
 
   // 7. Connect SSE
   sseConnect()

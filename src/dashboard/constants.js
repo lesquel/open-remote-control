@@ -35,6 +35,11 @@ export const EVENTS = Object.freeze({
   // Permissions — native OpenCode SDK events
   PERMISSION_REQUESTED: 'permission.requested',
   PERMISSION_RESOLVED:  'permission.resolved',
+  PERMISSION_ASKED:     'permission.asked',
+  PERMISSION_REPLIED:   'permission.replied',
+  QUESTION_ASKED:       'question.asked',
+  QUESTION_REPLIED:     'question.replied',
+  QUESTION_REJECTED:    'question.rejected',
   // Permissions — Codex bridge events (alias: same handler, different type string)
   // Codex emits these types; renaming the emit would break Telegram/push consumers,
   // so the dashboard aliases them here instead.

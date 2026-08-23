@@ -4336,6 +4336,96 @@ body {
 
 /* ── End of v1.9 polish ───────────────────────────────────────────────────── */
 
+/* OpenCode native questions are intentionally distinct from permission
+ * requests: answering supplies tool input, it does not grant authority. */
+#question-sheet {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, .72);
+}
+#question-sheet.visible { display: flex; }
+.question-sheet-card {
+  width: min(640px, 100%);
+  max-height: min(80vh, 760px);
+  overflow-y: auto;
+  padding: 20px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--bg-2);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, .45);
+}
+.question-sheet-header,
+.question-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.question-sheet-header h2 { margin: 4px 0 0; font-size: 18px; }
+.question-eyebrow,
+.question-queue,
+.question-session {
+  color: var(--fg-dim);
+  font: 11px/1.4 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.question-queue { color: var(--accent); }
+.question-session { margin: 10px 0 16px; text-transform: none; }
+.question-group {
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.question-group legend { padding: 0 6px; color: var(--accent); font: 600 12px var(--mono); }
+.question-group > p { margin: 0 0 12px; color: var(--fg); }
+.question-options { display: grid; gap: 8px; }
+.question-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.question-option:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.question-option input { margin-top: 3px; accent-color: var(--accent); }
+.question-option span { display: grid; gap: 3px; }
+.question-option small { color: var(--fg-dim); }
+.question-custom { display: grid; gap: 6px; margin-top: 10px; color: var(--fg-muted); }
+.question-custom input {
+  min-height: 44px;
+  padding: 8px 10px;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.question-custom input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.question-actions { justify-content: flex-end; margin-top: 18px; }
+.question-actions .btn { min-height: 44px; }
+
+@media (max-width: 768px) {
+  #question-sheet { align-items: flex-end; padding: 0; }
+  .question-sheet-card {
+    width: 100%;
+    max-height: 88dvh;
+    padding: 18px max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    border-width: 1px 0 0;
+    border-radius: 10px 10px 0 0;
+  }
+  .question-actions { position: sticky; bottom: 0; padding-top: 12px; background: var(--bg-2); }
+  .question-actions .btn { flex: 1; }
+}
+
 
 /* ─────────────────────────────────────────────────────────────────────────
  * v1.11 — Project tabs bar
