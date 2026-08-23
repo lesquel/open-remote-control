@@ -23,6 +23,7 @@
 - `createLogger(): Logger` — (`logger/index.ts`) wraps `ctx.client.app.log`
 - `getLocalIP(): string` — (`network/ip.ts`)
 - `validateEndpoint() / isPublicIpAddress()` — (`network/ssrf.ts`) outbound HTTPS URL and IP policy
+- `createSafeHttpsFetcher()` — (`network/safe-https-fetch.ts`) DNS-pinned bounded HTTPS client
 - `getPluginConfigDir / getPluginStateDir / configFile / stateFile / shouldWriteProjectState` — (`paths/index.ts`)
 - `generateQR()` — (`qr/index.ts`)
 - `startTunnel()` — (`tunnel/index.ts`)
@@ -38,6 +39,7 @@
 - `fs/contained-file.ts` — realpath-based containment and symlink escape rejection
 - `paths/index.ts` — XDG-aware path resolution for config and state files
 - `network/ssrf.ts` — canonical non-public address policy for outbound requests
+- `network/safe-https-fetch.ts` — per-hop DNS validation, IP pinning, redirect and body limits
 - `tunnel/index.ts` — cloudflared / ngrok process management
 - `tunnel/types.ts` — `TunnelProvider` type (canonical location, re-exported by `server/config`)
 - `tunnel/constants.ts` — tunnel timing constants (`TUNNEL_START_TIMEOUT_MS`, `TUNNEL_KILL_GRACE_MS`, `TUNNEL_URL_PATTERNS`)
