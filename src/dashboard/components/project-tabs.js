@@ -173,6 +173,12 @@ export async function switchProjectTab(id) {
   const tab = stateSwitchTab(id)
   if (!tab) return null
 
+  // Remove actionable controls from the outgoing project immediately. The
+  // current project's queues are fetched below; keeping old controls visible
+  // during that transition could resolve a request against the wrong tab.
+  try { window.__clearPermissions?.() } catch (_) {}
+  try { window.__clearQuestions?.() } catch (_) {}
+
   persistTabs()
 
   // Re-fetch references for the new directory (agents, providers, MCP, …).
