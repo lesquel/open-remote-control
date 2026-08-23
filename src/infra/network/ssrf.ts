@@ -1,30 +1,59 @@
-// ─── SSRF guard ───────────────────────────────────────────────────────────────
-// Validates outbound URLs against server-side request forgery vectors.
-// Lives in infra/network/ so both notifications/ and transport/ can import
-// without violating the sibling cross-import rule.
-//
-// Originally defined in notifications/channels/push/service.ts; relocated here
-// so transport/http/handlers/sessions.ts can apply the same guard to the
-// attachment proxy without creating a cross-sibling dependency.
+import { BlockList, isIP } from "node:net"
 
-/**
- * Validate an outbound URL against SSRF vectors.
- *
- * Blocks loopback, RFC 1918 private ranges, link-local, and IPv6 private
- * addresses. Requires HTTPS (push subscriptions) — callers that accept http://
- * MUST enforce their own scheme policy.
- *
- * Known residual limitations (string/hostname-based guard, by design):
- *  - No DNS resolution: a public hostname that resolves to a private address
- *    (DNS rebinding) is not detected here.
- *  - No IP-format normalization: alternate encodings (decimal/octal/hex) of an
- *    address are not canonicalized before matching.
- * These are accepted given the trusted-source contexts this guard runs in
- * (SDK-supplied attachment URLs, user push endpoints). Defense-in-depth, not a
- * complete egress firewall.
- *
- * Return contract: `{ ok: true }` | `{ ok: false; reason: string }`.
- */
+type AddressFamily = "ipv4" | "ipv6"
+
+const NON_PUBLIC_IPV4 = new BlockList()
+const NON_PUBLIC_IPV6 = new BlockList()
+
+for (const [address, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.88.99.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 4],
+  ["240.0.0.0", 4],
+] as const) {
+  NON_PUBLIC_IPV4.addSubnet(address, prefix, "ipv4")
+  NON_PUBLIC_IPV6.addSubnet(`::ffff:${address}`, 96 + prefix, "ipv6")
+}
+
+for (const [address, prefix] of [
+  ["::", 128],
+  ["::1", 128],
+  ["100::", 64],
+  ["2001:db8::", 32],
+  ["fc00::", 7],
+  ["fe80::", 10],
+  ["ff00::", 8],
+] as const) {
+  NON_PUBLIC_IPV6.addSubnet(address, prefix, "ipv6")
+}
+
+function normalizeHostname(hostname: string): string {
+  const unbracketed = hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1)
+    : hostname
+  return unbracketed.toLowerCase().replace(/\.$/, "")
+}
+
+export function isPublicIpAddress(address: string): boolean {
+  const family = isIP(address)
+  if (family === 0) return false
+  const type: AddressFamily = family === 4 ? "ipv4" : "ipv6"
+  const blockList = type === "ipv4" ? NON_PUBLIC_IPV4 : NON_PUBLIC_IPV6
+  return !blockList.check(address, type)
+}
+
+/** Validate the URL shape and any literal IP before an outbound HTTPS request. */
 export function validateEndpoint(raw: string): { ok: true } | { ok: false; reason: string } {
   let url: URL
   try {
@@ -35,27 +64,16 @@ export function validateEndpoint(raw: string): { ok: true } | { ok: false; reaso
   if (url.protocol !== 'https:') {
     return { ok: false, reason: 'endpoint must use https:' }
   }
-  const host = url.hostname.toLowerCase()
-  // Strip IPv6 brackets added by URL parser (e.g. [::1] → ::1)
-  const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
-  // Loopback / unspecified
-  if (
-    bare === 'localhost' ||
-    bare === '0.0.0.0' ||
-    bare === '127.0.0.1' ||
-    bare === '::1'
-  ) {
+  if (url.username !== "" || url.password !== "") {
+    return { ok: false, reason: "endpoint credentials are not allowed" }
+  }
+
+  const hostname = normalizeHostname(url.hostname)
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     return { ok: false, reason: 'localhost endpoints are not allowed' }
   }
-  // RFC 1918 private ranges (IPv4)
-  if (/^10\./.test(bare)) return { ok: false, reason: 'private IP range not allowed' }
-  if (/^192\.168\./.test(bare)) return { ok: false, reason: 'private IP range not allowed' }
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(bare)) return { ok: false, reason: 'private IP range not allowed' }
-  // Link-local (IPv4)
-  if (/^169\.254\./.test(bare)) return { ok: false, reason: 'link-local address not allowed' }
-  // Unique-local / link-local (IPv6)
-  if (bare.startsWith('fc') || bare.startsWith('fd') || bare.startsWith('fe80:')) {
-    return { ok: false, reason: 'private IPv6 range not allowed' }
+  if (isIP(hostname) !== 0 && !isPublicIpAddress(hostname)) {
+    return { ok: false, reason: "non-public IP address not allowed" }
   }
   return { ok: true }
 }
