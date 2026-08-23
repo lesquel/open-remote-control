@@ -2,7 +2,7 @@
 
 opencode-pilot is an OpenCode plugin that adds a remote-control layer on top of the OpenCode SDK. It exposes sessions, prompts, permissions, and live events over HTTP + Server-Sent Events so you can monitor and drive OpenCode from a phone, another machine, or a public URL — without changing how OpenCode itself works.
 
-The current architecture was introduced in v1.18.0 and continues to evolve. `package.json` is the only source of truth for the installed product version; see `docs/REFACTOR-2026-04-architecture.md` for migration history and rationale.
+The current architecture was introduced in v1.18.0 and continues to evolve. Release automation keeps `package.json` and the runtime `PILOT_VERSION` synchronized; dashboard cache generations are derived from them. Protocol compatibility versions evolve independently; see `docs/REFACTOR-2026-04-architecture.md` for migration history and rationale.
 
 ---
 
@@ -245,6 +245,7 @@ flowchart LR
 - Each process generation has a random identifier and monotonically increasing event sequence.
 - SSE frames carry IDs in the form `<generation>:<sequence>` while their JSON payload remains backward-compatible.
 - The event protocol version is currently `1` and is advertised by the `pilot.connected` event independently of the npm package version.
+- `/health` advertises HTTP API and SSE protocol versions separately. A dashboard accepts legacy servers that omit the SSE version, but stops reconnecting and presents a persistent reload action when a server explicitly declares an incompatible version.
 - The server retains the latest 256 events and replays at most 24 per reconnect. The dashboard sends its last accepted ID, deduplicates replays, and falls back to canonical HTTP snapshots when the cursor is too old or the host generation changed.
 - Replay is an availability feature, not durable history: the local agent remains the source of truth.
 
@@ -268,4 +269,4 @@ flowchart LR
 - `docs/REFACTOR-2026-04-architecture.md` — full spec for the v1.18.0 architecture migration (6 atomic commits + JD remediation), with design decisions, risk analysis, and per-commit acceptance gates.
 - `src/server/index.ts` — the composition root; live wiring of all 8 modules.
 - `AGENTS.md` §3 — hard conventions (dependency rule, factory pattern, test co-location).
-- `AGENTS.md` §4 — release process (the three-version-bump rule, tag/push order).
+- `AGENTS.md` §4 — release process (the two-version-source rule, tag/push order).

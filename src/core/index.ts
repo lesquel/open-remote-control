@@ -4,6 +4,7 @@
 
 export { createEventBus, getSharedEventBus } from "./events/bus"
 export type { EventBus } from "./events/bus"
+export { HTTP_API_PROTOCOL_VERSION, SSE_PROTOCOL_VERSION } from "./protocol"
 
 export { createPermissionQueue } from "./permissions/queue"
 export type {

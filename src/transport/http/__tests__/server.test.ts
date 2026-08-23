@@ -636,11 +636,13 @@ describe("HTTP server integration", () => {
       status: string
       uptimeMs: number
       version: string
+      protocols: { http: number; sse: number }
       services: { tunnel: string; telegram: string; sdk: string }
     }
     expect(body.status).toBe("ok")
     expect(typeof body.uptimeMs).toBe("number")
     expect(typeof body.version).toBe("string")
+    expect(body.protocols).toEqual({ http: 1, sse: 1 })
     expect(body.services).toBeDefined()
     expect(["up", "down", "disabled"]).toContain(body.services.tunnel)
     expect(["configured", "disabled"]).toContain(body.services.telegram)

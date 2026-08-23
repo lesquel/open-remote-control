@@ -127,6 +127,7 @@ body {
 .conn-dot.connected     { background: var(--success); box-shadow: 0 0 4px var(--success); }
 .conn-dot.error         { background: var(--warn); }
 .conn-dot.disconnected  { background: var(--danger); }
+.conn-dot.incompatible  { background: var(--danger); box-shadow: 0 0 4px var(--danger); }
 
 .conn-label {
   color: var(--fg-muted);
@@ -134,6 +135,23 @@ body {
   white-space: nowrap;
 }
 .conn-label.reconnecting { color: var(--warn); }
+.conn-label.incompatible { color: var(--danger); font-weight: 700; }
+
+.protocol-mismatch {
+  position: fixed;
+  inset: var(--header-h) 0 auto 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px max(12px, env(safe-area-inset-right)) 10px max(12px, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--danger);
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+}
 
 /* Header action buttons (minimal, TUI style) */
 .header-actions {
@@ -3054,6 +3072,14 @@ body {
   /* Hide SSE label text — dot only */
   .conn-label {
     display: none;
+  }
+
+  .conn-label.incompatible {
+    display: inline;
+  }
+
+  .protocol-mismatch {
+    justify-content: space-between;
   }
 
   /* Hide "+ New" button text — icon only */

@@ -6,6 +6,10 @@ import { getTunnelInfo } from "../../../infra/tunnel/index"
 import { LOCALHOST_ADDRESSES } from "../../../infra/http/constants"
 import { generateToken } from "../../../infra/auth/token"
 import { updateStateToken } from "../../../core/state/store"
+import {
+  HTTP_API_PROTOCOL_VERSION,
+  SSE_PROTOCOL_VERSION,
+} from "../../../core/protocol"
 
 // ─── Shared utility ──────────────────────────────────────────────────────────
 
@@ -155,6 +159,10 @@ export async function getHealth({ deps }: RouteContext): Promise<Response> {
     {
       status: "ok",
       version: deps.pilotVersion,
+      protocols: {
+        http: HTTP_API_PROTOCOL_VERSION,
+        sse: SSE_PROTOCOL_VERSION,
+      },
       uptime_s: Math.round(uptimeS),
       started_at: SERVER_STARTED_AT.toISOString(),
       sse_clients: deps.eventBus.clientCount(),

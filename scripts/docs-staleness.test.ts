@@ -5,10 +5,11 @@ async function text(path: string): Promise<string> {
 }
 
 describe("documentation staleness guards", () => {
-  test("architecture delegates the product version to package.json", async () => {
+  test("architecture separates release and protocol versions without freezing a release", async () => {
     const architecture = await text("docs/ARCHITECTURE.md")
     expect(architecture).not.toMatch(/\*\*Current version:\*\*\s*v?\d+\.\d+\.\d+/i)
-    expect(architecture).toContain("package.json` is the only source of truth")
+    expect(architecture).toContain("Release automation keeps `package.json`")
+    expect(architecture).toContain("Protocol compatibility versions evolve independently")
   })
 
   test("release guidance does not freeze a test count", async () => {

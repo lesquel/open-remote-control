@@ -209,6 +209,7 @@ describe("integration: critical flows", () => {
     expect(typeof body.status).toBe("string")
     expect(body.status === "ok" || body.status === "degraded").toBe(true)
     expect(typeof body.version).toBe("string")
+    expect(body.protocols).toEqual({ http: 1, sse: 1 })
     expect(typeof body.uptime_s).toBe("number")
     expect(body.uptime_s).toBeGreaterThanOrEqual(0)
     expect(typeof body.started_at).toBe("string")

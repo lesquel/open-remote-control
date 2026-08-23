@@ -18,6 +18,7 @@
 - `interface NotificationService` — (`types/notification-service.ts`) consumed by integrations
 - `type PilotEvent / BusEvent` — discriminated union of all pilot events
 - `AgentDescriptor / AgentCapabilities` — provider-neutral agent metadata consumed by integrations and transport
+- `HTTP_API_PROTOCOL_VERSION / SSE_PROTOCOL_VERSION` — compatibility versions independent of package releases
 
 All of the above re-exported from `core/index.ts`.
 
@@ -26,6 +27,7 @@ All of the above re-exported from `core/index.ts`.
 - `permissions/queue.ts` — `createPermissionQueue`; manages pending approvals
 - `events/bus.ts` — `getSharedEventBus`; process-wide SSE bus, protocol generation/sequence IDs, bounded replay, and client lifecycle
 - `events/types.ts` — `PilotEvent` discriminated union (all event shapes)
+- `protocol.ts` — shared HTTP and SSE compatibility versions
 - `audit/log.ts` — `createAuditLog`; append-only audit trail
 - `audit/rotation.ts` — size-based log rotation
 - `settings/store.ts` — `createSettingsStore`; atomic JSON writes with chmod

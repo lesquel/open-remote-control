@@ -1,5 +1,6 @@
 import type { BusEvent } from "./types"
 import { randomUUID } from "node:crypto"
+import { SSE_PROTOCOL_VERSION } from "../protocol"
 
 export interface EventBus {
   emit(event: BusEvent): void
@@ -22,8 +23,6 @@ interface SSEClient {
 const SSE_MAX_PENDING_CHUNKS = 32
 const SSE_REPLAY_CAPACITY = 256
 const SSE_MAX_REPLAY_PER_CONNECTION = 24
-export const SSE_PROTOCOL_VERSION = 1
-
 interface ReplayFrame {
   id: string
   bytes: Uint8Array

@@ -20,6 +20,7 @@ import { EVENTS, LIMITS } from '../constants.js'
 import { normalizePermissionPending, normalizePermissionResolved } from './permission-normalize.js'
 import { playNotifySound } from '../ui/notif-sound.js'
 import { jitteredReconnectDelay } from './backoff.js'
+import { classifySseProtocol } from './protocol.js'
 
 let eventSource = null
 let reconnectTimer = null
@@ -36,6 +37,7 @@ let _reconnectAttempts = 0
 let _lastEventId = ''
 let _serverGeneration = null
 let _hostRestartTimer = null
+let _protocolBlocked = false
 const _seenEventIds = new Set()
 const _seenEventOrder = []
 const SEEN_EVENT_LIMIT = 256
@@ -116,6 +118,9 @@ function setConnectionStatus(status) {
     } else if (status === 'host-restarted') {
       label.textContent = 'host restarted · synced'
       label.className = 'conn-label reconnecting'
+    } else if (status === 'incompatible') {
+      label.textContent = 'update required'
+      label.className = 'conn-label incompatible'
     } else {
       label.textContent = 'offline'
       label.className = 'conn-label'
@@ -130,6 +135,28 @@ function setConnectionStatus(status) {
     ? ` · Reconnect attempts: ${_reconnectAttempts}`
     : ''
   dot.title = `SSE: ${status} · ${timeStr}${attemptsStr}`
+}
+
+function showProtocolMismatch(serverVersion) {
+  setConnectionStatus('incompatible')
+  if (document.getElementById('protocol-mismatch')) return
+
+  const banner = document.createElement('aside')
+  banner.id = 'protocol-mismatch'
+  banner.className = 'protocol-mismatch'
+  banner.setAttribute('role', 'alert')
+
+  const message = document.createElement('span')
+  message.textContent = `Dashboard update required (server protocol ${String(serverVersion)}).`
+
+  const reload = document.createElement('button')
+  reload.type = 'button'
+  reload.className = 'btn'
+  reload.textContent = 'Reload dashboard'
+  reload.addEventListener('click', () => location.reload())
+
+  banner.append(message, reload)
+  document.body.appendChild(banner)
 }
 
 function _closeEventSource() {
@@ -174,6 +201,17 @@ function refreshCanonicalSnapshots() {
 
 function handleConnectionMetadata(event) {
   const properties = event?.properties ?? {}
+  if (classifySseProtocol(properties.protocolVersion) === 'incompatible') {
+    _protocolBlocked = true
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    showProtocolMismatch(properties.protocolVersion)
+    setState({ sse: { connected: false } })
+    _closeEventSource()
+    return false
+  }
   const generation = properties.generation
   const replayStatus = properties.replay?.status
   const hostRestarted = _serverGeneration && generation && generation !== _serverGeneration
@@ -190,6 +228,7 @@ function handleConnectionMetadata(event) {
   } else if (replayStatus === 'unavailable') {
     refreshCanonicalSnapshots()
   }
+  return true
 }
 
 // Opt-in boot-time SSE tracing. Set localStorage['pilot:debug:sse']='1' to
@@ -199,6 +238,7 @@ function _sseBootDebug() {
 }
 
 export function connect() {
+  if (_protocolBlocked) return
   const { token } = getState()
   if (!token) {
     if (_sseBootDebug()) console.warn('[sse-boot] connect() called without a token — SSE will NOT start. State may not be hydrated yet.')
@@ -271,7 +311,7 @@ export function connect() {
       if (!rememberEventId(e.lastEventId)) return
       const parsed = JSON.parse(e.data)
       if (_sseDebug()) console.debug('[sse] onmessage', parsed.type ?? '(untyped)', parsed)
-      if (parsed.type === 'pilot.connected') handleConnectionMetadata(parsed)
+      if (parsed.type === 'pilot.connected' && !handleConnectionMetadata(parsed)) return
       handleEvent(parsed)
     } catch (err) {
       if (_sseDebug()) console.error('[sse] onmessage parse/handle error', err, e.data)
