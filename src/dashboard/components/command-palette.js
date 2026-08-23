@@ -738,7 +738,7 @@ export async function openProjectPicker() {
     }
     closePalette()
     const newDir   = item.kind === 'default' ? null : item.path
-    // Derive label as the basename of the path so tabs show e.g. "zimna-app"
+    // Derive the label from the path basename so tabs show a concise project name.
     // rather than a full/shortened path. Fallback to item.label then shortenPath.
     const newLabel = item.kind === 'default'
       ? 'default'
