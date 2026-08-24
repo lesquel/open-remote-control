@@ -65,7 +65,7 @@ test("shows real project tabs on mobile and synchronizes project metadata", asyn
     localStorage.setItem("pilot_active_project_id", "tab-primary")
     localStorage.setItem("pilot_active_directory", first)
   }, { first: directory, second: secondDirectory })
-  await setup(page)
+  await setup(page, { question: true })
 
   const tabs = page.locator("#project-tabs-bar")
   await expect(tabs).toBeVisible()
@@ -76,6 +76,7 @@ test("shows real project tabs on mobile and synchronizes project metadata", asyn
   await expect(page.locator("#sessions-project-label")).toHaveText("E2E project")
 
   await page.locator('.project-tab[data-tab-id="tab-second"]').click()
+  await expect(page.locator("#question-sheet")).not.toHaveClass(/visible/)
   await expect(page.locator('.session-item[data-id="session-e2e-second"]')).toHaveAttribute("aria-current", "true")
   await expect(page.locator("#sessions-project-label")).toHaveText("Second project")
   await expect(page.locator("#lbl-agent")).toHaveText("reviewer")

@@ -123,4 +123,8 @@ export function initQuestions() {
   document.getElementById('question-submit')?.addEventListener('click', submitCurrentQuestion)
   document.getElementById('question-reject')?.addEventListener('click', rejectCurrentQuestion)
   window.__loadQuestions = loadQuestions
+  window.__clearQuestions = () => {
+    setState({ pendingQuestions: [] })
+    showNextQuestion()
+  }
 }
