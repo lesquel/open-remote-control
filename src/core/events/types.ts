@@ -142,7 +142,8 @@ export type PilotEvent =
   | { type: "pilot.client.disconnected"; properties: { timestamp: number } }
   | {
       type: "pilot.token.rotated"
-      properties: { timestamp: number; connectUrl?: string }
+      /** Safe rotation marker only. Credentials are returned to the caller. */
+      properties: { timestamp: number }
     }
   | {
       type: "pilot.error"

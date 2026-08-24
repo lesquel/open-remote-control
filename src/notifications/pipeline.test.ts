@@ -42,7 +42,7 @@ function makeTelegram(opts?: { enabled?: boolean }): TelegramChannel & { calls: 
     sendPermissionRequest: async (id, title, sessionId) => {
       calls.push({ method: "sendPermissionRequest", args: [id, title, sessionId] })
     },
-    sendStartup: async (url) => { calls.push({ method: "sendStartup", args: [url] }) },
+    sendStartup: async () => { calls.push({ method: "sendStartup", args: [] }) },
     sendSessionIdle: async (sessionId, title) => {
       calls.push({ method: "sendSessionIdle", args: [sessionId, title] })
     },

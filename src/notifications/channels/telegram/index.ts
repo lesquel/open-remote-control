@@ -54,7 +54,7 @@ export interface TelegramChannel extends NotificationChannel {
   send(event: import('../../ports').NotificationEvent): Promise<NotificationResult>
   sendMessage(text: string): Promise<void>
   sendPermissionRequest(permissionId: string, title: string, sessionId: string): Promise<void>
-  sendStartup(dashboardUrl: string): Promise<void>
+  sendStartup(): Promise<void>
   sendSessionIdle(sessionId: string, title: string): Promise<void>
   sendSessionError(sessionId: string, title: string, error: string): Promise<void>
   /** One-shot getMe check — useful for startup verification. */
@@ -209,9 +209,9 @@ export function createTelegramChannel(
     })
   }
 
-  async function sendStartup(dashboardUrl: string): Promise<void> {
+  async function sendStartup(): Promise<void> {
     await sendMessage(
-      `🎮 <b>OpenCode Pilot Started</b>\n\nDashboard: <a href="${dashboardUrl}">Open</a>`,
+      "🎮 <b>OpenCode Pilot Started</b>\n\nOpen Pilot locally to connect a device.",
     )
   }
 

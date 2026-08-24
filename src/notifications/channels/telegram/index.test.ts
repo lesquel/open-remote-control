@@ -34,6 +34,48 @@ function makeCallbackUpdate(action: "allow" | "deny", permId: string, updateId =
   }
 }
 
+describe("Telegram credential boundaries", () => {
+  let originalFetch: typeof globalThis.fetch
+
+  beforeEach(() => { originalFetch = globalThis.fetch })
+  afterEach(() => { globalThis.fetch = originalFetch })
+
+  test("startup notices never deliver a dashboard URL or credential", async () => {
+    const delivered: Array<Record<string, unknown>> = []
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString()
+      if (url.includes("/sendMessage")) {
+        delivered.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+        return new Response(JSON.stringify({ ok: true, result: true }), {
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      if (url.includes("/getUpdates")) {
+        return new Response(JSON.stringify({
+          ok: false,
+          description: "terminated by other getUpdates request",
+        }), { headers: { "Content-Type": "application/json" } })
+      }
+      return new Response(JSON.stringify({ ok: true, result: true }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    }) as unknown as typeof globalThis.fetch
+
+    const queue = createPermissionQueue(5_000)
+    const bot = createTelegramChannel({ token: "test-token", chatId: "123" }, queue, queue)
+    try {
+      await bot.sendStartup()
+      expect(delivered).toHaveLength(1)
+      const text = String(delivered[0]?.text ?? "")
+      expect(text).toContain("Open Pilot locally")
+      expect(text).not.toContain("http")
+      expect(text).not.toContain("token")
+    } finally {
+      bot.stop()
+    }
+  })
+})
+
 // ──────────────────────────────────────────────────────────────────────────────
 // D1 — pollLoop crash resilience
 // ──────────────────────────────────────────────────────────────────────────────
