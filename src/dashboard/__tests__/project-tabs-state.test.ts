@@ -13,6 +13,7 @@ import {
   setProjectTabLabel,
   findProjectTabByDirectory,
   getActiveDirectory,
+  rebindProjectTab,
 } from "../state/state"
 
 // Reset module state between tests by re-importing a fresh module would require
@@ -225,5 +226,28 @@ describe("#10 — new project tabs are properly created and findable", () => {
     // A freshly created tab must start unloaded so switchProjectTab knows to
     // call ensureSessionsLoaded (and thus loadSessions) rather than render stale cache.
     expect(tab.loaded).toBe(false)
+  })
+})
+
+describe("current-project migration", () => {
+  test("rebinds the legacy null/default tab to the real OpenCode worktree", () => {
+    const existing = findProjectTabByDirectory(null)
+    const tab = existing ?? addProjectTab(null, "default")
+    switchProjectTab(tab.id)
+
+    const rebound = rebindProjectTab(tab.id, "/projects/real-worktree", "real-worktree")
+
+    expect(rebound?.directory).toBe("/projects/real-worktree")
+    expect(rebound?.label).toBe("real-worktree")
+    expect(getActiveDirectory()).toBe("/projects/real-worktree")
+    expect(findProjectTabByDirectory(null)).toBeNull()
+  })
+
+  test("does not create two tabs for the same real worktree", () => {
+    const actual = addProjectTab("/projects/already-open", "already-open")
+    const legacy = findProjectTabByDirectory(null) ?? addProjectTab(null, "default")
+
+    expect(rebindProjectTab(legacy.id, "/projects/already-open", "already-open")).toBe(actual)
+    expect(getProjectTabs().filter((tab) => tab.directory === "/projects/already-open")).toHaveLength(1)
   })
 })

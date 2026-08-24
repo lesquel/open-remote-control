@@ -59,8 +59,6 @@ export function buildApiUrl(path) {
 }
 
 function isDirectoryExempt(path) {
-  // Also exempt /permissions/* paths
-  if (path.startsWith('/permissions')) return true
   return DIRECTORY_EXEMPT.some(p => path === p || path.startsWith(p + '?'))
 }
 
@@ -183,6 +181,18 @@ export async function fetchPermissions() {
 
 export async function respondPermission(id, action) {
   return request('POST', `/permissions/${id}`, { action })
+}
+
+export async function fetchQuestions() {
+  return request('GET', '/questions')
+}
+
+export async function replyQuestion(id, answers) {
+  return request('POST', `/questions/${encodeURIComponent(id)}`, { answers })
+}
+
+export async function rejectQuestion(id) {
+  return request('POST', `/questions/${encodeURIComponent(id)}/reject`, {})
 }
 
 export async function rotateAuthToken() {

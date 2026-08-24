@@ -20,6 +20,7 @@ export function findProjectTabByDirectory(directory: string | null | undefined):
 export function getProjectTabs(): ProjectTab[]
 export function getActiveProjectTab(): ProjectTab | null
 export function addProjectTab(directory: string | null | undefined, label?: string | null): ProjectTab
+export function rebindProjectTab(id: string, directory: string, label?: string | null): ProjectTab | null
 export function removeProjectTab(id: string): void
 export function switchProjectTab(id: string): void
 export function setProjectTabLabel(id: string, label: string): void
