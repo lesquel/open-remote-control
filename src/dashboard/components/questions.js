@@ -122,6 +122,10 @@ async function rejectCurrentQuestion() {
 export function initQuestions() {
   document.getElementById('question-submit')?.addEventListener('click', submitCurrentQuestion)
   document.getElementById('question-reject')?.addEventListener('click', rejectCurrentQuestion)
+  document.getElementById('question-form')?.addEventListener('submit', (event) => {
+    event.preventDefault()
+    void submitCurrentQuestion()
+  })
   window.__loadQuestions = loadQuestions
   window.__clearQuestions = () => {
     setState({ pendingQuestions: [] })

@@ -3,6 +3,7 @@ import { initWelcome } from './components/welcome.js'
 import { resolveToken, showTokenExpiredScreen, clearStoredToken } from './auth/auth.js'
 import { setState, getActiveDirectory, getActiveProjectTab, subscribe, getProjectTabs } from './state/state.js'
 import { initMarkdown } from './components/markdown.js'
+import { initMessageInteractions } from './components/messages.js'
 import { loadSettings } from './components/settings.js'
 import { loadMVState, initMultiView, showMultiview } from './components/multi-view.js'
 import { loadSessions, initSessions } from './components/sessions.js'
@@ -225,6 +226,7 @@ async function bootstrap() {
 
   // 5. Init all modules
   initMarkdown()
+  initMessageInteractions()
   loadSettings()
   loadMVState()
 
@@ -329,21 +331,6 @@ async function bootstrap() {
   if (pinnedTodosMount) {
     const pinnedTodos = createPinnedTodos({ container: pinnedTodosMount })
     window.__pinnedTodos = pinnedTodos
-  }
-
-  // Wire pin button handler — called from inline onclick in rendered TodoWrite items
-  window.__pinTodoItem = function(btn) {
-    if (!btn) return
-    const text = btn.dataset.text
-    if (!text) return
-    // Import state lazily to get current activeSession/sessions
-    import('./state/state.js').then(({ getState }) => {
-      const { activeSession, sessions } = getState()
-      const sessionTitle = sessions?.[activeSession]?.title ?? ''
-      if (window.__pinnedTodos && activeSession) {
-        window.__pinnedTodos.addItem({ text, sessionId: activeSession, sessionTitle })
-      }
-    }).catch(() => {})
   }
 
   // Mount todo dock (above messages list, inside messages-tab)
