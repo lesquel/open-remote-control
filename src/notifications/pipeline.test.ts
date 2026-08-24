@@ -22,7 +22,8 @@ function makeEventBus(opts?: { hasClients?: boolean }): EventBus & { emitted: Bu
     createSSEResponse: () => new Response(""),
     hasClients: () => opts?.hasClients ?? false,
     clientCount: () => (opts?.hasClients ? 1 : 0),
-    closeAll: () => {},
+    closeClientTag: () => {},
+      closeAll: () => {},
   }
 }
 
@@ -42,7 +43,7 @@ function makeTelegram(opts?: { enabled?: boolean }): TelegramChannel & { calls: 
     sendPermissionRequest: async (id, title, sessionId) => {
       calls.push({ method: "sendPermissionRequest", args: [id, title, sessionId] })
     },
-    sendStartup: async (url) => { calls.push({ method: "sendStartup", args: [url] }) },
+    sendStartup: async () => { calls.push({ method: "sendStartup", args: [] }) },
     sendSessionIdle: async (sessionId, title) => {
       calls.push({ method: "sendSessionIdle", args: [sessionId, title] })
     },

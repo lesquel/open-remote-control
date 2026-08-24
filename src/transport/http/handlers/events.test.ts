@@ -1,7 +1,13 @@
 // events.test.ts — streamEvents auth tests (V1: timing-safe query token)
 import { describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { createDeviceStore } from "../../../core/devices/store"
+import { createEventBus } from "../../../core/events/bus"
 import type { RouteDeps, RouteContext } from "../routes"
 import { streamEvents } from "./events"
+import { revokeDevice, updateDevice } from "./devices"
 import type { Logger } from "../../../infra/logger/index"
 
 const silentLogger: Logger = {
@@ -48,6 +54,7 @@ function makeEventsDeps(
       emit: () => {},
       hasClients: () => false,
       clientCount: () => 0,
+      closeClientTag: () => {},
       closeAll: () => {},
     } as RouteDeps["eventBus"],
     permissionQueue: {} as RouteDeps["permissionQueue"],
@@ -165,5 +172,84 @@ describe("streamEvents — ?token= query auth (V1 timing-safe)", () => {
     const res = await streamEvents(ctx)
     expect(res.status).toBe(200)
     expect(received).toBe("host-generation:17")
+  })
+})
+
+describe("streamEvents — device credential lifecycle", () => {
+  test("revocation closes an already-open device stream before later events and rejects reconnect", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "pilot-events-"))
+    try {
+      const deviceStore = createDeviceStore({
+        filePath: join(directory, "devices.json"),
+        logger: silentLogger,
+      })
+      const issued = deviceStore.issue({ name: "Revoked phone", role: "admin" })
+      const eventBus = createEventBus()
+      const deps = makeEventsDeps()
+      deps.deviceStore = deviceStore
+      deps.eventBus = eventBus
+
+      const stream = await streamEvents(makeEventsCtx(deps, { bearerToken: issued.credential }))
+      expect(stream.status).toBe(200)
+      const reader = stream.body!.getReader()
+      await reader.read()
+      await reader.read()
+      await reader.read()
+
+      const revoke = await revokeDevice({
+        ...makeEventsCtx(deps),
+        params: { id: issued.device.id },
+        principal: { kind: "legacy", id: "legacy", role: "admin", capabilities: [] },
+      })
+      expect(revoke.status).toBe(200)
+      eventBus.emit({ type: "sensitive.event", properties: { secret: "must-not-arrive" } })
+
+      expect((await reader.read()).done).toBe(true)
+      const reconnect = await streamEvents(makeEventsCtx(deps, { bearerToken: issued.credential }))
+      expect(reconnect.status).toBe(401)
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  test("role downgrade closes the stale stream but permits a newly authorized stream", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "pilot-events-"))
+    try {
+      const deviceStore = createDeviceStore({
+        filePath: join(directory, "devices.json"),
+        logger: silentLogger,
+      })
+      const issued = deviceStore.issue({ name: "Downgraded phone", role: "admin" })
+      const eventBus = createEventBus()
+      const deps = makeEventsDeps()
+      deps.deviceStore = deviceStore
+      deps.eventBus = eventBus
+
+      const stream = await streamEvents(makeEventsCtx(deps, { bearerToken: issued.credential }))
+      const reader = stream.body!.getReader()
+      await reader.read()
+      await reader.read()
+      await reader.read()
+
+      const update = await updateDevice({
+        ...makeEventsCtx(deps),
+        req: new Request("http://test/devices", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role: "read-only" }),
+        }),
+        params: { id: issued.device.id },
+        principal: { kind: "legacy", id: "legacy", role: "admin", capabilities: [] },
+      })
+      expect(update.status).toBe(200)
+      eventBus.emit({ type: "sensitive.event", properties: { secret: "must-not-arrive" } })
+
+      expect((await reader.read()).done).toBe(true)
+      const reconnect = await streamEvents(makeEventsCtx(deps, { bearerToken: issued.credential }))
+      expect(reconnect.status).toBe(200)
+      await reconnect.body?.cancel()
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })

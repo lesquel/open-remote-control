@@ -325,9 +325,8 @@ export default {
           .catch(() => {})
       }
 
-      const dashboardUrl = `${tunnel.publicUrl ?? localUrl}/?token=${currentToken}`
       telegram
-        .sendStartup(dashboardUrl)
+        .sendStartup()
         .catch((err) => audit.log("telegram.send_failed", { error: String(err), kind: "startup" }))
 
       ctx.client.tui

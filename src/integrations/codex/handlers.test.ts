@@ -31,6 +31,7 @@ function makeTestDeps(opts?: {
       createSSEResponse: () => new Response(""),
       hasClients: () => false,
       clientCount: () => 0,
+      closeClientTag: () => {},
       closeAll: () => {},
     },
     codexPermissionQueue: createPermissionQueue(opts?.codexPermissionTimeoutMs ?? 30_000),
@@ -370,7 +371,7 @@ describe("Route registration smoke test", () => {
     const registered: RouteSpec[] = []
     const mockDeps = {
       permissions: { waitForResponse: async () => null, resolve: () => false, pending: () => [] },
-      events: { emit: () => {}, createSSEResponse: () => new Response(), hasClients: () => false, clientCount: () => 0, closeAll: () => {} },
+      events: { emit: () => {}, createSSEResponse: () => new Response(), hasClients: () => false, clientCount: () => 0, closeClientTag: () => {}, closeAll: () => {} },
       audit: { log: () => {} },
       registerRoute: (route: RouteSpec) => { registered.push(route) },
     }
@@ -525,6 +526,7 @@ describe("WARNING-04 timeout emits reason:timeout", () => {
       emit: (e: unknown) => { emitted.push(e as EmittedEvent) },
       clientCount: () => 0,
       hasClients: () => false,
+      closeClientTag: () => {},
       closeAll: () => {},
       createSSEResponse: () => new Response(""),
     } as typeof deps.eventBus
@@ -549,6 +551,7 @@ describe("Fix-4 PostToolUse tool_response title is bounded", () => {
       emit: (e: unknown) => { emitted.push(e as EmittedEvent) },
       clientCount: () => 0,
       hasClients: () => false,
+      closeClientTag: () => {},
       closeAll: () => {},
       createSSEResponse: () => new Response(""),
     } as typeof deps.eventBus
@@ -579,6 +582,7 @@ describe("Fix-4 PostToolUse tool_response title is bounded", () => {
       emit: (e: unknown) => { emitted.push(e as EmittedEvent) },
       clientCount: () => 0,
       hasClients: () => false,
+      closeClientTag: () => {},
       closeAll: () => {},
       createSSEResponse: () => new Response(""),
     } as typeof deps.eventBus
@@ -690,6 +694,7 @@ describe("WARNING-05 pilot.tool.completed includes ok:boolean", () => {
       emit: (e: unknown) => { emitted.push(e as EmittedEvent) },
       clientCount: () => 0,
       hasClients: () => false,
+      closeClientTag: () => {},
       closeAll: () => {},
       createSSEResponse: () => new Response(""),
     } as typeof deps.eventBus

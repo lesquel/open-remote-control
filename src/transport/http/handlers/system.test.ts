@@ -160,6 +160,11 @@ function buildDeps(
   return deps
 }
 
+async function readSseEvent(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+  const result = await reader.read()
+  return result.value ? new TextDecoder().decode(result.value) : ""
+}
+
 describe("getHealth — public process probe", () => {
   test("does not call the SDK or Telegram network from an unauthenticated probe", async () => {
     const dir = tempDir()
@@ -352,5 +357,56 @@ describe("rotateAuthToken — readState null → visible failure (bug 2)", () =>
 
     // logger.warn must have been called — no silent failures.
     expect(logger.warnCalls.length + logger.errorCalls.length).toBeGreaterThan(0)
+  })
+})
+
+describe("rotateAuthToken — credential fan-out", () => {
+  let dir: string
+
+  beforeEach(() => {
+    dir = tempDir()
+  })
+
+  afterEach(() => {
+    try { rmSync(dir, { recursive: true, force: true }) } catch {}
+  })
+
+  test("keeps the rotated legacy token in the authenticated response, never in global SSE", async () => {
+    const deps = buildDeps(dir, buildConfig(), createSpyAudit(), createSpyLogger())
+    const reader = deps.eventBus.createSSEResponse().body!.getReader()
+    // Drain the welcome frame and proxy-buffering prelude before rotating.
+    await readSseEvent(reader)
+    await readSseEvent(reader)
+    await readSseEvent(reader)
+
+    const req = new Request("http://127.0.0.1/auth/rotate", { method: "POST" })
+    const response = await rotateAuthToken({ req, url: new URL(req.url), params: {}, deps })
+    const { token } = await response.json() as { token: string }
+    const frame = await readSseEvent(reader)
+
+    expect(frame).toContain('"type":"pilot.token.rotated"')
+    expect(frame).not.toContain(token)
+    expect(frame).not.toContain("connectUrl")
+    expect(frame).not.toContain("?token=")
+    await reader.cancel()
+  })
+
+  test("notifies Telegram without sending a legacy token or tokenized URL", async () => {
+    const deps = buildDeps(dir, buildConfig(), createSpyAudit(), createSpyLogger())
+    const delivered: string[] = []
+    deps.telegram = {
+      ...deps.telegram,
+      enabled: () => true,
+      sendMessage: async (text: string) => { delivered.push(text) },
+    }
+
+    const req = new Request("http://127.0.0.1/auth/rotate", { method: "POST" })
+    const response = await rotateAuthToken({ req, url: new URL(req.url), params: {}, deps })
+    const { token } = await response.json() as { token: string }
+    await Promise.resolve()
+
+    expect(delivered).toEqual(["🔑 <b>Token Rotated</b>\n\nFor security, open Pilot locally to reconnect."])
+    expect(delivered[0]).not.toContain(token)
+    expect(delivered[0]).not.toContain("?token=")
   })
 })

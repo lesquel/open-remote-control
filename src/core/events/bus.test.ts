@@ -37,6 +37,31 @@ describe("createEventBus SSE lifecycle", () => {
     expect(bus.clientCount()).toBe(0)
   })
 
+  test("closes only the streams bound to a revoked device", async () => {
+    const bus = createEventBus()
+    const revokedReader = bus.createSSEResponse({}, null, "device:revoked").body!.getReader()
+    const unaffectedReader = bus.createSSEResponse({}, null, "device:unaffected").body!.getReader()
+
+    // Consume the initial welcome, proxy-flush padding, and ready marker so a
+    // later read proves a post-revocation event was not retained in the stream.
+    await readText(revokedReader)
+    await readText(revokedReader)
+    await readText(revokedReader)
+    await readText(unaffectedReader)
+    await readText(unaffectedReader)
+    await readText(unaffectedReader)
+    expect(bus.clientCount()).toBe(2)
+
+    bus.closeClientTag("device:revoked")
+    expect(bus.clientCount()).toBe(1)
+    bus.emit({ type: "sensitive.event", properties: { secret: "must-not-arrive" } })
+
+    const revokedResult = await revokedReader.read()
+    expect(revokedResult.done).toBe(true)
+    expect(await readText(unaffectedReader)).toContain('"type":"sensitive.event"')
+    await unaffectedReader.cancel()
+  })
+
   test("assigns stable event IDs and replays only missed events", async () => {
     const bus = createEventBus()
     const firstReader = bus.createSSEResponse().body!.getReader()

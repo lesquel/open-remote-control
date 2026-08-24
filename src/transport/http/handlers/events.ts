@@ -2,7 +2,7 @@ import type { RouteContext } from "../routes"
 import { jsonError } from "../middlewares/json"
 import { CORS_HEADERS } from "../middlewares/cors"
 import { MSG } from "../../../core/strings"
-import { authenticateCredential } from "../authentication"
+import { authenticateCredential, deviceStreamTag } from "../authentication"
 import { getBearerToken } from "../../../infra/http/auth"
 
 function getIP(req: Request): string {
@@ -25,5 +25,6 @@ export async function streamEvents({ req, url, deps, principal }: RouteContext):
   return deps.eventBus.createSSEResponse(
     CORS_HEADERS,
     url.searchParams.get("lastEventId"),
+    authenticated.kind === "device" ? deviceStreamTag(authenticated.id) : undefined,
   )
 }

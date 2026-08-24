@@ -50,7 +50,8 @@ export interface TelegramChannel {
   enabled(): boolean
   sendMessage(text: string): Promise<void>
   sendPermissionRequest(permissionId: string, title: string, sessionId: string): Promise<void>
-  sendStartup(dashboardUrl: string): Promise<void>
+  /** Startup notices never carry a dashboard URL or credential. */
+  sendStartup(): Promise<void>
   sendSessionIdle(sessionId: string, title: string): Promise<void>
   sendSessionError(sessionId: string, title: string, error: string): Promise<void>
   testConnection(): Promise<{ ok: boolean; error?: string }>

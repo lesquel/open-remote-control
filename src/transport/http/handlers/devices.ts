@@ -1,8 +1,9 @@
-import type { DeviceRole } from "../../../core/devices/store"
+import { capabilitiesForRole, type DeviceRole } from "../../../core/devices/store"
 import { PilotError } from "../../../core/errors"
 import { CORS_HEADERS } from "../middlewares/cors"
 import { json, jsonError } from "../middlewares/json"
 import type { RouteContext } from "../routes"
+import { deviceStreamTag } from "../authentication"
 
 const PAIRING_TTL_MS = 5 * 60_000
 const MAX_DEVICE_NAME_LENGTH = 80
@@ -30,6 +31,11 @@ function storeUnavailable(): Response {
   return jsonError("DEVICE_AUTH_UNAVAILABLE", "Device authentication is unavailable", 503, CORS_HEADERS)
 }
 
+function losesCapabilities(previous: DeviceRole, next: DeviceRole): boolean {
+  const nextCapabilities = new Set(capabilitiesForRole(next))
+  return capabilitiesForRole(previous).some((capability) => !nextCapabilities.has(capability))
+}
+
 export async function listDevices({ deps, principal }: RouteContext): Promise<Response> {
   if (!deps.deviceStore) return storeUnavailable()
   return json({
@@ -53,11 +59,18 @@ export async function updateDevice({ req, params, deps }: RouteContext): Promise
   if (role !== undefined && !isRole(role)) {
     return jsonError("INVALID_DEVICE_ROLE", "Invalid device role", 400, CORS_HEADERS)
   }
+  const current = deps.deviceStore.list().find((device) => device.id === params.id)
   const device = deps.deviceStore.update(params.id, {
     ...(name !== undefined ? { name: name.trim() } : {}),
     ...(role !== undefined ? { role } : {}),
   })
   if (!device) return jsonError("DEVICE_NOT_FOUND", "Device not found", 404, CORS_HEADERS)
+  if (current && losesCapabilities(current.role, device.role)) {
+    // Existing SSE connections carry a capability snapshot. Force this one
+    // device to authenticate again so it cannot retain privileges after a
+    // role downgrade. Other devices and legacy/local streams stay connected.
+    deps.eventBus.closeClientTag(deviceStreamTag(device.id))
+  }
   deps.audit.log("device.updated", { deviceId: device.id, role: device.role })
   return json({ device }, 200, CORS_HEADERS)
 }
@@ -67,6 +80,10 @@ export async function revokeDevice({ params, deps, principal }: RouteContext): P
   if (!deps.deviceStore.revoke(params.id)) {
     return jsonError("DEVICE_NOT_FOUND", "Device not found or already revoked", 404, CORS_HEADERS)
   }
+  // Authentication is evaluated only when an SSE connection opens. Closing
+  // this device's tagged streams prevents a revoked credential from receiving
+  // any event emitted after the persisted revocation.
+  deps.eventBus.closeClientTag(deviceStreamTag(params.id))
   deps.audit.log("device.revoked", {
     deviceId: params.id,
     selfRevocation: principal?.kind === "device" && principal.id === params.id,

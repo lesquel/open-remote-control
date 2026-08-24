@@ -224,23 +224,22 @@ export async function rotateAuthToken({ deps }: RouteContext): Promise<Response>
 
   deps.audit.log("auth.token.rotated", {})
 
-  // Emit SSE so the dashboard can show a toast / refresh its token.
-  const baseUrlForEvent = deps.tunnelUrl ?? `http://${deps.config.host}:${deps.config.port}`
+  // This bus is shared by legacy and capability-scoped SSE clients. The new
+  // legacy credential is deliberately returned only to the authenticated
+  // rotation caller, never copied into a broadcast frame.
   deps.eventBus.emit({
     type: "pilot.token.rotated",
     properties: {
       timestamp: Date.now(),
-      connectUrl: `${baseUrlForEvent}/?token=${newToken}`,
     },
   })
 
-  // Telegram notification — include connect URL if we have a base URL.
+  // Notification channels are not credential stores. In particular Telegram
+  // messages may persist on third-party infrastructure and lock screens.
   if (deps.telegram.enabled()) {
-    const baseUrl = deps.tunnelUrl ?? `http://${deps.config.host}:${deps.config.port}`
-    const connectUrl = `${baseUrl}/?token=${newToken}`
     deps.telegram
       .sendMessage(
-        `🔑 <b>Token Rotated</b>\n\nNew connect URL:\n<a href="${connectUrl}">${connectUrl}</a>`,
+        "🔑 <b>Token Rotated</b>\n\nFor security, open Pilot locally to reconnect.",
       )
       .catch((err) =>
         deps.audit.log("telegram.send_failed", {

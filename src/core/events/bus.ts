@@ -4,15 +4,23 @@ import { SSE_PROTOCOL_VERSION } from "../protocol"
 
 export interface EventBus {
   emit(event: BusEvent): void
-  createSSEResponse(extraHeaders?: Record<string, string>, lastEventId?: string | null): Response
+  createSSEResponse(
+    extraHeaders?: Record<string, string>,
+    lastEventId?: string | null,
+    clientTag?: string,
+  ): Response
   hasClients(): boolean
   clientCount(): number
+  /** Closes only streams associated with a transport-owned identity tag. */
+  closeClientTag(clientTag: string): void
   closeAll(): void
 }
 
 interface SSEClient {
   controller: ReadableStreamDefaultController
   connectedAt: number
+  /** Opaque transport-owned identity; core neither creates nor interprets it. */
+  clientTag?: string
   // Stored so closeAll() can clear the keepalive deterministically instead of
   // relying on controller.close() propagating to the stream's cancel()
   // callback (a Bun ReadableStream implementation detail, not a WhatWG
@@ -90,13 +98,14 @@ export function createEventBus(): EventBus {
   function createSSEResponse(
     extraHeaders: Record<string, string> = {},
     lastEventId: string | null = null,
+    clientTag?: string,
   ): Response {
     let pingInterval: ReturnType<typeof setInterval> | null = null
     let client: SSEClient | null = null
 
     const stream = new ReadableStream({
       start(controller) {
-        client = { controller, connectedAt: Date.now() }
+        client = { controller, connectedAt: Date.now(), clientTag }
         clients.add(client)
 
         let replayStatus = "not_requested"
@@ -188,11 +197,18 @@ export function createEventBus(): EventBus {
     }
   }
 
+  function closeClientTag(clientTag: string): void {
+    for (const client of clients) {
+      if (client.clientTag === clientTag) removeClient(client, true)
+    }
+  }
+
   return {
     emit,
     createSSEResponse,
     hasClients: () => clients.size > 0,
     clientCount: () => clients.size,
+    closeClientTag,
     closeAll,
   }
 }
