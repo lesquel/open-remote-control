@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.23.0] - 2026-08-23
+
+Project-context and native OpenCode interaction support tracked in [#80](https://github.com/lesquel/open-remote-control/issues/80). This release keeps every prompt, permission, question, and project context local to the Pilot host.
+
+### Added
+
+- **Native OpenCode questions.** The dashboard can now display, answer, and reject OpenCode single-choice, multiple-choice, and custom-answer questions on desktop and mobile.
+- **Native permission parity.** OpenCode v2 permission requests are listed and resolved through the same exactly-once local attention flow as Pilot permissions.
+
+### Fixed
+
+- Switching project tabs now refreshes the session list, sidebar, model, provider, agent, MCP/LSP state, path, status, and usage from the selected project instead of retaining stale metadata.
+- The initial project tab now represents the worktree actually opened by OpenCode; the synthetic `default` project is migrated away.
+- OpenCode v2 object-shaped session status is normalized instead of rendering as `[object Object]`.
+- Pending questions and permissions are directory-scoped and stale controls are cleared immediately when the user switches projects.
+- Project tabs remain visible and usable in the mobile dashboard.
+
+### Testing
+
+- Added real Playwright browser journeys for prompt delivery, exactly-once native permission resolution, exactly-once native question resolution, and mobile project/context synchronization against the local HTTP server and a fake OpenCode boundary.
+
 ## [1.22.0] - 2026-08-23
 
 Local-first production hardening tracked in [#46](https://github.com/lesquel/open-remote-control/issues/46). This release adds device-scoped access and operator tooling while preserving existing local and legacy bearer-token workflows. It does not introduce hosted storage, telemetry, or a cloud dependency.
