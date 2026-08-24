@@ -137,6 +137,10 @@ export function initPermissions() {
   document.getElementById('btn-allow').addEventListener('click', () => respondPerm('allow'))
   document.getElementById('btn-deny').addEventListener('click', () => respondPerm('deny'))
   window.__loadPermissions = loadPermissions
+  window.__clearPermissions = () => {
+    setState({ pendingPerms: [] })
+    showNextPerm()
+  }
 }
 
 export function handlePermissionRequested(data) {
