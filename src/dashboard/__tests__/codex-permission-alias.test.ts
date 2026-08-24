@@ -111,6 +111,13 @@ describe("normalizePermissionPending — Codex payload shape", () => {
 })
 
 describe("normalizePermissionResolved — Codex payload shape", () => {
+  test("normalizes the OpenCode v2 requestID field", () => {
+    expect(normalizePermissionResolved({
+      type: "permission.replied",
+      properties: { sessionID: "session-1", requestID: "native-1", reply: "once" },
+    })).toEqual({ id: "native-1", permissionID: "native-1" })
+  })
+
   const codexResolved = {
     type: "pilot.permission.resolved",
     properties: {

@@ -12,6 +12,7 @@ import {
 } from '../components/messages.js'
 import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from '../components/multi-view.js'
 import { handlePermissionRequested, handlePermissionResolved } from '../components/permissions.js'
+import { loadQuestions } from '../components/questions.js'
 import { onSubagentSpawned } from '../components/subagents.js'
 import { isFileEditingToolEvent } from '../components/files-changed.js'
 import { debouncedRefreshFilesChanged } from '../components/files-changed-bridge.js'
@@ -22,6 +23,7 @@ import { playNotifySound } from '../ui/notif-sound.js'
 import { jitteredReconnectDelay } from './backoff.js'
 import { classifySseProtocol } from './protocol.js'
 import { recordActivity, resolveActivity } from '../components/activity-center.js'
+import { normalizeSessionStatus } from '../state/status-normalize.js'
 
 let eventSource = null
 let reconnectTimer = null
@@ -82,12 +84,18 @@ const SSE_EVENTS = [
   EVENTS.SESSION_UPDATED,
   EVENTS.SESSION_CREATED,
   EVENTS.SESSION_DELETED,
+  EVENTS.SESSION_STATUS,
   EVENTS.MESSAGE_CREATED,
   EVENTS.MESSAGE_UPDATED,
   EVENTS.MESSAGE_PART_UPDATED,
   EVENTS.MESSAGE_PART_DELTA,
   EVENTS.PERMISSION_REQUESTED,
   EVENTS.PERMISSION_RESOLVED,
+  EVENTS.PERMISSION_ASKED,
+  EVENTS.PERMISSION_REPLIED,
+  EVENTS.QUESTION_ASKED,
+  EVENTS.QUESTION_REPLIED,
+  EVENTS.QUESTION_REJECTED,
   // Codex bridge alias events — same handler paths, different type strings.
   // The server does not send named `event:` SSE lines today (all events arrive
   // as unnamed `data:` messages handled by onmessage), but the list must stay
@@ -571,7 +579,7 @@ async function handleEvent(ev) {
   // Handle both native OpenCode permission events and Codex bridge aliases.
   // Codex emits `pilot.permission.pending` / `pilot.permission.resolved` — renaming
   // those would break Telegram/push consumers, so we alias here instead.
-  if (t === EVENTS.PERMISSION_REQUESTED || t === EVENTS.PERMISSION_PENDING_PILOT) {
+  if (t === EVENTS.PERMISSION_REQUESTED || t === EVENTS.PERMISSION_ASKED || t === EVENTS.PERMISSION_PENDING_PILOT) {
     // Payload may be under .properties (pilot events) or .data (named-event path).
     // normalizePermissionPending handles both shapes identically.
     const normalized = normalizePermissionPending(ev)
@@ -589,11 +597,30 @@ async function handleEvent(ev) {
     window.dispatchEvent(new CustomEvent('pilot:permission:pending', { detail: normalized }))
   }
 
-  if (t === EVENTS.PERMISSION_RESOLVED || t === EVENTS.PERMISSION_RESOLVED_PILOT) {
+  if (t === EVENTS.PERMISSION_RESOLVED || t === EVENTS.PERMISSION_REPLIED || t === EVENTS.PERMISSION_RESOLVED_PILOT) {
     // Payload may be under .properties (pilot events) or .data (named-event path).
     const resolvedNormalized = normalizePermissionResolved(ev)
     handlePermissionResolved(resolvedNormalized)
     resolveActivity(`permission:${resolvedNormalized.permissionID}`)
+  }
+
+  if (t === EVENTS.QUESTION_ASKED) {
+    const question = ev.properties ?? d
+    await loadQuestions()
+    recordActivity({
+      key: `question:${question.id}`,
+      kind: 'question',
+      title: question.questions?.[0]?.header ?? 'Input required',
+      detail: question.questions?.[0]?.question ?? 'OpenCode needs your input',
+      sessionID: question.sessionID,
+      attention: true,
+    })
+  }
+
+  if (t === EVENTS.QUESTION_REPLIED || t === EVENTS.QUESTION_REJECTED) {
+    const question = ev.properties ?? d
+    await loadQuestions()
+    resolveActivity(`question:${question.requestID ?? question.id}`)
   }
 
   if (t === EVENTS.TODO_UPDATED) {
@@ -618,25 +645,28 @@ async function handleEvent(ev) {
     }
   }
 
-  if (t === EVENTS.STATUS_CHANGED && d.sessionId && d.status) {
-    const statuses = { ...getState().statuses, [d.sessionId]: d.status }
+  if (t === EVENTS.STATUS_CHANGED || t === EVENTS.SESSION_STATUS) {
+    const statusPayload = ev.properties ?? d ?? {}
+    const sessionId = statusPayload.sessionID ?? statusPayload.sessionId
+    const status = normalizeSessionStatus(statusPayload.status)
+    if (!sessionId) return
+    const statuses = { ...getState().statuses, [sessionId]: status }
     setState({ statuses })
     renderSessions()
-    if (d.sessionId === activeSession) {
-      const s = sessions[d.sessionId]
-      const title = s?.title || d.sessionId.slice(0, 8)
-      updateHeaderSession(title, d.status)
-      updateInfoBar(d.sessionId, title, d.status, s)
+    if (sessionId === activeSession) {
+      const s = sessions[sessionId]
+      const title = s?.title || sessionId.slice(0, 8)
+      updateHeaderSession(title, status)
+      updateInfoBar(sessionId, title, status, s)
     }
-    updateMVPanelStatus(d.sessionId, d.status)
-    const statusType = typeof d.status === 'string' ? d.status : d.status?.type
-    if (statusType === 'error' || statusType === 'failed') {
+    updateMVPanelStatus(sessionId, status)
+    if (status === 'error' || status === 'failed') {
       recordActivity({
-        key: `error:${d.sessionId}:${Math.floor(Date.now() / 30_000)}`,
+        key: `error:${sessionId}:${Math.floor(Date.now() / 30_000)}`,
         kind: 'error',
         title: 'Agent failed',
-        detail: sessions[d.sessionId]?.title ?? 'Session error',
-        sessionID: d.sessionId,
+        detail: sessions[sessionId]?.title ?? 'Session error',
+        sessionID: sessionId,
         attention: true,
       })
     }

@@ -20,11 +20,11 @@ export function normalizePermissionPending(ev) {
   return {
     id:           props.permissionID ?? props.id,
     permissionID: props.permissionID ?? props.id,
-    description:  props.title ?? props.description,
-    title:        props.title,
+    description:  props.title ?? props.description ?? props.permission,
+    title:        props.title ?? props.permission,
     sessionID:    props.sessionID,
-    type:         props.permissionType ?? props.type,
-    pattern:      props.pattern,
+    type:         props.permissionType ?? props.permission ?? props.type,
+    pattern:      props.pattern ?? props.patterns,
     metadata:     props.metadata,
   }
 }
@@ -40,7 +40,7 @@ export function normalizePermissionResolved(ev) {
   const d = ev.data ?? ev
   const resolvedProps = ev.properties ?? d ?? {}
   return {
-    id:           resolvedProps.permissionID ?? resolvedProps.id,
-    permissionID: resolvedProps.permissionID ?? resolvedProps.id,
+    id:           resolvedProps.permissionID ?? resolvedProps.requestID ?? resolvedProps.id,
+    permissionID: resolvedProps.permissionID ?? resolvedProps.requestID ?? resolvedProps.id,
   }
 }
