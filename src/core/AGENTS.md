@@ -7,7 +7,7 @@
 - May NOT import from: `transport/`, `integrations/`, `notifications/`, `server/`
 
 ## Public API (what other modules consume from here)
-- `createPermissionQueue(): PermissionQueue` — exactly-once pending permission requests with duplicate-ID coalescing and timeouts
+- `createPermissionQueue(): PermissionQueue` — exactly-once pending permission requests keyed by immutable integration/project/directory/session context, with conservative legacy ID-only resolution and timeouts
 - `getSharedEventBus() / createEventBus(): EventBus` — bounded in-process SSE fan-out with event IDs, bounded reconnect replay, deterministic client cleanup, and transport-owned tagged-stream closure for device revocation
 - `createAuditLog(): AuditLog` — appends recursively redacted JSON-Lines audit records to `.opencode/pilot-audit.log`
 - `rotateIfNeeded()` — rotates the audit log file when it exceeds the size limit
@@ -25,7 +25,7 @@ All of the above re-exported from `core/index.ts`.
 
 ## Key files
 - `index.ts` — barrel; the only file other modules should import from
-- `permissions/queue.ts` — `createPermissionQueue`; manages pending approvals
+- `permissions/queue.ts` — `createPermissionQueue`; manages context-bound pending approvals
 - `events/bus.ts` — `getSharedEventBus`; process-wide SSE bus, protocol generation/sequence IDs, bounded replay, and client lifecycle
 - `events/types.ts` — `PilotEvent` discriminated union (all event shapes)
 - `protocol.ts` — shared HTTP and SSE compatibility versions

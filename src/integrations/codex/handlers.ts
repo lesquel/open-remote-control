@@ -23,7 +23,7 @@ import type {
   CodexHookEvent,
   CodexPermissionResponse,
 } from "../../core/events/types"
-import type { PermissionQueue } from "../../core/permissions/queue"
+import type { PermissionContext, PermissionQueue } from "../../core/permissions/queue"
 import type { EventBus } from "../../core/events/bus"
 import type { AuditLog } from "../../core/audit/log"
 
@@ -44,6 +44,8 @@ export interface CodexDeps {
   audit: AuditLog
   eventBus: EventBus
   codexPermissionQueue: PermissionQueue
+  /** Canonical cwd learned from Codex SessionStart, keyed by Codex session ID. */
+  codexSessionDirectories?: Map<string, string>
 }
 
 // ─── Deps accessor ───────────────────────────────────────────────────────────
@@ -87,6 +89,7 @@ async function handleSessionStart(ctx: RouteContext, body: unknown): Promise<Res
     return jsonError("INVALID_PAYLOAD", validation.error, 400, CORS_HEADERS)
   }
   const { session_id, cwd, model, permission_mode, turn_id } = validation.data
+  deps.codexSessionDirectories?.set(session_id, cwd)
 
   deps.eventBus.emit({
     type: "pilot.session.started",
@@ -269,6 +272,31 @@ async function handlePermissionRequest(ctx: RouteContext, body: unknown): Promis
   }
   const { session_id, turn_id, tool_name } = validation.data
 
+  const directory = deps.codexSessionDirectories?.get(session_id)
+  if (!directory) {
+    deps.audit.log("codex.hook", {
+      event: "PermissionRequest",
+      sessionId: session_id,
+      toolName: tool_name,
+      result: "missing_project_context",
+      clientIp: getIP(req),
+      ts: new Date().toISOString(),
+    })
+    const response: CodexPermissionResponse = {
+      hookSpecificOutput: {
+        hookEventName: "PermissionRequest",
+        decision: { behavior: "deny", message: "Permission denied because the project context is unavailable" },
+      },
+    }
+    return json(response, 200, CORS_HEADERS)
+  }
+  const context: PermissionContext = {
+    integrationID: "codex",
+    projectID: directory,
+    directory,
+    sessionID: session_id,
+  }
+
   const permissionID = randomUUID()
 
   // Emit pending event so SSE clients (dashboard/Telegram) can show the request
@@ -279,14 +307,14 @@ async function handlePermissionRequest(ctx: RouteContext, body: unknown): Promis
       title: `Codex: ${tool_name}`,
       sessionID: session_id,
       permissionType: "codex-tool",
-      metadata: { tool_name, source: "codex-hook" },
+      metadata: { tool_name, source: "codex-hook", ...context },
     },
   })
 
   // Block until resolved, timeout, or client disconnect
   // Note: turn_id is intentionally excluded from metadata — not rendered by the UI
   const onAbort = () => {
-    deps.codexPermissionQueue.resolve(permissionID, "deny")
+    deps.codexPermissionQueue.resolve(permissionID, "deny", context)
     deps.audit.log("codex.hook", {
       event: "PermissionRequest",
       permissionID,
@@ -298,7 +326,7 @@ async function handlePermissionRequest(ctx: RouteContext, body: unknown): Promis
     })
     deps.eventBus.emit({
       type: "pilot.permission.resolved",
-      properties: { permissionID, action: "deny", source: "remote", reason: "client_disconnected" },
+      properties: { permissionID, action: "deny", source: "remote", reason: "client_disconnected", metadata: context },
     })
   }
   req.signal.addEventListener("abort", onAbort, { once: true })
@@ -307,9 +335,9 @@ async function handlePermissionRequest(ctx: RouteContext, body: unknown): Promis
   try {
     result = await deps.codexPermissionQueue.waitForResponse(permissionID, {
       title: `Codex: ${tool_name}`,
-      sessionID: session_id,
       type: "codex-tool",
-      metadata: { tool_name },
+      metadata: { tool_name, ...context },
+      ...context,
     })
   } finally {
     req.signal.removeEventListener("abort", onAbort)
@@ -331,7 +359,7 @@ async function handlePermissionRequest(ctx: RouteContext, body: unknown): Promis
 
     deps.eventBus.emit({
       type: "pilot.permission.resolved",
-      properties: { permissionID, action: "deny", source: "remote", reason: "timeout" },
+      properties: { permissionID, action: "deny", source: "remote", reason: "timeout", metadata: context },
     })
 
     deps.audit.log("codex.hook", {
@@ -361,7 +389,7 @@ async function handlePermissionRequest(ctx: RouteContext, body: unknown): Promis
 
   deps.eventBus.emit({
     type: "pilot.permission.resolved",
-    properties: { permissionID, action, source: "remote" },
+    properties: { permissionID, action, source: "remote", metadata: context },
   })
 
   deps.audit.log("codex.hook", {
@@ -400,6 +428,7 @@ async function handleStop(ctx: RouteContext, body: unknown): Promise<Response> {
     return jsonError("INVALID_PAYLOAD", validation.error, 400, CORS_HEADERS)
   }
   const { session_id } = validation.data
+  deps.codexSessionDirectories?.delete(session_id)
 
   deps.eventBus.emit({
     type: "pilot.session.stopped",

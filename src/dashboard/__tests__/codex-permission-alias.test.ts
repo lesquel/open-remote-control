@@ -53,7 +53,7 @@ describe("normalizePermissionPending — Codex payload shape", () => {
       title: "Codex: BashTool",
       sessionID: "sess-abc",
       permissionType: "codex-tool",
-      metadata: { tool_name: "BashTool", source: "codex-hook" },
+      metadata: { tool_name: "BashTool", source: "codex-hook", integrationID: "codex", projectID: "/projects/a", directory: "/projects/a", sessionID: "sess-abc" },
     },
   }
 
@@ -64,7 +64,9 @@ describe("normalizePermissionPending — Codex payload shape", () => {
     expect(normalized.title).toBe("Codex: BashTool")
     expect(normalized.sessionID).toBe("sess-abc")
     expect(normalized.type).toBe("codex-tool")
-    expect(normalized.metadata).toEqual({ tool_name: "BashTool", source: "codex-hook" })
+    expect(normalized.metadata).toEqual({ tool_name: "BashTool", source: "codex-hook", integrationID: "codex", projectID: "/projects/a", directory: "/projects/a", sessionID: "sess-abc" })
+    expect(normalized.integrationID).toBe("codex")
+    expect(normalized.directory).toBe("/projects/a")
   })
 
   test("normalizePermissionPending handles native OpenCode payload shape", () => {
@@ -115,7 +117,14 @@ describe("normalizePermissionResolved — Codex payload shape", () => {
     expect(normalizePermissionResolved({
       type: "permission.replied",
       properties: { sessionID: "session-1", requestID: "native-1", reply: "once" },
-    })).toEqual({ id: "native-1", permissionID: "native-1" })
+    })).toEqual({ id: "native-1", permissionID: "native-1", sessionID: "session-1" })
+  })
+
+  test("preserves resolved permission context for collision-safe dashboard updates", () => {
+    expect(normalizePermissionResolved({
+      type: "pilot.permission.resolved",
+      properties: { permissionID: "same", metadata: { integrationID: "codex", projectID: "/projects/b", directory: "/projects/b", sessionID: "session-b" } },
+    })).toMatchObject({ id: "same", integrationID: "codex", directory: "/projects/b", sessionID: "session-b" })
   })
 
   const codexResolved = {

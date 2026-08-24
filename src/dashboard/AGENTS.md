@@ -20,7 +20,7 @@
 - `sse/protocol.js` — rejects explicitly incompatible event protocols and presents a persistent reload action while allowing legacy servers with no advertised version
 - `auth/` — legacy-token migration plus short-lived device pairing and credential storage
 - `components/` — domain UI components (sessions, permissions, settings, etc.)
-- `components/permission-response.js` — exactly-once client gate that prevents permission double-taps and stale queue removal
+- `components/permission-response.js` — exactly-once client gate that prevents permission double-taps and removes only the matching integration/project/session request
 - `components/questions.js` / `questions-model.js` — accessible mobile question sheet and validated ordered OpenCode v2 answers
 - `components/markdown.js` — renders agent-controlled Markdown through the vendored DOMPurify allowlist before any HTML sink
 - `state/project-context.js` / `status-normalize.js` — concrete initial-project selection and OpenCode v2 status normalization

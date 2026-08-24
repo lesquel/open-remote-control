@@ -87,6 +87,7 @@ export default {
     const eventBus = getSharedEventBus()
     const permissionQueue = createPermissionQueue(config.permissionTimeoutMs)
     const codexPermissionQueue = createPermissionQueue(config.codexPermissionTimeoutMs)
+    const codexSessionDirectories = new Map<string, string>()
     const telegram = createTelegramChannel(config.telegram, permissionQueue, codexPermissionQueue, logger)
     const push = createPushService({ config, audit, logger })
     const deviceStore = createDeviceStore({ logger })
@@ -126,6 +127,7 @@ export default {
       eventBus,
       permissionQueue,
       codexPermissionQueue,
+      codexSessionDirectories,
       attentionService,
       telegram,
       push,
@@ -475,6 +477,7 @@ export default {
       client: ctx.client,
       permissions: permissionQueue,
       audit,
+      directory: ctx.directory,
     })
 
     // Role-aware gating, narrowly scoped:

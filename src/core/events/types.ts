@@ -119,6 +119,8 @@ export type PilotEvent =
         source: "remote" | "telegram" | "tui"
         /** Set to "timeout" when the permission was auto-denied due to timeout. */
         reason?: "timeout"
+        /** Immutable origin context used by clients to discard cross-project events. */
+        metadata?: Record<string, unknown>
       }
     }
   | {

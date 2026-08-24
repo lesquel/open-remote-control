@@ -26,6 +26,9 @@ export function normalizePermissionPending(ev) {
     type:         props.permissionType ?? props.permission ?? props.type,
     pattern:      props.pattern ?? props.patterns,
     metadata:     props.metadata,
+    integrationID: props.integrationID ?? props.metadata?.integrationID,
+    projectID:    props.projectID ?? props.metadata?.projectID,
+    directory:    props.directory ?? props.metadata?.directory,
   }
 }
 
@@ -39,8 +42,16 @@ export function normalizePermissionPending(ev) {
 export function normalizePermissionResolved(ev) {
   const d = ev.data ?? ev
   const resolvedProps = ev.properties ?? d ?? {}
+  const integrationID = resolvedProps.integrationID ?? resolvedProps.metadata?.integrationID
+  const projectID = resolvedProps.projectID ?? resolvedProps.metadata?.projectID
+  const directory = resolvedProps.directory ?? resolvedProps.metadata?.directory
+  const sessionID = resolvedProps.sessionID ?? resolvedProps.metadata?.sessionID
   return {
     id:           resolvedProps.permissionID ?? resolvedProps.requestID ?? resolvedProps.id,
     permissionID: resolvedProps.permissionID ?? resolvedProps.requestID ?? resolvedProps.id,
+    ...(integrationID === undefined ? {} : { integrationID }),
+    ...(projectID === undefined ? {} : { projectID }),
+    ...(directory === undefined ? {} : { directory }),
+    ...(sessionID === undefined ? {} : { sessionID }),
   }
 }

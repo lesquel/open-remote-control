@@ -1,4 +1,10 @@
 export interface PermissionMeta {
+  /** Immutable identity of the agent that owns this request (for example, opencode or codex). */
+  integrationID?: string
+  /** Canonical project identity. Pilot currently uses the canonical directory for this value. */
+  projectID?: string
+  /** Canonical project directory supplied by the integration, never by the dashboard. */
+  directory?: string
   title?: string
   sessionID?: string
   type?: string
@@ -10,6 +16,9 @@ export interface PendingPermission {
   permissionID: string
   createdAt: number
   resolved: boolean
+  integrationID?: string
+  projectID?: string
+  directory?: string
   title?: string
   sessionID?: string
   type?: string
@@ -22,14 +31,25 @@ export interface PermissionQueue {
     permissionID: string,
     meta?: PermissionMeta,
   ): Promise<{ action: "allow" | "deny" } | null>
-  /** Returns true when a waiter was found and resolved; false when the ID was unknown. */
-  resolve(permissionID: string, action: "allow" | "deny"): boolean
+  /**
+   * Resolve a request once. A complete context selects an exact request; a
+   * legacy ID-only call is accepted only when that ID maps to exactly one waiter.
+   */
+  resolve(permissionID: string, action: "allow" | "deny", context?: PermissionContext): boolean
   pending(): PendingPermission[]
+}
+
+export interface PermissionContext {
+  integrationID: string
+  projectID: string
+  directory: string
+  sessionID: string
 }
 
 export function createPermissionQueue(timeoutMs: number): PermissionQueue {
   type Response = { action: "allow" | "deny" } | null
   interface Waiter {
+    permissionID: string
     resolve: (value: Response) => void
     promise: Promise<Response>
     createdAt: number
@@ -38,10 +58,29 @@ export function createPermissionQueue(timeoutMs: number): PermissionQueue {
   }
   const waiters = new Map<string, Waiter>()
 
-  function settle(permissionID: string, waiter: Waiter, value: Response): boolean {
-    if (waiters.get(permissionID) !== waiter) return false
+  function keyFor(permissionID: string, meta: PermissionMeta): string {
+    if (
+      meta.integrationID &&
+      meta.projectID &&
+      meta.directory &&
+      meta.sessionID
+    ) {
+      return JSON.stringify([
+        "context",
+        meta.integrationID,
+        meta.projectID,
+        meta.directory,
+        meta.sessionID,
+        permissionID,
+      ])
+    }
+    return `legacy\u0000${permissionID}`
+  }
+
+  function settle(key: string, waiter: Waiter, value: Response): boolean {
+    if (waiters.get(key) !== waiter) return false
     clearTimeout(waiter.timeoutId)
-    waiters.delete(permissionID)
+    waiters.delete(key)
     waiter.resolve(value)
     return true
   }
@@ -50,26 +89,31 @@ export function createPermissionQueue(timeoutMs: number): PermissionQueue {
     permissionID: string,
     meta: PermissionMeta = {},
   ): Promise<{ action: "allow" | "deny" } | null> {
-    const existing = waiters.get(permissionID)
+    const key = keyFor(permissionID, meta)
+    const existing = waiters.get(key)
     if (existing) return existing.promise
 
     let resolvePromise: (value: Response) => void = () => undefined
     const promise = new Promise<Response>((resolve) => { resolvePromise = resolve })
     let waiter: Waiter
-    const timeoutId = setTimeout(() => settle(permissionID, waiter, null), timeoutMs)
-    waiter = { resolve: resolvePromise, promise, createdAt: Date.now(), timeoutId, meta }
-    waiters.set(permissionID, waiter)
+    const timeoutId = setTimeout(() => settle(key, waiter, null), timeoutMs)
+    waiter = { permissionID, resolve: resolvePromise, promise, createdAt: Date.now(), timeoutId, meta }
+    waiters.set(key, waiter)
     return promise
   }
 
-  function resolve(permissionID: string, action: "allow" | "deny"): boolean {
-    const waiter = waiters.get(permissionID)
-    return waiter ? settle(permissionID, waiter, { action }) : false
+  function resolve(permissionID: string, action: "allow" | "deny", context?: PermissionContext): boolean {
+    const matches = context
+      ? [[keyFor(permissionID, context), waiters.get(keyFor(permissionID, context))] as const]
+      : [...waiters.entries()].filter(([, waiter]) => permissionID === waiter.permissionID)
+    if (matches.length !== 1) return false
+    const [key, waiter] = matches[0]
+    return waiter ? settle(key, waiter, { action }) : false
   }
 
   function pending(): PendingPermission[] {
-    return Array.from(waiters.entries()).map(([id, w]) => ({
-      permissionID: id,
+    return Array.from(waiters.values()).map((w) => ({
+      permissionID: w.permissionID,
       createdAt: w.createdAt,
       resolved: false,
       ...w.meta,

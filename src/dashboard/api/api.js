@@ -180,8 +180,13 @@ export async function fetchPermissions(opts = {}) {
   return request('GET', '/permissions', null, opts)
 }
 
-export async function respondPermission(id, action) {
-  return request('POST', `/permissions/${id}`, { action })
+export async function respondPermission(id, action, permission = {}) {
+  const metadata = permission?.metadata && typeof permission.metadata === 'object' ? permission.metadata : {}
+  return request('POST', `/permissions/${id}`, {
+    action,
+    integrationID: permission?.integrationID ?? metadata.integrationID,
+    sessionID: permission?.sessionID ?? metadata.sessionID,
+  })
 }
 
 export async function fetchQuestions(opts = {}) {

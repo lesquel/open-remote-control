@@ -61,6 +61,8 @@ export type OpenCodeSetupDeps = {
   client: PluginInput['client']
   permissions: PermissionQueue
   audit: AuditLog
+  /** Canonical directory of this OpenCode plugin instance. */
+  directory?: string
 }
 
 // Intentional outlier: this does NOT implement the `AgentIntegration` port
@@ -85,7 +87,7 @@ export const opencodeIntegration = {
   ...descriptor,
 
   setup(deps: OpenCodeSetupDeps): OpenCodeIntegrationHandle {
-    const { notifications, sessionBusyStart, client, permissions, audit } = deps
+    const { notifications, sessionBusyStart, client, permissions, audit, directory } = deps
 
     const eventHook = createEventHook(
       notifications,
@@ -98,6 +100,7 @@ export const opencodeIntegration = {
       notifications,
       permissions,
       audit,
+      directory,
     )
 
     const toolHooks = createToolHooks(notifications)

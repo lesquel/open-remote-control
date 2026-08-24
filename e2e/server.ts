@@ -195,6 +195,7 @@ const deps: RouteDeps = {
   eventBus,
   permissionQueue,
   codexPermissionQueue,
+  codexSessionDirectories: new Map(),
   telegram,
   push,
   logger,

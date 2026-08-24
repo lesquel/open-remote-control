@@ -4,6 +4,16 @@ function permissionId(permission) {
   return permission?.id ?? permission?.permissionID
 }
 
+function permissionKey(permission) {
+  const metadata = permission?.metadata && typeof permission.metadata === 'object' ? permission.metadata : {}
+  return JSON.stringify([
+    permissionId(permission) ?? '',
+    permission?.integrationID ?? metadata.integrationID ?? '',
+    permission?.directory ?? metadata.directory ?? '',
+    permission?.sessionID ?? metadata.sessionID ?? '',
+  ])
+}
+
 export function createPermissionResponder({
   getPending,
   setPending,
@@ -28,8 +38,9 @@ export function createPermissionResponder({
     inFlightId = id
     setBusy(true)
     try {
-      await send(id, action)
-      setPending(getPending().filter((permission) => permissionId(permission) !== id))
+      await send(id, action, current)
+      const key = permissionKey(current)
+      setPending(getPending().filter((permission) => permissionKey(permission) !== key))
       return true
     } catch {
       onError()
