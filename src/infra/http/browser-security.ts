@@ -15,8 +15,10 @@ export type BrowserBoundaryResult =
 export const BROWSER_SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "Content-Security-Policy": [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+    "script-src 'self'",
+    // Dashboard layout still uses inline style attributes. Agent-controlled
+    // Markdown is stripped of style attributes before reaching innerHTML.
+    "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "connect-src 'self'",
     "font-src 'self' data:",

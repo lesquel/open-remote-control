@@ -10,12 +10,12 @@ describe("message disclosure accessibility contract", () => {
   test("reasoning and tool disclosures are keyboard-operable", () => {
     expect(messages).toMatch(/class="reasoning-header" role="button" tabindex="0" aria-expanded=/)
     expect(messages).toMatch(/class="tool-line tool-header" role="button" tabindex="0" aria-expanded=/)
-    expect(messages).toContain("event.key==='Enter'||event.key===' '")
+    expect(messages).toContain("document.addEventListener('keydown'")
+    expect(messages).toContain("event.key !== 'Enter' && event.key !== ' '")
   })
 
   test("toggle state stays synchronized for assistive technology", () => {
-    expect(messages).toContain(".reasoning-header')?.setAttribute('aria-expanded', String(expanded))")
-    expect(messages).toContain(".tool-header')?.setAttribute('aria-expanded', String(expanded))")
+    expect(messages).toContain("header.setAttribute('aria-expanded', String(expanded))")
     expect(messages).toContain('aria-controls="${escapeHtml(id)}-body"')
     expect(messages).toContain('aria-controls="${id}-body"')
   })

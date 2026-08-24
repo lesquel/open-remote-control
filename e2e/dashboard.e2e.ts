@@ -4,7 +4,7 @@ const token = "pilot-e2e-token"
 const directory = "/tmp/pilot-e2e-project"
 const secondDirectory = "/tmp/pilot-e2e-second-project"
 
-async function setup(page, scenario: { permission?: boolean; question?: boolean } = {}) {
+async function setup(page, scenario: { permission?: boolean; question?: boolean; message?: string } = {}) {
   await page.request.post("/_e2e/setup", {
     headers: { Authorization: `Bearer ${token}` },
     data: scenario,
@@ -46,7 +46,7 @@ test("answers an OpenCode native question exactly once", async ({ page }) => {
   await expect(page.locator("#question-sheet")).toHaveClass(/visible/)
   await expect(page.locator("#question-title")).toHaveText("OpenCode has a question")
   await page.getByText("Stable", { exact: true }).click()
-  await page.locator("#question-submit").click()
+  await page.locator('[data-question-custom="0"]').press("Enter")
   await expect(page.locator("#question-sheet")).not.toHaveClass(/visible/)
 
   await expect.poll(async () => page.evaluate(async (credential) => {
@@ -83,4 +83,32 @@ test("shows real project tabs on mobile and synchronizes project metadata", asyn
   await expect(page.locator("#lbl-model")).toHaveText("Second Model")
   await expect(page.locator("#lbl-provider")).toHaveText("Second Provider")
   await expect(page.locator("#header-status-badge")).toHaveText("idle")
+})
+
+test("sanitizes untrusted Markdown before it reaches the message DOM", async ({ page }) => {
+  await setup(page, {
+    message: [
+      '# Safe heading',
+      '[Safe link](https://example.com)',
+      '<img src=x onerror="window.__pilotXss = true">',
+      '<svg><script>window.__pilotXss = true</script><circle /></svg>',
+      '[Script link](javascript:window.__pilotXss=true)',
+      '[Data link](data:text/html,<script>window.__pilotXss=true</script>)',
+      '<form id="messages"><input name="__proto__"><button>Take over</button></form>',
+    ].join('\n\n'),
+  })
+
+  await expect(page.locator('#messages .md-rendered h1')).toHaveText('Safe heading')
+  await expect(page.locator('#messages .md-rendered a[href="https://example.com"]')).toHaveText('Safe link')
+  await expect(page.locator('#messages .md-rendered img, #messages .md-rendered svg, #messages .md-rendered script, #messages .md-rendered form, #messages .md-rendered button')).toHaveCount(0)
+  await expect(page.locator('#messages .md-rendered a[href^="javascript:"], #messages .md-rendered a[href^="data:"]')).toHaveCount(0)
+  await expect(page.locator('#messages .md-rendered [id], #messages .md-rendered [name]')).toHaveCount(0)
+  expect(await page.evaluate(() => globalThis.__pilotXss === true)).toBe(false)
+
+  const response = await page.request.get('/')
+  const csp = response.headers()['content-security-policy'] ?? ''
+  expect(csp).toContain("script-src 'self'")
+  expect(csp).not.toContain("script-src 'self' 'unsafe-inline'")
+  expect(csp).not.toContain('cdn.jsdelivr.net')
+  expect(await page.evaluate(() => typeof window.qrcode)).toBe('function')
 })

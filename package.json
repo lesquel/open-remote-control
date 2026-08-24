@@ -97,7 +97,10 @@
     "@playwright/test": "1.62.1",
     "@types/bun": "latest",
     "@types/web-push": "^3.6.4",
+    "dompurify": "3.4.14",
+    "marked": "18.0.10",
     "oxlint": "^1.65.0",
+    "qrcode-generator": "2.0.4",
     "typescript": "^5.8.0"
   }
 }

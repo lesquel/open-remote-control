@@ -165,12 +165,12 @@ export const routes: Route[] = [
     handler: serveDashboardRootStatic,
   },
   // Sub-directory static assets — covers ALL dashboard sub-folders post-Commit 5
-  // (api/, auth/, components/, modals/, ui/, routing/, state/, sse/, icons/).
+  // (api/, auth/, components/, modals/, ui/, routing/, state/, sse/, vendor/, icons/).
   // BUG IN v1.18.0: this regex only allowed icons|assets, so the 8 new sub-folders
   // returned 404 JSON which the browser blocked as MIME mismatch. Fixed in v1.18.1.
   {
     method: "GET",
-    pattern: /^\/(?:icons|api|auth|components|modals|ui|routing|state|sse)\/[^/]+\.(js|css|json|svg|png|ico|woff2?|ttf|d\.ts)$/,
+    pattern: /^\/(?:icons|api|auth|components|modals|ui|routing|state|sse|vendor)\/[^/]+\.(js|css|json|svg|png|ico|woff2?|ttf|d\.ts)$/,
     auth: "none",
     handler: serveDashboardRootStatic,
   },

@@ -15,39 +15,17 @@ import { pickBestUrlForMobile } from './connect-url-picker.js'
 import { createDeviceManager } from './device-manager.js'
 import { clearStoredToken } from '../auth/auth.js'
 
-// ── QR loader (cached promise, loaded once) ────────────────────────────────
-
-let _qrLoadPromise = null
-
-/**
- * Dynamically import the qrcode library from CDN.
- * Caches the load promise so the script is only fetched once.
- * Resolves with the QRCode global, or null if offline/unavailable.
- */
-function loadQRLib() {
-  if (_qrLoadPromise) return _qrLoadPromise
-  _qrLoadPromise = new Promise((resolve) => {
-    if (window.QRCode) { resolve(window.QRCode); return }
-    const script = document.createElement('script')
-    script.src = 'https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js'
-    script.onload = () => resolve(window.QRCode ?? null)
-    script.onerror = () => { _qrLoadPromise = null; resolve(null) }
-    document.head.appendChild(script)
-  })
-  return _qrLoadPromise
-}
-
 /**
  * Render a QR code for `url` into `container`.
- * If the library fails to load, falls back to a copyable URL display.
+ * The generator is shipped with the dashboard so connecting a device does not
+ * rely on third-party script execution or an internet connection.
  * @param {HTMLElement} container
  * @param {string} url
  */
-async function renderQR(container, url) {
+function renderQR(container, url) {
   container.innerHTML = '<div class="qr-loading">Loading QR…</div>'
 
-  const QRCode = await loadQRLib()
-  if (!QRCode) {
+  if (typeof window.qrcode !== 'function') {
     container.innerHTML = `
       <div class="qr-offline">
         <div class="qr-offline-label">QR code unavailable offline</div>
@@ -57,16 +35,17 @@ async function renderQR(container, url) {
     return
   }
 
-  const canvas = document.createElement('canvas')
-  container.innerHTML = ''
-  container.appendChild(canvas)
-
   try {
-    await QRCode.toCanvas(canvas, url, {
-      width: 200,
-      margin: 2,
-      color: { dark: '#1e1b2e', light: '#f0eef8' },
-    })
+    const code = window.qrcode(0, 'M')
+    code.addData(url)
+    code.make()
+    const image = document.createElement('img')
+    image.src = code.createDataURL(4, 2)
+    image.width = 200
+    image.height = 200
+    image.alt = 'Scan to connect this device'
+    container.innerHTML = ''
+    container.appendChild(image)
   } catch {
     container.innerHTML = `
       <div class="qr-offline">

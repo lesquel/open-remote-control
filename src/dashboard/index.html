@@ -14,8 +14,6 @@
 <link rel="apple-touch-icon" href="./icons/icon.svg">
 <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
 
-<!-- Syntax highlighting theme -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/styles/base16/monokai.min.css">
 <link rel="stylesheet" href="./styles.css">
 <link rel="stylesheet" href="./tokens.css">
 
@@ -40,97 +38,7 @@
   The server and the GitHub Pages deployment replace the generation
   placeholder below with package.json::version. Do not hardcode it.
 -->
-<script>
-(function() {
-  try {
-    var GEN = "__PILOT_ASSET_GENERATION__";
-    var KEY = "pilot:asset-gen";
-    if (localStorage.getItem(KEY) === GEN) return;
-    localStorage.setItem(KEY, GEN);
-    var swWork = Promise.resolve();
-    if ("serviceWorker" in navigator) {
-      swWork = navigator.serviceWorker
-        .getRegistrations()
-        .then(function(regs) {
-          return Promise.all(regs.map(function(r) { return r.unregister(); }));
-        })
-        .catch(function() {});
-    }
-    var cacheWork = Promise.resolve();
-    if (window.caches && typeof caches.keys === "function") {
-      cacheWork = caches
-        .keys()
-        .then(function(keys) {
-          return Promise.all(keys.map(function(k) { return caches.delete(k); }));
-        })
-        .catch(function() {});
-    }
-    Promise.all([swWork, cacheWork]).then(function() {
-      // Guard against reload loops: we only reload when the flag flips.
-      // If reload happens before the flag is persisted, the next load
-      // lands with the flag already set and skips this block.
-      setTimeout(function() { location.reload(); }, 50);
-    });
-  } catch (_err) {
-    // Never let this block the page from loading.
-  }
-})();
-</script>
-
-<script>
-  // Inlined to prevent flash-of-unthemed-content. Sets the [data-theme]
-  // attribute synchronously before the first paint.
-  (function() {
-    try {
-      var saved = localStorage.getItem('pilot-theme');
-      // Migration: dashboards before v1.20 stored theme as a boolean
-      // inside pilot_settings. true → light mode → mono-light.
-      if (!saved) {
-        var legacy = localStorage.getItem('pilot_settings');
-        if (legacy) {
-          try {
-            var parsed = JSON.parse(legacy);
-            if (parsed && parsed.theme === true) saved = 'mono-light';
-          } catch (_) { /* malformed JSON — ignore */ }
-        }
-      }
-      var THEMES = ['terminal-green','amber','violet','mono-light'];
-      var t = THEMES.indexOf(saved) >= 0 ? saved : 'terminal-green';
-      document.documentElement.setAttribute('data-theme', t);
-      if (saved !== t) {
-        // Normalise invalid or missing value to the default.
-        // Empty catch is intentional: this is pre-init fallback code that must
-        // never block the page from loading. A write failure here is irrelevant
-        // because the attribute is already applied for this paint.
-        try { localStorage.setItem('pilot-theme', t); } catch (_) {}
-      }
-    } catch (_) {
-      // localStorage unavailable (e.g. private mode) — apply safe default.
-      // Empty catch is intentional: same reasoning as above.
-      document.documentElement.setAttribute('data-theme', 'terminal-green');
-    }
-  })();
-</script>
-
-<script>
-  // Inlined to prevent layout shift. Applies body[data-grid] and
-  // body[data-scanlines] synchronously before first paint.
-  // Default: both OFF — user must opt in via Settings.
-  (function() {
-    try {
-      if (localStorage.getItem('pilot-grid') === '1') {
-        document.body.setAttribute('data-grid', 'true');
-      }
-      if (localStorage.getItem('pilot-scanlines') === '1') {
-        document.body.setAttribute('data-scanlines', 'true');
-      }
-    } catch (_) {
-      // localStorage unavailable (e.g. private mode) — decorations stay off.
-      // Empty catch is intentional: decorations are cosmetic; a failure here
-      // must never block the page from loading.
-    }
-  })();
-</script>
+<script src="./bootstrap.js?generation=__PILOT_ASSET_GENERATION__"></script>
 </head>
 <body>
 
@@ -213,7 +121,7 @@
         <span id="question-queue" class="question-queue" hidden></span>
       </div>
       <p id="question-session" class="question-session"></p>
-      <form id="question-form" onsubmit="return false"></form>
+      <form id="question-form"></form>
       <div class="question-actions">
         <button id="question-reject" type="button" class="btn btn-ghost">Reject</button>
         <button id="question-submit" type="button" class="btn btn-primary">Send answer</button>
@@ -633,16 +541,10 @@
 
 <div id="toast"></div>
 
-<!-- CDN libs (must load before ES modules that reference them) -->
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<!--
-  highlight.js — UMD bundle (NOT the CommonJS /lib/*.min.js files).
-  The /lib paths ship with `module.exports = ...` and redeclared consts;
-  loading them directly in a browser throws `module is not defined` and
-  `redeclaration of const IDENT_RE`. The /build bundle is proper UMD and
-  exposes `hljs` globally. One file, ~190 languages included.
--->
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.10.0/build/highlight.min.js"></script>
+<!-- Security-critical browser libraries are vendored and version-pinned. -->
+<script src="./vendor/marked.umd.js"></script>
+<script src="./vendor/purify.min.js"></script>
+<script src="./vendor/qrcode.js"></script>
 
 <script type="module" src="./main.js"></script>
 </body>
