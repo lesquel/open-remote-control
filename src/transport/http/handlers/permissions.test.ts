@@ -117,9 +117,9 @@ describe("listPermissions — merges both queues", () => {
     const deps = makePermissionDeps({ codexPermissionQueue: codexQueue })
 
     // Enqueue in mainQueue
-    void deps.permissionQueue.waitForResponse("main-1", { title: "Main permission" })
+    void deps.permissionQueue.waitForResponse("main-1", { title: "Main permission", integrationID: "opencode", projectID: "/tmp", directory: "/tmp", sessionID: "main-session" })
     // Enqueue in codexQueue
-    void codexQueue.waitForResponse("codex-1", { title: "Codex permission" })
+    void codexQueue.waitForResponse("codex-1", { title: "Codex permission", integrationID: "codex", projectID: "/tmp", directory: "/tmp", sessionID: "codex-session" })
 
     const res = await listPermissions(makeCtx(deps))
     expect(res.status).toBe(200)
@@ -142,7 +142,7 @@ describe("listPermissions — merges both queues", () => {
       listPermissions: async () => [nativePermission],
     } as unknown as AgentAttentionService
     const deps = makePermissionDeps({ attentionService })
-    void deps.permissionQueue.waitForResponse("native-1", { title: "Hook owns this ID" })
+    void deps.permissionQueue.waitForResponse("native-1", { title: "Hook owns this ID", integrationID: "opencode", projectID: "/tmp", directory: "/tmp", sessionID: "session-1" })
 
     const res = await listPermissions(makeCtx(deps))
     const body = await res.json() as Array<{ permissionID: string }>
@@ -155,11 +155,11 @@ describe("respondPermission — tries both queues", () => {
     const deps = makePermissionDeps()
 
     const mainResults: Array<{ action: "allow" | "deny" } | null> = []
-    deps.permissionQueue.waitForResponse("main-id-1", {}).then((r: { action: "allow" | "deny" } | null) => { mainResults.push(r) })
+    deps.permissionQueue.waitForResponse("main-id-1", { integrationID: "opencode", projectID: "/tmp", directory: "/tmp", sessionID: "session-main" }).then((r: { action: "allow" | "deny" } | null) => { mainResults.push(r) })
 
     const req = new Request("http://test/permissions/main-id-1", {
       method: "POST",
-      body: JSON.stringify({ action: "allow" }),
+      body: JSON.stringify({ action: "allow", integrationID: "opencode", sessionID: "session-main" }),
     })
     const res = await respondPermission(makeCtx(deps, req, { id: "main-id-1" }))
     expect(res.status).toBe(200)
@@ -174,11 +174,11 @@ describe("respondPermission — tries both queues", () => {
     const deps = makePermissionDeps({ codexPermissionQueue: codexQueue })
 
     const codexResults: Array<{ action: "allow" | "deny" } | null> = []
-    codexQueue.waitForResponse("codex-id-1", {}).then((r: { action: "allow" | "deny" } | null) => { codexResults.push(r) })
+    codexQueue.waitForResponse("codex-id-1", { integrationID: "codex", projectID: "/tmp", directory: "/tmp", sessionID: "session-codex" }).then((r: { action: "allow" | "deny" } | null) => { codexResults.push(r) })
 
     const req = new Request("http://test/permissions/codex-id-1", {
       method: "POST",
-      body: JSON.stringify({ action: "deny" }),
+      body: JSON.stringify({ action: "deny", integrationID: "codex", sessionID: "session-codex" }),
     })
     const res = await respondPermission(makeCtx(deps, req, { id: "codex-id-1" }))
     expect(res.status).toBe(200)
@@ -238,8 +238,8 @@ describe("respondPermission — tries both queues", () => {
 
   test("returns 409 without resolving when both integrations contain the same ID", async () => {
     const deps = makePermissionDeps()
-    void deps.permissionQueue.waitForResponse("collision")
-    void deps.codexPermissionQueue.waitForResponse("collision")
+    void deps.permissionQueue.waitForResponse("collision", { integrationID: "opencode", projectID: "/tmp", directory: "/tmp", sessionID: "open-session" })
+    void deps.codexPermissionQueue.waitForResponse("collision", { integrationID: "codex", projectID: "/tmp", directory: "/tmp", sessionID: "codex-session" })
     const req = new Request("http://test/permissions/collision", {
       method: "POST",
       body: JSON.stringify({ action: "allow" }),
@@ -265,6 +265,33 @@ describe("respondPermission — tries both queues", () => {
     const res = await respondPermission(makeCtx(deps, req, { id: "expiring" }))
     expect(res.status).toBe(404)
     expect(await res.json()).toMatchObject({ error: { code: "PERMISSION_NOT_FOUND" } })
+  })
+
+  test("lists and resolves only the selected project when IDs collide", async () => {
+    const deps = makePermissionDeps()
+    const a = deps.permissionQueue.waitForResponse("same-id", { integrationID: "opencode", projectID: "/projects/a", directory: "/projects/a", sessionID: "session-a" })
+    const b = deps.permissionQueue.waitForResponse("same-id", { integrationID: "codex", projectID: "/projects/b", directory: "/projects/b", sessionID: "session-b" })
+
+    const list = await listPermissions(makeCtx(deps, new Request("http://test/permissions?directory=/projects/a")))
+    expect(await list.json()).toEqual([expect.objectContaining({ permissionID: "same-id", integrationID: "opencode", directory: "/projects/a" })])
+
+    const wrongProject = await respondPermission(makeCtx(deps, new Request("http://test/permissions/same-id?directory=/projects/b", {
+      method: "POST",
+      body: JSON.stringify({ action: "allow", integrationID: "opencode", sessionID: "session-a" }),
+    }), { id: "same-id" }))
+    expect(wrongProject.status).toBe(404)
+    expect(deps.permissionQueue.pending()).toHaveLength(2)
+
+    const allowed = await respondPermission(makeCtx(deps, new Request("http://test/permissions/same-id?directory=/projects/a", {
+      method: "POST",
+      body: JSON.stringify({ action: "allow", integrationID: "opencode", sessionID: "session-a" }),
+    }), { id: "same-id" }))
+    expect(allowed.status).toBe(200)
+    expect(await a).toEqual({ action: "allow" })
+    expect(deps.permissionQueue.pending()).toEqual([expect.objectContaining({ directory: "/projects/b", integrationID: "codex" })])
+
+    expect(deps.permissionQueue.resolve("same-id", "deny", { integrationID: "codex", projectID: "/projects/b", directory: "/projects/b", sessionID: "session-b" })).toBe(true)
+    expect(await b).toEqual({ action: "deny" })
   })
 })
 

@@ -35,6 +35,7 @@ function makeTestDeps(opts?: {
       closeAll: () => {},
     },
     codexPermissionQueue: createPermissionQueue(opts?.codexPermissionTimeoutMs ?? 30_000),
+    codexSessionDirectories: new Map([["sess-1", "/workspace"]]),
   }
 }
 
@@ -204,6 +205,17 @@ describe("REQ-FIR-01 SessionStart", () => {
     const res = await dispatchCodexHook(ctx)
     expect(res.status).toBe(204)
   })
+
+  test("binds the Codex session to its canonical cwd and clears it on Stop", async () => {
+    const deps = makeTestDeps()
+    deps.codexSessionDirectories?.clear()
+
+    await dispatchCodexHook(makeCtx(deps, "SessionStart", { ...sessionStartBody, cwd: "/projects/a" }))
+    expect(deps.codexSessionDirectories?.get("sess-1")).toBe("/projects/a")
+
+    await dispatchCodexHook(makeCtx(deps, "Stop", stopBody))
+    expect(deps.codexSessionDirectories?.has("sess-1")).toBe(false)
+  })
 })
 
 // ─── REQ-FIR-02: UserPromptSubmit → 204 ──────────────────────────────────────
@@ -300,6 +312,25 @@ describe("REQ-PRM-03 PermissionRequest deny", () => {
     const body = await res.json() as { hookSpecificOutput: { decision: { behavior: string; message?: string } } }
     expect(body.hookSpecificOutput.decision.behavior).toBe("deny")
     expect(typeof body.hookSpecificOutput.decision.message).toBe("string")
+  })
+})
+
+describe("PermissionRequest project context", () => {
+  test("denies safely instead of exposing a permission without a SessionStart project binding", async () => {
+    const auditEntries: AuditEntry[] = []
+    const deps = makeTestDeps({ auditEntries })
+    deps.codexSessionDirectories?.clear()
+
+    const response = await dispatchCodexHook(makeCtx(deps, "PermissionRequest", permissionBody))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      hookSpecificOutput: { decision: { behavior: "deny" } },
+    })
+    expect(deps.codexPermissionQueue.pending()).toEqual([])
+    expect(auditEntries).toContainEqual(expect.objectContaining({
+      action: "codex.hook",
+      details: expect.objectContaining({ result: "missing_project_context" }),
+    }))
   })
 })
 

@@ -15,6 +15,57 @@ export function currentFetchGen() { return fetchGeneration }
 export function bumpFetchGen()    { fetchGeneration += 1; return fetchGeneration }
 export function isStaleGen(gen)   { return gen !== fetchGeneration }
 
+// ── Project request tickets ────────────────────────────────────────────────
+// Project-scoped reads (permissions, native questions, references) can finish
+// after the user selected another tab.  A ticket captures the same generation
+// and project identity that sessions.js already uses, and owns an AbortSignal
+// so a tab change can stop retrying obsolete GET requests where fetch supports
+// it.  State remains the source of truth; this Set only tracks cancellable
+// in-flight work and never stores project data.
+const projectRequests = new Set()
+const latestProjectRequestByScope = new Map()
+
+export function beginProjectRequest(scope = 'default') {
+  const previous = latestProjectRequestByScope.get(scope)
+  if (previous) {
+    previous.controller.abort()
+    projectRequests.delete(previous)
+  }
+  const controller = new AbortController()
+  const ticket = {
+    scope,
+    generation: fetchGeneration,
+    projectId: state.activeProjectId,
+    directory: state.activeDirectory,
+    controller,
+    signal: controller.signal,
+  }
+  projectRequests.add(ticket)
+  latestProjectRequestByScope.set(scope, ticket)
+  return ticket
+}
+
+export function isCurrentProjectRequest(ticket) {
+  return ticket?.generation === fetchGeneration
+    && ticket.projectId === state.activeProjectId
+    && ticket.directory === state.activeDirectory
+    && latestProjectRequestByScope.get(ticket.scope) === ticket
+    && !ticket.signal.aborted
+}
+
+export function finishProjectRequest(ticket) {
+  projectRequests.delete(ticket)
+  if (latestProjectRequestByScope.get(ticket?.scope) === ticket) {
+    latestProjectRequestByScope.delete(ticket.scope)
+  }
+}
+
+export function abortProjectRequests() {
+  for (const ticket of projectRequests) ticket.controller.abort()
+  projectRequests.clear()
+  latestProjectRequestByScope.clear()
+}
+
 const state = {
   token: null,
   serverUrl: "",     // empty = same-origin (embedded); set to tunnel URL in standalone mode
@@ -165,6 +216,7 @@ export function removeProjectTab(id) {
  */
 export function switchProjectTab(id) {
   if (id === null) {
+    abortProjectRequests()
     state.activeProjectId = null
     state.activeDirectory = null
     state.sessions      = {}
@@ -179,6 +231,7 @@ export function switchProjectTab(id) {
   if (!tab) return null
   if (tab.id !== state.activeProjectId) {
     // Tab actually changed — invalidate any in-flight fetches for the old tab
+    abortProjectRequests()
     bumpFetchGen()
   }
   state.activeProjectId = tab.id

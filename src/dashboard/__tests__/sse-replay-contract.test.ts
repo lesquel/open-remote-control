@@ -20,4 +20,12 @@ describe("dashboard SSE replay contract", () => {
     expect(source).toContain("setConnectionStatus('host-restarted')")
     expect(source).toContain("refreshCanonicalSnapshots()")
   })
+
+  test("reconciles authenticated project attention after replay loss and reconnect", () => {
+    expect(source).toContain("function refreshCanonicalAttention()")
+    expect(source).toContain("Promise.all([loadPermissions(), loadQuestions()])")
+    expect(source).toContain("reconcileActivityAttention({")
+    expect(source).toContain("replayStatus === 'unavailable'")
+    expect(source).toContain("void refreshCanonicalAttention()")
+  })
 })

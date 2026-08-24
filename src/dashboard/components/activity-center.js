@@ -1,5 +1,6 @@
 import { getActivityStore } from './activity-store.js'
 import { openModal } from '../modals/modal-helper.js'
+import { reconcileAttentionSnapshots } from './attention-reconcile.js'
 
 let modalHandle = null
 const store = () => getActivityStore()
@@ -120,6 +121,9 @@ export function closeActivityCenter() {
 
 export function recordActivity(entry) { store().add(entry) }
 export function resolveActivity(key) { store().resolve(key) }
+export function reconcileActivityAttention(snapshot) {
+  return reconcileAttentionSnapshots({ store: store(), ...snapshot })
+}
 
 export function initActivityCenter() {
   ensureModal()

@@ -14,8 +14,20 @@ export type ProjectTab = {
   loaded: boolean
 }
 
+export type ProjectRequestTicket = {
+  scope: string
+  generation: number
+  projectId: string | null
+  directory: string | null
+  signal: AbortSignal
+}
+
 export function getActiveDirectory(): string | null
 export function setActiveDirectory(dir: string | null | undefined): void
+export function beginProjectRequest(scope?: string): ProjectRequestTicket
+export function isCurrentProjectRequest(ticket: ProjectRequestTicket): boolean
+export function finishProjectRequest(ticket: ProjectRequestTicket): void
+export function abortProjectRequests(): void
 export function findProjectTabByDirectory(directory: string | null | undefined): ProjectTab | null
 export function getProjectTabs(): ProjectTab[]
 export function getActiveProjectTab(): ProjectTab | null

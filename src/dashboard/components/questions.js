@@ -1,4 +1,10 @@
-import { getState, setState } from '../state/state.js'
+import {
+  getState,
+  setState,
+  beginProjectRequest,
+  isCurrentProjectRequest,
+  finishProjectRequest,
+} from '../state/state.js'
 import { fetchQuestions, replyQuestion, rejectQuestion } from '../api/api.js'
 import { buildQuestionAnswers } from './questions-model.js'
 import { toast } from '../ui/toast.js'
@@ -64,12 +70,19 @@ export function showNextQuestion() {
 }
 
 export async function loadQuestions() {
+  const ticket = beginProjectRequest('questions')
   try {
-    const questions = await fetchQuestions()
+    const questions = await fetchQuestions({ signal: ticket.signal })
+    if (!isCurrentProjectRequest(ticket)) return false
     setState({ pendingQuestions: Array.isArray(questions) ? questions : [] })
     showNextQuestion()
+    return true
   } catch (error) {
+    if (!isCurrentProjectRequest(ticket)) return false
     console.warn('[questions] Could not load pending questions:', error?.message ?? error)
+    return false
+  } finally {
+    finishProjectRequest(ticket)
   }
 }
 

@@ -1,17 +1,45 @@
 // permissions.js — Permission banner and approve/deny logic
-import { getState, setState } from '../state/state.js'
+import {
+  getState,
+  setState,
+  beginProjectRequest,
+  isCurrentProjectRequest,
+  finishProjectRequest,
+} from '../state/state.js'
 import { fetchPermissions, respondPermission } from '../api/api.js'
 import { playNotifySound } from '../ui/notif-sound.js'
 import { toast } from '../ui/toast.js'
 import { createPermissionResponder } from './permission-response.js'
 
+function permissionContext(permission) {
+  const metadata = permission?.metadata && typeof permission.metadata === 'object' ? permission.metadata : {}
+  return {
+    id: permission?.id ?? permission?.permissionID,
+    integrationID: permission?.integrationID ?? metadata.integrationID,
+    directory: permission?.directory ?? metadata.directory,
+    sessionID: permission?.sessionID ?? metadata.sessionID,
+  }
+}
+
+function permissionKey(permission) {
+  const context = permissionContext(permission)
+  return JSON.stringify([context.id ?? '', context.integrationID ?? '', context.directory ?? '', context.sessionID ?? ''])
+}
+
 export async function loadPermissions() {
+  const ticket = beginProjectRequest('permissions')
   try {
-    const perms = await fetchPermissions()
+    const perms = await fetchPermissions({ signal: ticket.signal })
+    if (!isCurrentProjectRequest(ticket)) return false
     setState({ pendingPerms: Array.isArray(perms) ? perms : [] })
     showNextPerm()
+    return true
   } catch (error) {
+    if (!isCurrentProjectRequest(ticket)) return false
     console.warn('[permissions] Could not load pending permissions:', error?.message ?? error)
+    return false
+  } finally {
+    finishProjectRequest(ticket)
   }
 }
 
@@ -148,21 +176,35 @@ export function handlePermissionRequested(data) {
     loadPermissions()  // server push told us something changed; re-fetch list
     return
   }
-  const id = data.id ?? data.permissionID
+  const context = permissionContext(data)
+  const id = context.id
   if (!id) {
+    loadPermissions()
+    return
+  }
+  const activeDirectory = getState().activeDirectory
+  // Events without a canonical directory cannot safely mutate the active tab.
+  // Re-fetching through the project-scoped endpoint preserves legacy/native
+  // events without allowing Project A to appear in Project B.
+  if (!context.directory || context.directory !== activeDirectory) {
     loadPermissions()
     return
   }
   const { pendingPerms } = getState()
   // Don't double-add if an existing poll already placed it
-  if (pendingPerms.some(p => (p.id ?? p.permissionID) === id)) return
+  if (pendingPerms.some((permission) => permissionKey(permission) === permissionKey(data))) return
   setState({ pendingPerms: [...pendingPerms, { ...data, id }] })
   showNextPerm()
 }
 
 export function handlePermissionResolved(data) {
-  const id = data?.id ?? data?.permissionID ?? data
+  const context = permissionContext(typeof data === 'object' ? data : { id: data })
+  if (!context.id || !context.directory || context.directory !== getState().activeDirectory) {
+    loadPermissions()
+    return
+  }
   const { pendingPerms } = getState()
-  setState({ pendingPerms: pendingPerms.filter(p => (p.id ?? p.permissionID) !== id) })
+  const key = JSON.stringify([context.id, context.integrationID ?? '', context.directory, context.sessionID ?? ''])
+  setState({ pendingPerms: pendingPerms.filter((permission) => permissionKey(permission) !== key) })
   showNextPerm()
 }

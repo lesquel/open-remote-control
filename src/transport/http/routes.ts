@@ -46,6 +46,8 @@ export interface RouteDeps {
   /** Separate permission queue for Codex hook bridge requests.
    *  Uses config.codexPermissionTimeoutMs instead of the main timeout. */
   codexPermissionQueue: PermissionQueue
+  /** Canonical cwd from Codex SessionStart, retained only for active sessions. */
+  codexSessionDirectories?: Map<string, string>
   /** Native agent attention APIs (OpenCode v2 questions and permissions). */
   attentionService?: AgentAttentionService
   telegram: TelegramChannel

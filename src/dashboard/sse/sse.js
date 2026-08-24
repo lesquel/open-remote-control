@@ -1,5 +1,5 @@
 // sse.js — SSE connection with exponential backoff reconnect
-import { getState, setState, appendPartDelta, clearStreamingMessage, subscribe } from '../state/state.js'
+import { getState, setState, appendPartDelta, clearStreamingMessage, subscribe, beginProjectRequest, isCurrentProjectRequest, finishProjectRequest } from '../state/state.js'
 import { loadSessions, renderSessions, updateHeaderSession, updateInfoBar, refreshSessionMeta } from '../components/sessions.js'
 import {
   loadMessages,
@@ -11,7 +11,7 @@ import {
   replacePartInDom,
 } from '../components/messages.js'
 import { loadMVMessages, updateMVPanelStatus, renderMultiviewGrid } from '../components/multi-view.js'
-import { handlePermissionRequested, handlePermissionResolved } from '../components/permissions.js'
+import { handlePermissionRequested, handlePermissionResolved, loadPermissions } from '../components/permissions.js'
 import { loadQuestions } from '../components/questions.js'
 import { onSubagentSpawned } from '../components/subagents.js'
 import { isFileEditingToolEvent } from '../components/files-changed.js'
@@ -22,7 +22,8 @@ import { normalizePermissionPending, normalizePermissionResolved } from './permi
 import { playNotifySound } from '../ui/notif-sound.js'
 import { jitteredReconnectDelay } from './backoff.js'
 import { classifySseProtocol } from './protocol.js'
-import { recordActivity, resolveActivity } from '../components/activity-center.js'
+import { recordActivity, resolveActivity, reconcileActivityAttention } from '../components/activity-center.js'
+import { attentionKey } from '../components/attention-reconcile.js'
 import { normalizeSessionStatus } from '../state/status-normalize.js'
 
 let eventSource = null
@@ -208,6 +209,39 @@ function refreshCanonicalSnapshots() {
   }
 }
 
+/**
+ * Event replay is intentionally bounded. When the server generation changes,
+ * replay is unavailable, or a stream reconnects after an outage, rebuild the
+ * active project's attention from authenticated canonical endpoints. The
+ * project ticket prevents a late response for project A from changing B.
+ */
+function refreshCanonicalAttention() {
+  const ticket = beginProjectRequest('attention-reconciliation')
+  return Promise.all([loadPermissions(), loadQuestions()])
+    .then(([permissionsLoaded, questionsLoaded]) => {
+      // Do not resolve local attention from a partial snapshot. Keeping an
+      // item visible is safer than claiming it was resolved when one of the
+      // authenticated sources was temporarily unreachable.
+      if (!permissionsLoaded || !questionsLoaded || !isCurrentProjectRequest(ticket)) return false
+      const state = getState()
+      reconcileActivityAttention({
+        project: ticket.directory,
+        permissions: state.pendingPerms,
+        questions: state.pendingQuestions,
+      })
+      return true
+    })
+    .catch(() => false)
+    .finally(() => finishProjectRequest(ticket))
+}
+
+// Native OpenCode events do not always include a directory. In that case the
+// only safe association available to this dashboard is the currently scoped
+// stream; the canonical reconciliation immediately corrects its local view.
+function attentionProject(item) {
+  return item?.metadata?.project ?? item?.metadata?.directory ?? item?.directory ?? getState().activeDirectory ?? null
+}
+
 function handleConnectionMetadata(event) {
   const properties = event?.properties ?? {}
   if (classifySseProtocol(properties.protocolVersion) === 'incompatible') {
@@ -229,6 +263,7 @@ function handleConnectionMetadata(event) {
   if (hostRestarted || replayStatus === 'generation_changed') {
     setConnectionStatus('host-restarted')
     refreshCanonicalSnapshots()
+    void refreshCanonicalAttention()
     if (_hostRestartTimer) clearTimeout(_hostRestartTimer)
     _hostRestartTimer = setTimeout(() => {
       _hostRestartTimer = null
@@ -236,6 +271,7 @@ function handleConnectionMetadata(event) {
     }, 4_000)
   } else if (replayStatus === 'unavailable') {
     refreshCanonicalSnapshots()
+    void refreshCanonicalAttention()
   }
   return true
 }
@@ -290,6 +326,7 @@ export function connect() {
       // The server replays a bounded event window. Pull the canonical snapshot
       // as well because a longer outage can exceed that window.
       refreshCanonicalSnapshots()
+      void refreshCanonicalAttention()
     }
   }
 
@@ -583,14 +620,15 @@ async function handleEvent(ev) {
     // Payload may be under .properties (pilot events) or .data (named-event path).
     // normalizePermissionPending handles both shapes identically.
     const normalized = normalizePermissionPending(ev)
+    const project = attentionProject(normalized)
     handlePermissionRequested(normalized)
     recordActivity({
-      key: `permission:${normalized.permissionID}`,
+      key: attentionKey('permission', project, normalized.permissionID),
       kind: 'permission',
       title: normalized.title ?? normalized.description ?? 'Permission required',
       detail: Array.isArray(normalized.pattern) ? normalized.pattern.join(' ') : normalized.pattern,
       sessionID: normalized.sessionID,
-      project: normalized.metadata?.project ?? normalized.metadata?.directory,
+      project,
       attention: true,
     })
     // Dispatch for push-notifications module
@@ -601,18 +639,20 @@ async function handleEvent(ev) {
     // Payload may be under .properties (pilot events) or .data (named-event path).
     const resolvedNormalized = normalizePermissionResolved(ev)
     handlePermissionResolved(resolvedNormalized)
-    resolveActivity(`permission:${resolvedNormalized.permissionID}`)
+    resolveActivity(attentionKey('permission', attentionProject(resolvedNormalized), resolvedNormalized.permissionID))
   }
 
   if (t === EVENTS.QUESTION_ASKED) {
     const question = ev.properties ?? d
+    const project = attentionProject(question)
     await loadQuestions()
     recordActivity({
-      key: `question:${question.id}`,
+      key: attentionKey('question', project, question.id),
       kind: 'question',
       title: question.questions?.[0]?.header ?? 'Input required',
       detail: question.questions?.[0]?.question ?? 'OpenCode needs your input',
       sessionID: question.sessionID,
+      project,
       attention: true,
     })
   }
@@ -620,7 +660,7 @@ async function handleEvent(ev) {
   if (t === EVENTS.QUESTION_REPLIED || t === EVENTS.QUESTION_REJECTED) {
     const question = ev.properties ?? d
     await loadQuestions()
-    resolveActivity(`question:${question.requestID ?? question.id}`)
+    resolveActivity(attentionKey('question', attentionProject(question), question.requestID ?? question.id))
   }
 
   if (t === EVENTS.TODO_UPDATED) {

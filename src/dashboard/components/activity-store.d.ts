@@ -3,6 +3,7 @@ export function createActivityStore(options?: { storage?: Pick<Storage, "getItem
   list(): ActivityEntry[]
   add(input: Partial<ActivityEntry>): ActivityEntry
   resolve(key: string): boolean
+  reconcileAttention(project: string | null | undefined, activeKeys: Set<string>): boolean
   markAllRead(): void
   clearRecent(): void
   counts(): { unread: number; attention: number }

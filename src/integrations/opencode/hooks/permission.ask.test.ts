@@ -250,4 +250,20 @@ describe("permission.ask — notifyPermissionPending receives correct arguments"
     expect(call.args[4]).toBe("**/*.ts")
     expect(call.args[5]).toEqual({ risk: "medium" })
   })
+
+  test("binds a remote permission to the plugin's immutable project context", async () => {
+    const notifications = makeNotifications(false)
+    const hook = createPermissionAskHook(notifications, createPermissionQueue(5_000), makeAudit(), "/projects/a")
+
+    await hook(makePermission({ id: "project-bound", sessionID: "session-a", metadata: { command: "echo safe" } }), {})
+
+    const call = notifications.calls[0] as { args: unknown[] }
+    expect(call.args[5]).toEqual({
+      command: "echo safe",
+      integrationID: "opencode",
+      projectID: "/projects/a",
+      directory: "/projects/a",
+      sessionID: "session-a",
+    })
+  })
 })

@@ -81,4 +81,30 @@ describe("createPermissionQueue", () => {
     expect(await Promise.all([first, duplicate])).toEqual([null, null])
     expect(queue.pending()).toEqual([])
   })
+
+  test("isolates duplicate IDs by immutable project, integration, and session context", async () => {
+    const queue = createPermissionQueue(5_000)
+    const projectA = { integrationID: "opencode", projectID: "/projects/a", directory: "/projects/a", sessionID: "same-session" }
+    const projectB = { integrationID: "codex", projectID: "/projects/b", directory: "/projects/b", sessionID: "same-session" }
+    const a = queue.waitForResponse("duplicate-id", projectA)
+    const b = queue.waitForResponse("duplicate-id", projectB)
+
+    expect(queue.pending()).toHaveLength(2)
+    expect(queue.resolve("duplicate-id", "allow", projectA)).toBe(true)
+    expect(queue.resolve("duplicate-id", "deny", projectA)).toBe(false)
+    expect(await a).toEqual({ action: "allow" })
+    expect(queue.pending()).toEqual([expect.objectContaining({ permissionID: "duplicate-id", directory: "/projects/b", integrationID: "codex" })])
+
+    expect(queue.resolve("duplicate-id", "deny", projectB)).toBe(true)
+    expect(await b).toEqual({ action: "deny" })
+  })
+
+  test("refuses an ID-only resolution when the ID belongs to multiple contexts", () => {
+    const queue = createPermissionQueue(5_000)
+    void queue.waitForResponse("collision", { integrationID: "opencode", projectID: "/projects/a", directory: "/projects/a", sessionID: "session-a" })
+    void queue.waitForResponse("collision", { integrationID: "opencode", projectID: "/projects/b", directory: "/projects/b", sessionID: "session-b" })
+
+    expect(queue.resolve("collision", "allow")).toBe(false)
+    expect(queue.pending()).toHaveLength(2)
+  })
 })

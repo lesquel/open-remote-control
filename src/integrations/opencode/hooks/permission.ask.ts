@@ -15,18 +15,30 @@ export function createPermissionAskHook(
   notifications: NotificationService,
   permissionQueue: PermissionQueue,
   audit: { log: (action: string, details: Record<string, unknown>) => void },
+  directory?: string,
 ): (input: Permission, output: PermissionOutput) => Promise<void> {
   return async function handlePermissionAsk(
     input: Permission,
     output: PermissionOutput,
   ): Promise<void> {
+    // The dashboard must never infer this from its selected tab. Bind the
+    // request to the plugin instance that received it before it reaches SSE.
+    const context = directory
+      ? {
+          integrationID: "opencode",
+          projectID: directory,
+          directory,
+          sessionID: input.sessionID,
+        }
+      : undefined
+    const metadata = { ...input.metadata, ...context }
     const sentToRemote = await notifications.notifyPermissionPending(
       input.id,
       input.title,
       input.sessionID,
       input.type,
       input.pattern,
-      input.metadata,
+      metadata,
     )
 
     if (!sentToRemote) {
@@ -41,7 +53,8 @@ export function createPermissionAskHook(
       sessionID: input.sessionID,
       type: input.type,
       pattern: typeof input.pattern === "string" ? input.pattern : input.pattern?.[0],
-      metadata: input.metadata,
+      metadata,
+      ...context,
     })
 
     if (result) {

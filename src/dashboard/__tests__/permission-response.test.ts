@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createPermissionResponder } from "../components/permission-response.js"
 
-type Permission = { id?: string; permissionID?: string }
+type Permission = { id?: string; permissionID?: string; integrationID?: string; directory?: string; sessionID?: string }
 
 function deferred() {
   let resolve!: () => void
@@ -85,5 +85,18 @@ describe("createPermissionResponder", () => {
     expect(await h.respond("allow")).toBe(false)
     expect(h.sends).toEqual([])
     expect(h.stats().refreshes).toBe(1)
+  })
+
+  test("removes only the exact contextual permission when IDs collide", async () => {
+    const h = harness([
+      { id: "same", integrationID: "opencode", directory: "/projects/a", sessionID: "session-a" },
+      { id: "same", integrationID: "codex", directory: "/projects/b", sessionID: "session-b" },
+    ])
+    const request = h.respond("allow")
+    h.response.resolve()
+    await request
+    expect(h.getPending()).toEqual([
+      { id: "same", integrationID: "codex", directory: "/projects/b", sessionID: "session-b" },
+    ])
   })
 })

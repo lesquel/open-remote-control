@@ -53,6 +53,27 @@ export function createActivityStore({ storage, now = Date.now } = {}) {
     if (changed) persist()
     return changed
   }
+  /**
+   * Resolve stale permission/question entries for one project after fetching
+   * the server's canonical attention snapshot. Entries for every other
+   * project are deliberately untouched: switching tabs must never erase a
+   * real action that belongs elsewhere.
+   */
+  function reconcileAttention(project, activeKeys) {
+    const scopedProject = text(project)
+    const keys = activeKeys instanceof Set ? activeKeys : new Set()
+    let changed = false
+    entries = entries.map(entry => {
+      const isAttentionKind = entry.kind === 'permission' || entry.kind === 'question'
+      if (!isAttentionKind || entry.project !== scopedProject || entry.resolved || keys.has(entry.key)) {
+        return entry
+      }
+      changed = true
+      return { ...entry, resolved: true, attention: false }
+    })
+    if (changed) persist()
+    return changed
+  }
   function markAllRead() {
     if (!entries.some(entry => !entry.read)) return
     entries = entries.map(entry => ({ ...entry, read: true }))
@@ -69,7 +90,7 @@ export function createActivityStore({ storage, now = Date.now } = {}) {
     }
   }
   function subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) }
-  return { list, add, resolve, markAllRead, clearRecent, counts, subscribe }
+  return { list, add, resolve, reconcileAttention, markAllRead, clearRecent, counts, subscribe }
 }
 
 let defaultStore = null
