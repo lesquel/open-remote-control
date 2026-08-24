@@ -16,7 +16,7 @@
 // Attachment proxy constants (ATTACHMENT_MAX_BYTES, MIME_SAFELIST) live in
 // src/infra/http/constants.ts.
 
-export const PILOT_VERSION = "1.23.0"
+export const PILOT_VERSION = "1.23.1"
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 300_000
 export const SSE_KEEPALIVE_INTERVAL_MS = 25_000
 export const TOAST_DURATION_MS = 5_000

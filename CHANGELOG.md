@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.23.1] - 2026-08-24
+
+Residual security and reliability hardening tracked in [#89](https://github.com/lesquel/open-remote-control/issues/89).
+
+### Security
+
+- Native OpenCode question and permission requests now inherit the configured OpenCode Basic-auth boundary.
+- Dashboard Markdown is sanitized with local pinned assets; inline and CDN script execution was removed from the production dashboard policy.
+- Legacy bearer URLs are no longer broadcast through global SSE or Telegram notifications.
+- Revoking or downgrading a device closes its active SSE streams immediately.
+
+### Reliability
+
+- Project-scoped permission approvals include integration, directory, and session context.
+- Delayed project responses are cancelled or ignored after a project switch.
+- Attention state is reconciled after reconnect and replay loss without clearing other projects.
+- Hosted PWA cache generation and reconnect backoff scheduling are deterministic.
+
+### Design
+
+- Added a reviewed E2EE remote-transport design. Cryptographic implementation is intentionally deferred until the documented client-authenticity and protocol gates pass.
+
+### Testing
+
+- The release tip passes 1003 Bun tests, five Playwright E2E journeys, strict TypeScript, prepublish checks, and package smoke validation.
+
 ## [1.23.0] - 2026-08-23
 
 Project-context and native OpenCode interaction support tracked in [#80](https://github.com/lesquel/open-remote-control/issues/80). This release keeps every prompt, permission, question, and project context local to the Pilot host.
