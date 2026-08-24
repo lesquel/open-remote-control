@@ -10,6 +10,7 @@ import type { AuthRequirement, RouteParams } from "../../infra/http/types"
 import type { DeviceCapability, DeviceStore } from "../../core/devices/store"
 import type { RoutePrincipal } from "./authentication"
 import type { AgentDescriptor } from "../../core/types/agent-integration"
+import type { AgentAttentionService } from "../../core"
 
 // Re-export infra types so consumers that currently import from routes.ts
 // continue to work without changes.
@@ -45,6 +46,8 @@ export interface RouteDeps {
   /** Separate permission queue for Codex hook bridge requests.
    *  Uses config.codexPermissionTimeoutMs instead of the main timeout. */
   codexPermissionQueue: PermissionQueue
+  /** Native agent attention APIs (OpenCode v2 questions and permissions). */
+  attentionService?: AgentAttentionService
   telegram: TelegramChannel
   push: PushService
   logger: Logger
@@ -116,6 +119,7 @@ import {
   listPermissions,
   respondPermission,
 } from "./handlers/permissions"
+import { listQuestions, replyQuestion, rejectQuestion } from "./handlers/questions"
 import { streamEvents } from "./handlers/events"
 import {
   getPushPublicKey,
@@ -252,6 +256,27 @@ export const routes: Route[] = [
     auth: "required",
     requiredCapabilities: ["permissions.approve", "permissions.deny"],
     handler: respondPermission,
+  },
+  {
+    method: "GET",
+    pattern: /^\/questions$/,
+    auth: "required",
+    requiredCapabilities: ["sessions.read"],
+    handler: listQuestions,
+  },
+  {
+    method: "POST",
+    pattern: /^\/questions\/(?<id>[^/]+)$/,
+    auth: "required",
+    requiredCapabilities: ["prompts.send"],
+    handler: replyQuestion,
+  },
+  {
+    method: "POST",
+    pattern: /^\/questions\/(?<id>[^/]+)\/reject$/,
+    auth: "required",
+    requiredCapabilities: ["prompts.send"],
+    handler: rejectQuestion,
   },
   // SSE: auth via query param allowed
   { method: "GET", pattern: /^\/events$/, auth: "optional", requiredCapabilities: ["sessions.read"], handler: streamEvents },

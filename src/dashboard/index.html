@@ -204,6 +204,23 @@
     </div>
   </div>
 
+  <!-- OpenCode native question requests. Kept separate from permissions: a
+       question is user input, not authorization. -->
+  <section id="question-sheet" role="dialog" aria-modal="false" aria-labelledby="question-title" aria-describedby="question-session">
+    <div class="question-sheet-card">
+      <div class="question-sheet-header">
+        <div><span class="question-eyebrow">Input required</span><h2 id="question-title">OpenCode has a question</h2></div>
+        <span id="question-queue" class="question-queue" hidden></span>
+      </div>
+      <p id="question-session" class="question-session"></p>
+      <form id="question-form" onsubmit="return false"></form>
+      <div class="question-actions">
+        <button id="question-reject" type="button" class="btn btn-ghost">Reject</button>
+        <button id="question-submit" type="button" class="btn btn-primary">Send answer</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ── Project Tabs Bar (v1.11) ──────────────────────────────────────── -->
   <div id="project-tabs-bar"></div>
 
