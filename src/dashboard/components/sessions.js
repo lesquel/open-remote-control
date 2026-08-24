@@ -9,6 +9,7 @@ import { refreshFilesChanged } from './files-changed-bridge.js'
 import { getAgent, agentColorFromName, getAgents } from './references.js'
 import { LIMITS, STORAGE_KEYS, AGENT_BADGE_CLASS, EVENTS } from '../constants.js'
 import { pickDefaultAgent } from './default-agent.js'
+import { normalizeSessionStatus, normalizeStatusMap } from '../state/status-normalize.js'
 
 // Dynamic import to break circular dependency with multi-view.js
 async function addToMultiview(id) {
@@ -19,6 +20,7 @@ async function addToMultiview(id) {
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 export function statusClass(s) {
+  s = normalizeSessionStatus(s)
   if (s === 'busy' || s === 'running') return 'busy'
   if (s === 'error') return 'error'
   return 'idle'
@@ -156,7 +158,7 @@ export async function loadSessions(autoSelectMostRecent) {
   try {
     const data = await fetchSessions()
     const sessions = {}
-    const statuses = data.statuses ?? {}
+    const statuses = normalizeStatusMap(data.statuses)
     for (const s of (data.sessions ?? [])) sessions[s.id] = s
     if (isStaleGen(gen)) return
     _lastLoadError = false
@@ -234,7 +236,7 @@ function autoSelect() {
 function renderSessionRow(id, ctx) {
   const { sessions, statuses, activeSession, mvPanels, sessionMeta } = ctx
   const s = sessions[id]
-  const status = statuses[id] ?? 'idle'
+  const status = normalizeSessionStatus(statuses[id])
   const title = s.title || id.slice(0, 8)
   const cls = id === activeSession ? 'active' : ''
   const ago = timeAgo(s?.time?.updated)
@@ -502,6 +504,7 @@ export async function selectSession(id) {
 }
 
 export function updateHeaderSession(title, status) {
+  status = normalizeSessionStatus(status)
   const label = document.getElementById('header-session-label')
   const badge = document.getElementById('header-status-badge')
   if (label) label.textContent = title
@@ -564,6 +567,7 @@ export function renderCompactAgentBadge(agentName) {
 }
 
 export function updateInfoBar(id, title, status, session) {
+  status = normalizeSessionStatus(status)
   const bar = document.getElementById('session-info-bar')
   bar.classList.remove('hidden')
   document.getElementById('info-title').textContent = title
