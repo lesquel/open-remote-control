@@ -2,6 +2,7 @@
 // Factory that fetches /agents, /providers, /mcp/status, /project/current once,
 // caches them in module-scope, and exposes getters.
 import { fetchAgents, fetchProviders, fetchMcpStatus, fetchCurrentProject, fetchLspStatus } from '../api/api.js'
+import { beginProjectRequest, isCurrentProjectRequest, finishProjectRequest } from '../state/state.js'
 import { toast } from '../ui/toast.js'
 import { AGENT_COLOR, EVENTS, AGENT_BADGE_CLASS } from '../constants.js'
 
@@ -81,10 +82,11 @@ export function agentColorFromName(name) {
 
 // ── Fetch helpers (graceful fallback) ─────────────────────────────────────
 
-async function safeFetch(fn, fallback, label) {
+async function safeFetch(fn, fallback, label, signal) {
   try {
     return await fn()
   } catch (err) {
+    if (signal?.aborted) return fallback
     console.warn(`[references] Failed to fetch ${label}:`, err?.message ?? err)
     return fallback
   }
@@ -93,36 +95,44 @@ async function safeFetch(fn, fallback, label) {
 // ── Core refresh ──────────────────────────────────────────────────────────
 
 export async function refresh() {
-  const [agentsRes, providersRes, mcpRes, projectRes, lspRes] = await Promise.all([
-    safeFetch(fetchAgents,         { agents: [] },           '/agents'),
-    safeFetch(fetchProviders,      { all: [], default: {}, connected: [] }, '/providers'),
-    safeFetch(fetchMcpStatus,      { servers: {} },          '/mcp/status'),
-    safeFetch(fetchCurrentProject, { project: null },        '/project/current'),
-    safeFetch(fetchLspStatus,      { clients: [] },          '/lsp/status'),
-  ])
+  const ticket = beginProjectRequest('references')
+  try {
+    const [agentsRes, providersRes, mcpRes, projectRes, lspRes] = await Promise.all([
+      safeFetch(() => fetchAgents({ signal: ticket.signal }),         { agents: [] },           '/agents', ticket.signal),
+      safeFetch(() => fetchProviders({ signal: ticket.signal }),      { all: [], default: {}, connected: [] }, '/providers', ticket.signal),
+      safeFetch(() => fetchMcpStatus({ signal: ticket.signal }),      { servers: {} },          '/mcp/status', ticket.signal),
+      safeFetch(() => fetchCurrentProject({ signal: ticket.signal }), { project: null },        '/project/current', ticket.signal),
+      safeFetch(() => fetchLspStatus({ signal: ticket.signal }),      { clients: [] },          '/lsp/status', ticket.signal),
+    ])
 
-  _agents             = agentsRes?.agents            ?? []
-  _providers          = providersRes?.all            ?? []
-  _defaultModels      = providersRes?.default         ?? {}
-  _connectedProviders = providersRes?.connected       ?? []
-  _mcpServers         = mcpRes?.servers               ?? {}
-  _currentProject     = projectRes?.project           ?? null
-  _lspClients         = lspRes?.clients               ?? []
+    if (!isCurrentProjectRequest(ticket)) return false
 
-  console.debug('[references] Refreshed:', {
-    agents:    _agents.length,
-    providers: _providers.length,
-    connected: _connectedProviders,
-    mcp:       Object.keys(_mcpServers).length,
-    lsp:       _lspClients.length,
-    project:   _currentProject?.path ?? _currentProject?.worktree ?? null,
-  })
+    _agents             = agentsRes?.agents            ?? []
+    _providers          = providersRes?.all            ?? []
+    _defaultModels      = providersRes?.default         ?? {}
+    _connectedProviders = providersRes?.connected       ?? []
+    _mcpServers         = mcpRes?.servers               ?? {}
+    _currentProject     = projectRes?.project           ?? null
+    _lspClients         = lspRes?.clients               ?? []
+
+    console.debug('[references] Refreshed:', {
+      agents:    _agents.length,
+      providers: _providers.length,
+      connected: _connectedProviders,
+      mcp:       Object.keys(_mcpServers).length,
+      lsp:       _lspClients.length,
+      project:   _currentProject?.path ?? _currentProject?.worktree ?? null,
+    })
+    return true
+  } finally {
+    finishProjectRequest(ticket)
+  }
 }
 
 export async function init() {
   if (_initialized) return
   _initialized = true
-  await refresh()
+  if (!await refresh()) return
   // Debug: log what was loaded (visible in DevTools console under [references])
   console.debug('[references] Loaded:', {
     agents:     _agents.map(a => a.name),

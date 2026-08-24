@@ -1,17 +1,30 @@
 // permissions.js — Permission banner and approve/deny logic
-import { getState, setState } from '../state/state.js'
+import {
+  getState,
+  setState,
+  beginProjectRequest,
+  isCurrentProjectRequest,
+  finishProjectRequest,
+} from '../state/state.js'
 import { fetchPermissions, respondPermission } from '../api/api.js'
 import { playNotifySound } from '../ui/notif-sound.js'
 import { toast } from '../ui/toast.js'
 import { createPermissionResponder } from './permission-response.js'
 
 export async function loadPermissions() {
+  const ticket = beginProjectRequest('permissions')
   try {
-    const perms = await fetchPermissions()
+    const perms = await fetchPermissions({ signal: ticket.signal })
+    if (!isCurrentProjectRequest(ticket)) return false
     setState({ pendingPerms: Array.isArray(perms) ? perms : [] })
     showNextPerm()
+    return true
   } catch (error) {
+    if (!isCurrentProjectRequest(ticket)) return false
     console.warn('[permissions] Could not load pending permissions:', error?.message ?? error)
+    return false
+  } finally {
+    finishProjectRequest(ticket)
   }
 }
 

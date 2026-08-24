@@ -82,6 +82,7 @@ function buildUrl(path, overrideDir) {
 async function request(method, path, body, opts = {}) {
   const fetchOpts = { method, headers: authHeaders() }
   if (body) fetchOpts.body = JSON.stringify(body)
+  if (opts.signal) fetchOpts.signal = opts.signal
   const url = buildUrl(path, opts.directory)
   const fetcher = method === 'GET' ? apiFetch : fetch
   let r
@@ -175,16 +176,16 @@ export async function getSessionChildren(sessionId) {
   return request('GET', `/sessions/${sessionId}/children`)
 }
 
-export async function fetchPermissions() {
-  return request('GET', '/permissions')
+export async function fetchPermissions(opts = {}) {
+  return request('GET', '/permissions', null, opts)
 }
 
 export async function respondPermission(id, action) {
   return request('POST', `/permissions/${id}`, { action })
 }
 
-export async function fetchQuestions() {
-  return request('GET', '/questions')
+export async function fetchQuestions(opts = {}) {
+  return request('GET', '/questions', null, opts)
 }
 
 export async function replyQuestion(id, answers) {
@@ -233,28 +234,28 @@ export async function fetchIntegrations() {
 
 // ── Dynamic config fetchers (Deliverable 8) ───────────────────────────────
 
-export async function fetchAgents() {
-  return request('GET', '/agents')
+export async function fetchAgents(opts = {}) {
+  return request('GET', '/agents', null, opts)
 }
 
-export async function fetchProviders() {
-  return request('GET', '/providers')
+export async function fetchProviders(opts = {}) {
+  return request('GET', '/providers', null, opts)
 }
 
-export async function fetchMcpStatus() {
-  return request('GET', '/mcp/status')
+export async function fetchMcpStatus(opts = {}) {
+  return request('GET', '/mcp/status', null, opts)
 }
 
-export async function fetchCurrentProject() {
-  return request('GET', '/project/current')
+export async function fetchCurrentProject(opts = {}) {
+  return request('GET', '/project/current', null, opts)
 }
 
 export async function fetchProjects() {
   return request('GET', '/projects')
 }
 
-export async function fetchLspStatus() {
-  return request('GET', '/lsp/status')
+export async function fetchLspStatus(opts = {}) {
+  return request('GET', '/lsp/status', null, opts)
 }
 
 /**
