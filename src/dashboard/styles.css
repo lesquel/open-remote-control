@@ -4343,10 +4343,11 @@ body {
   position: fixed;
   inset: 0;
   z-index: 1200;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-end;
+  justify-content: flex-end;
   padding: 20px;
-  background: rgba(0, 0, 0, .72);
+  pointer-events: none;
+  background: transparent;
 }
 #question-sheet.visible { display: flex; }
 .question-sheet-card {
@@ -4358,6 +4359,7 @@ body {
   border-radius: 10px;
   background: var(--bg-2);
   box-shadow: 0 18px 60px rgba(0, 0, 0, .45);
+  pointer-events: auto;
 }
 .question-sheet-header,
 .question-actions {
