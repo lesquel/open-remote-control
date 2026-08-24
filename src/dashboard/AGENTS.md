@@ -25,7 +25,7 @@
 - `components/markdown.js` — renders agent-controlled Markdown through the vendored DOMPurify allowlist before any HTML sink
 - `state/project-context.js` / `status-normalize.js` — concrete initial-project selection and OpenCode v2 status normalization
 - `components/activity-center.js` — local-first attention inbox for unresolved permissions, failures, and recent completions
-- `components/activity-store.js` — bounded, deduplicated local activity persistence; never stores raw error output
+- `components/activity-store.js` / `attention-reconcile.js` — bounded, deduplicated local activity persistence plus project-scoped canonical reconciliation after SSE replay loss; never stores raw error output or clears attention for another project
 - `modals/device-manager.js` — admin device list, role/name editing, current-device marker, and individual revocation UI
 - `modals/debug-modal.js` — accessible diagnostics panel backed by the protected, secret-free `/diagnostics` snapshot
 - `components/latest-request.js` — generation gate used to prevent stale asynchronous responses from committing UI state

@@ -16,11 +16,11 @@ describe("activity center wiring", () => {
 
   test("records attention events and resolves permissions", async () => {
     const sse = await source("sse/sse.js")
-    expect(sse).toContain("key: `permission:${normalized.permissionID}`")
-    expect(sse).toContain("resolveActivity(`permission:${resolvedNormalized.permissionID}`)")
+    expect(sse).toContain("key: attentionKey('permission', project, normalized.permissionID)")
+    expect(sse).toContain("attentionKey('permission', attentionProject(resolvedNormalized), resolvedNormalized.permissionID)")
     expect(sse).toContain("key: `completed:${messageId ?? evtSessionId}`")
     expect(sse).toContain("key: `error:${sessionId}:${Math.floor(Date.now() / 30_000)}`")
-    expect(sse).toContain("key: `question:${question.id}`")
-    expect(sse).toContain("resolveActivity(`question:${question.requestID ?? question.id}`)")
+    expect(sse).toContain("key: attentionKey('question', project, question.id)")
+    expect(sse).toContain("attentionKey('question', attentionProject(question), question.requestID ?? question.id)")
   })
 })
