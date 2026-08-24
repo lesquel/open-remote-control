@@ -26,7 +26,7 @@
 - `http/handlers/sessions.ts` — `/sessions*` endpoints
 - `http/handlers/permissions.ts` — `/permissions*` endpoints
 - `http/handlers/questions.ts` — directory-scoped OpenCode native `/questions*` list/reply/reject endpoints
-- `http/handlers/events.ts` — `/events` SSE endpoint; authenticates the stream and forwards the optional replay cursor to the core event bus
+- `http/handlers/events.ts` — `/events` SSE endpoint; authenticates the stream, tags device streams for revocation/role-downgrade closure, and forwards the optional replay cursor to the core event bus
 - `http/handlers/settings.ts` — `/settings*` + `/settings/vapid/generate` + push endpoints
 - `http/handlers/system.ts` — thin barrel + core system handlers: `getStatus`, `getHealth`, `getConnectInfo`, `rotateAuthToken`, `extractDirectory`, `getIP`; re-exports all symbols from `dashboard.ts`, `sdk-proxy.ts`, and `filesystem.ts` so importers need no changes
 - `http/handlers/dashboard.ts` — `/`, `/dashboard/*` static asset serving + in-memory asset cache

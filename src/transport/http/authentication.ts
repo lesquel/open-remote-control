@@ -11,6 +11,14 @@ export interface RoutePrincipal {
   device?: Device
 }
 
+/**
+ * Names a device's live SSE streams without exposing its credential to the
+ * event bus. The tag is transport-local and intentionally opaque to core.
+ */
+export function deviceStreamTag(deviceId: string): string {
+  return `device:${deviceId}`
+}
+
 export function authenticateCredential(
   credential: string | null,
   deps: Pick<RouteDeps, "token" | "deviceStore">,

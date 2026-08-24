@@ -22,7 +22,8 @@ function makeEventBus(opts?: { hasClients?: boolean }): EventBus & { emitted: Bu
     createSSEResponse: () => new Response(""),
     hasClients: () => opts?.hasClients ?? false,
     clientCount: () => (opts?.hasClients ? 1 : 0),
-    closeAll: () => {},
+    closeClientTag: () => {},
+      closeAll: () => {},
   }
 }
 
