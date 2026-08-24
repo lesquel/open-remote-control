@@ -245,21 +245,13 @@ function renderReasoningPart(p) {
   const id = 'reasoning-' + (p.id ?? Math.random().toString(36).slice(2))
 
   return `<div class="reasoning-block${expandedClass}" id="${escapeHtml(id)}">
-    <div class="reasoning-header" role="button" tabindex="0" aria-expanded="${defaultExpanded}" aria-controls="${escapeHtml(id)}-body" onclick="window.__toggleReasoning('${escapeHtml(id)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__toggleReasoning('${escapeHtml(id)}')}">
+    <div class="reasoning-header" role="button" tabindex="0" aria-expanded="${defaultExpanded}" aria-controls="${escapeHtml(id)}-body">
       <span class="reasoning-toggle">▸</span>
       <span class="reasoning-label">~ thinking</span>
       ${durationHtml}
     </div>
     <div class="reasoning-body" id="${escapeHtml(id)}-body">${text}</div>
   </div>`
-}
-
-// Expose reasoning toggle globally (called from inline onclick in rendered HTML)
-window.__toggleReasoning = function(id) {
-  const block = document.getElementById(id)
-  if (!block) return
-  const expanded = block.classList.toggle('reasoning-expanded')
-  block.querySelector('.reasoning-header')?.setAttribute('aria-expanded', String(expanded))
 }
 
 // ── Agent transition part renderer ──────────────────────────────────────────
@@ -711,7 +703,7 @@ function renderToolPart(p) {
       return `<div class="tw-item tw-item--${escapeHtml(stClass)}">
         <span class="tw-item-icon" aria-hidden="true">${stIcon}</span>
         <span class="tw-item-text">${text}</span>
-        <button class="tw-pin-btn" onclick="window.__pinTodoItem(this)" data-text="${escapeHtml(String(item.text ?? item.content ?? ''))}" title="Pin this todo" aria-label="Pin todo: ${text}">[+]</button>
+        <button class="tw-pin-btn" data-text="${escapeHtml(String(item.text ?? item.content ?? ''))}" title="Pin this todo" aria-label="Pin todo: ${text}">[+]</button>
       </div>`
     }).join('')
     todoItemsHtml = `<div class="tw-items">${rows}</div>`
@@ -736,7 +728,7 @@ function renderToolPart(p) {
   const partIdAttr = p.id ? ` data-part-id="${escapeHtml(p.id)}"` : ''
   const msgIdAttr = p.messageID ? ` data-message-id="${escapeHtml(p.messageID)}"` : ''
   return `<div class="tool-block ${hiddenClass}${autoOpen}" id="${id}"${partIdAttr}${msgIdAttr}>
-    <div class="tool-line tool-header" role="button" tabindex="0" aria-expanded="${autoOpen !== ''}" aria-controls="${id}-body" onclick="window.__toggleTool('${id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();window.__toggleTool('${id}')}">
+    <div class="tool-line tool-header" role="button" tabindex="0" aria-expanded="${autoOpen !== ''}" aria-controls="${id}-body">
       ${summaryHtml}
       <span class="tool-chevron">▶</span>
     </div>
@@ -862,12 +854,53 @@ export function renderMessages(msgs, { sessionId } = {}) {
   box.scrollTop = box.scrollHeight
 }
 
-// Expose toggleTool globally (called from inline onclick in rendered HTML)
-window.__toggleTool = function(id) {
-  const block = document.getElementById(id)
+let messageInteractionsInitialized = false
+
+function toggleDisclosure(header) {
+  const block = header.closest('.reasoning-block, .tool-block')
   if (!block) return
-  const expanded = block.classList.toggle('open')
-  block.querySelector('.tool-header')?.setAttribute('aria-expanded', String(expanded))
+  const openClass = header.classList.contains('reasoning-header') ? 'reasoning-expanded' : 'open'
+  const expanded = block.classList.toggle(openClass)
+  header.setAttribute('aria-expanded', String(expanded))
+}
+
+function pinTodo(button) {
+  const text = button.dataset.text
+  if (!text) return
+  const { activeSession, sessions } = getState()
+  const sessionTitle = sessions?.[activeSession]?.title ?? ''
+  if (window.__pinnedTodos && activeSession) {
+    window.__pinnedTodos.addItem({ text, sessionId: activeSession, sessionTitle })
+  }
+}
+
+/**
+ * Bind message interactions once through event delegation. This replaces
+ * inline event attributes so the dashboard can enforce script-src 'self'.
+ */
+export function initMessageInteractions() {
+  if (messageInteractionsInitialized) return
+  messageInteractionsInitialized = true
+
+  document.addEventListener('click', (event) => {
+    const target = event.target instanceof Element ? event.target : null
+    const pinButton = target?.closest('.tw-pin-btn')
+    if (pinButton) {
+      pinTodo(pinButton)
+      return
+    }
+    const header = target?.closest('.reasoning-header, .tool-header')
+    if (header) toggleDisclosure(header)
+  })
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    const target = event.target instanceof Element ? event.target : null
+    const header = target?.closest('.reasoning-header, .tool-header')
+    if (!header) return
+    event.preventDefault()
+    toggleDisclosure(header)
+  })
 }
 
 /**

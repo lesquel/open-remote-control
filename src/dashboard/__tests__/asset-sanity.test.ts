@@ -13,6 +13,7 @@ import { fileURLToPath } from "url"
 
 const ROOT = join(fileURLToPath(new URL(".", import.meta.url)), "../../..")
 const INDEX_HTML = readFileSync(join(ROOT, "src/dashboard/index.html"), "utf-8")
+const BOOTSTRAP_JS = readFileSync(join(ROOT, "src/dashboard/bootstrap.js"), "utf-8")
 const SW_JS = readFileSync(join(ROOT, "src/dashboard/sw.js"), "utf-8")
 const PACKAGE_JSON = JSON.parse(
   readFileSync(join(ROOT, "package.json"), "utf-8"),
@@ -35,22 +36,18 @@ describe("PWA deployment source", () => {
   })
 })
 
-describe("dashboard/index.html highlight.js bundle", () => {
-  // Bug that shipped in 1.11 through 1.13.8: index.html loaded nine
-  // highlight.js scripts from /lib/*.min.js. Those files are CommonJS
-  // internals (module.exports, redeclared `const IDENT_RE`) and throw
-  // `module is not defined` when loaded as browser <script> tags,
-  // breaking every dashboard page. CHANGELOG 1.12.6 claimed this was
-  // fixed; the actual edit never landed and the bug rode silently
-  // through every release until 1.13.9.
-  test("must not load highlight.js CommonJS internals (/lib/*.min.js)", () => {
-    expect(INDEX_HTML).not.toMatch(
-      /highlight\.js@[\d.]+\/lib\/(?:core|languages\/[a-z]+)\.min\.js/,
-    )
+describe("dashboard self-hosted runtime assets", () => {
+  test("loads security-critical browser libraries locally, not from a CDN", () => {
+    expect(INDEX_HTML).toContain('src="./vendor/marked.umd.js"')
+    expect(INDEX_HTML).toContain('src="./vendor/purify.min.js"')
+    expect(INDEX_HTML).toContain('src="./vendor/qrcode.js"')
+    expect(INDEX_HTML).not.toMatch(/cdn\.jsdelivr\.net|unpkg\.com|cdnjs\.cloudflare\.com/)
   })
 
-  test("must load the highlight.js UMD bundle (/build/highlight.min.js)", () => {
-    expect(INDEX_HTML).toMatch(/highlight\.js@[\d.]+\/build\/highlight\.min\.js/)
+  test("ships the self-hosted vendor files", () => {
+    for (const asset of ['marked.umd.js', 'purify.min.js', 'qrcode.js']) {
+      expect(readFileSync(join(ROOT, 'src/dashboard/vendor', asset), 'utf-8').length).toBeGreaterThan(1_000)
+    }
   })
 })
 
@@ -62,16 +59,15 @@ describe("dashboard/index.html self-healing cleanup", () => {
   // users on any pre-1.13.9 install will keep seeing bugs we've
   // already shipped fixes for.
   test("self-heal script is present", () => {
-    expect(INDEX_HTML).toMatch(/pilot:asset-gen/)
-    expect(INDEX_HTML).toMatch(/getRegistrations/)
-    expect(INDEX_HTML).toMatch(/caches\.keys/)
+    expect(INDEX_HTML).toContain('src="./bootstrap.js?generation=__PILOT_ASSET_GENERATION__"')
+    expect(BOOTSTRAP_JS).toMatch(/pilot:asset-gen/)
+    expect(BOOTSTRAP_JS).toMatch(/getRegistrations/)
+    expect(BOOTSTRAP_JS).toMatch(/caches\.keys/)
   })
 
   test("self-heal version marker is injected at serve/deploy time", () => {
-    const match = INDEX_HTML.match(/var\s+GEN\s*=\s*"([^"]+)"/)
-    expect(match).not.toBeNull()
-    expect(match?.[1]).toBe("__PILOT_ASSET_GENERATION__")
-    expect(INDEX_HTML).not.toContain(`var GEN = "${PACKAGE_JSON.version}"`)
+    expect(INDEX_HTML).toContain('__PILOT_ASSET_GENERATION__')
+    expect(INDEX_HTML).not.toContain(`generation=${PACKAGE_JSON.version}`)
   })
 })
 

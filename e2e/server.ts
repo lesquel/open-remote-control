@@ -23,6 +23,7 @@ let questionAnswers: string[][] | null = null
 let questionReplyCount = 0
 let nativePermissions: AgentPermissionRequest[] = []
 let nativeQuestions: AgentQuestionRequest[] = []
+let messageText = "Ready"
 
 const logger: Logger = {
   debug: () => undefined,
@@ -83,7 +84,7 @@ function messageFor(selected: typeof session) {
       providerID: second ? "provider-second" : "provider-primary",
       time: { created: Date.now(), completed: Date.now() },
     },
-    parts: [{ id: `part-${selected.id}`, messageID: `message-${selected.id}`, sessionID: selected.id, type: "text", text: "Ready" }],
+    parts: [{ id: `part-${selected.id}`, messageID: `message-${selected.id}`, sessionID: selected.id, type: "text", text: messageText }],
   }]
 }
 
@@ -238,11 +239,12 @@ server.registerRoute({
   pattern: /^\/_e2e\/setup$/,
   auth: "required",
   handler: async ({ req }) => {
-    const body = await req.json() as { permission?: boolean; question?: boolean }
+    const body = await req.json() as { permission?: boolean; question?: boolean; message?: string }
     permissionResolution = null
     permissionReplyCount = 0
     questionAnswers = null
     questionReplyCount = 0
+    messageText = typeof body.message === "string" ? body.message : "Ready"
     nativePermissions = body.permission ? [{
       id: "permission-e2e",
       sessionID: session.id,

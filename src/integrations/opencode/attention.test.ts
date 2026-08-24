@@ -1,10 +1,68 @@
 import { describe, expect, test } from "bun:test"
 import type { OpencodeClient } from "@opencode-ai/sdk/v2"
 import { createOpenCodeAttentionService } from "./attention"
+import { createOpenCodeAttentionClient } from "./client"
 
 type AttentionClient = Pick<OpencodeClient, "permission" | "question">
 
 describe("OpenCode v2 attention adapter", () => {
+  test("authenticates the independently-created v2 client with OpenCode Basic auth", async () => {
+    const password = "test-password"
+    const expectedAuthorization = `Basic ${Buffer.from(`opencode:${password}`).toString("base64")}`
+    const seen: Array<{ path: string; authorization: string | null }> = []
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        seen.push({
+          path: new URL(request.url).pathname,
+          authorization: request.headers.get("authorization"),
+        })
+        if (request.headers.get("authorization") !== expectedAuthorization) {
+          return new Response("Unauthorized", { status: 401 })
+        }
+        return Response.json([])
+      },
+    })
+
+    try {
+      const client = createOpenCodeAttentionClient({
+        baseUrl: `http://127.0.0.1:${server.port}`,
+        password,
+      })
+      const service = createOpenCodeAttentionService(client)
+
+      await expect(service.listPermissions("/projects/a")).resolves.toEqual([])
+      await expect(service.listQuestions("/projects/a")).resolves.toEqual([])
+      expect(seen).toEqual([
+        { path: "/permission", authorization: expectedAuthorization },
+        { path: "/question", authorization: expectedAuthorization },
+      ])
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test("does not send Basic auth when OpenCode server password is absent", async () => {
+    let authorization: string | null = "unreached"
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        authorization = request.headers.get("authorization")
+        return Response.json([])
+      },
+    })
+
+    try {
+      const client = createOpenCodeAttentionClient({
+        baseUrl: `http://127.0.0.1:${server.port}`,
+      })
+      await expect(createOpenCodeAttentionService(client).listQuestions()).resolves.toEqual([])
+      expect(authorization).toBeNull()
+    } finally {
+      server.stop(true)
+    }
+  })
+
   test("forwards project directory when listing native permissions and questions", async () => {
     const calls: string[] = []
     const client = {
