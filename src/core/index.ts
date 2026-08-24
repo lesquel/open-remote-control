@@ -45,6 +45,13 @@ export { PilotError } from "./errors"
 
 export { createAgentDescriptor } from "./types/agent-integration"
 export type { AgentDescriptor, AgentCapabilities } from "./types/agent-integration"
+export type {
+  AgentAttentionService,
+  AgentPermissionRequest,
+  AgentQuestionInfo,
+  AgentQuestionOption,
+  AgentQuestionRequest,
+} from "./types/agent-attention"
 
 export { createDeviceStore, capabilitiesForRole } from "./devices/store"
 export type {

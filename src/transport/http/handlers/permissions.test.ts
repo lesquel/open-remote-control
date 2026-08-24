@@ -4,6 +4,7 @@ import type { RouteDeps, RouteContext } from "../routes"
 import { listPermissions, respondPermission } from "./permissions"
 import { createPermissionQueue } from "../../../core/permissions/queue"
 import type { Logger } from "../../../infra/logger/index"
+import type { AgentAttentionService } from "../../../core/types/agent-attention"
 
 const silentLogger: Logger = {
   debug: () => {},
@@ -14,6 +15,7 @@ const silentLogger: Logger = {
 
 function makePermissionDeps(opts?: {
   codexPermissionQueue?: ReturnType<typeof createPermissionQueue>
+  attentionService?: AgentAttentionService
 }): RouteDeps {
   const mainQueue = createPermissionQueue(30_000)
   const codexQueue = opts?.codexPermissionQueue ?? createPermissionQueue(30_000)
@@ -42,6 +44,7 @@ function makePermissionDeps(opts?: {
     eventBus: {} as RouteDeps["eventBus"],
     permissionQueue: mainQueue,
     codexPermissionQueue: codexQueue,
+    attentionService: opts?.attentionService,
     telegram: {} as RouteDeps["telegram"],
     push: {} as RouteDeps["push"],
     logger: silentLogger,
@@ -125,6 +128,26 @@ describe("listPermissions — merges both queues", () => {
     expect(ids).toContain("main-1")
     expect(ids).toContain("codex-1")
   })
+
+  test("includes OpenCode v2 native pending permissions without duplicating hook-owned IDs", async () => {
+    const nativePermission = {
+      id: "native-1",
+      sessionID: "session-1",
+      permission: "bash",
+      patterns: ["rm file"],
+      metadata: {},
+      always: [],
+    }
+    const attentionService = {
+      listPermissions: async () => [nativePermission],
+    } as unknown as AgentAttentionService
+    const deps = makePermissionDeps({ attentionService })
+    void deps.permissionQueue.waitForResponse("native-1", { title: "Hook owns this ID" })
+
+    const res = await listPermissions(makeCtx(deps))
+    const body = await res.json() as Array<{ permissionID: string }>
+    expect(body.filter((permission) => permission.permissionID === "native-1")).toHaveLength(1)
+  })
 })
 
 describe("respondPermission — tries both queues", () => {
@@ -174,6 +197,43 @@ describe("respondPermission — tries both queues", () => {
     expect(res.status).toBe(404)
     const body = await res.json() as { error: { code: string } }
     expect(body.error.code).toBe("PERMISSION_NOT_FOUND")
+  })
+
+  test("returns a typed 400 for malformed JSON", async () => {
+    const deps = makePermissionDeps()
+    const req = new Request("http://test/permissions/bad", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    })
+    const res = await respondPermission(makeCtx(deps, req, { id: "bad" }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: { code: "INVALID_JSON" } })
+  })
+
+  test("replies through OpenCode v2 when the permission is native", async () => {
+    const replies: unknown[] = []
+    const attentionService = {
+      listPermissions: async () => [{
+        id: "native-only",
+        sessionID: "session-1",
+        permission: "edit",
+        patterns: ["file.ts"],
+        metadata: {},
+        always: [],
+      }],
+      replyPermission: async (...args: unknown[]) => { replies.push(args) },
+    } as unknown as AgentAttentionService
+    const deps = makePermissionDeps({ attentionService })
+    const req = new Request("http://test/permissions/native-only?directory=/projects/a", {
+      method: "POST",
+      body: JSON.stringify({ action: "allow" }),
+    })
+
+    const res = await respondPermission(makeCtx(deps, req, { id: "native-only" }))
+
+    expect(res.status).toBe(200)
+    expect(replies).toEqual([["native-only", "once", "/projects/a"]])
   })
 
   test("returns 409 without resolving when both integrations contain the same ID", async () => {
